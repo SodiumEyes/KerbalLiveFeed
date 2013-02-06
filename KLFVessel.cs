@@ -29,6 +29,12 @@ namespace KerbalLiveFeed
             get;
         }
 
+        public Vector3d translationFromBody
+        {
+            private set;
+            get;
+        }
+
         public Vector3d worldDirection
         {
             private set;
@@ -37,18 +43,10 @@ namespace KerbalLiveFeed
 
         public Vector3d worldPosition
         {
-            private set
-            {
-                if (mainBody)
-                    localPosition = mainBody.transform.InverseTransformPoint(value);
-                else
-                    localPosition = value;
-            }
-
             get
             {
                 if (mainBody)
-                    return mainBody.transform.position + localPosition;
+                    return mainBody.transform.position + translationFromBody;
                 else
                     return localPosition;
             }
@@ -78,23 +76,40 @@ namespace KerbalLiveFeed
             get;
         }
 
-        public bool visible
-        {
-            set
-            {
-                line.enabled = value;
-            }
-
-            get
-            {
-                return line.enabled;
-            }
-        }
-
         public OrbitRenderer orbitRenderer
         {
             private set;
             get;
+        }
+
+        public Vessel.Situations situation
+        {
+            set;
+            get;
+        }
+
+        public Vessel.State state
+        {
+            set;
+            get;
+        }
+
+        public bool shouldShowOrbit
+        {
+            get
+            {
+                switch (situation)
+                {
+                    case Vessel.Situations.FLYING:
+                    case Vessel.Situations.ORBITING:
+                    case Vessel.Situations.SUB_ORBITAL:
+                    case Vessel.Situations.ESCAPING:
+                        return state == Vessel.State.ACTIVE || orbitRenderer.mouseOver;
+
+                    default:
+                        return false;
+                }
+            }
         }
 
         //Methods
@@ -120,8 +135,6 @@ namespace KerbalLiveFeed
             orbitRenderer.orbitColor = Color.magenta * 0.5f;
             orbitRenderer.forceDraw = true;
 
-            visible = false;
-
             mainBody = null;
 
             localDirection = Vector3d.zero;
@@ -130,17 +143,22 @@ namespace KerbalLiveFeed
 
             worldDirection = Vector3d.zero;
             worldVelocity = Vector3d.zero;
+
+            state = Vessel.State.ACTIVE;
+            situation = Vessel.Situations.ORBITING;
         }
 
         public void setOrbitalData(CelestialBody body, Vector3d local_pos, Vector3d local_vel, Vector3 local_dir) {
 
             mainBody = body;
-            localPosition = local_pos;
-            localDirection = local_dir;
-            localVelocity = local_vel;
 
             if (mainBody)
             {
+
+                localPosition = local_pos;
+                translationFromBody = mainBody.transform.TransformPoint(localPosition) - mainBody.transform.position;
+                localDirection = local_dir;
+                localVelocity = local_vel;
 
                 //Calculate world-space properties
                 worldDirection = mainBody.transform.TransformDirection(localDirection);
@@ -185,7 +203,7 @@ namespace KerbalLiveFeed
             if (mainBody)
             {
 
-                Vector3d orbit_pos = localPosition;
+                Vector3d orbit_pos = translationFromBody;
                 Vector3d orbit_vel = worldVelocity;
 
                 //Swap the y and z values of the orbital position/velocities because that's the way it goes?
@@ -201,6 +219,11 @@ namespace KerbalLiveFeed
                 orbitRenderer.orbit.UpdateFromStateVectors(orbit_pos, orbit_vel, mainBody, Planetarium.GetUniversalTime());
                 
             }
+        }
+
+        public void updateRenderProperties()
+        {
+            line.enabled = MapView.MapIsEnabled;
         }
 
     }

@@ -19,28 +19,22 @@ namespace KerbalLiveFeed
 
         public override void OnUpdate()
         {
-            if (klfVessel.mainBody == null)
-            {
 
-                klfVessel.setOrbitalData(
-                    vessel.mainBody,
-                    new Vector3d(0, 0, vessel.mainBody.Radius + 200000.0),
-                    new Vector3d(0, 2000, 0),
-                    new Vector3d(0, 1, 0)
-                    );
+            Vector3d local_pos = vessel.mainBody.transform.InverseTransformPoint(vessel.GetWorldPos3D());
+            Vector3d local_dir = vessel.mainBody.transform.InverseTransformDirection(vessel.transform.up);
+            Vector3d local_vel = vessel.mainBody.transform.InverseTransformDirection(vessel.GetObtVelocity());
 
-                Debug.Log(klfVessel.localPosition.ToString());
-                Debug.Log(klfVessel.localVelocity.ToString());
-                Debug.Log(klfVessel.localDirection.ToString());
+            klfVessel.setOrbitalData(
+                vessel.mainBody,
+                local_pos,
+                local_vel,
+                local_dir
+                );
 
-                Debug.Log(klfVessel.worldPosition.ToString());
-                Debug.Log(klfVessel.worldVelocity.ToString());
-                Debug.Log(klfVessel.worldDirection.ToString());
-            }
+            klfVessel.state = vessel.state;
+            klfVessel.situation = vessel.situation;
 
-            klfVessel.visible = MapView.MapIsEnabled;
-            klfVessel.updatePosition();
-            //klfVessel.updateOrbitProperties();
+            klfVessel.updateRenderProperties();
         }
     }
 }
