@@ -1,0 +1,21 @@
+# Generic ignore patterns
+*~
+*.o
+*.a
+*.moc
+.git
+
+# Logs etc.
+
+# Windows project stuff
+/bin
+/obj
+
+# Windows runtime
+*.exe
+*.ilk
+*.pdb
+*.msi
+
+# Windows clutter
+*.db
