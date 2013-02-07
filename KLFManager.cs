@@ -199,7 +199,7 @@ namespace KerbalLiveFeed
 					int offset = 0;
 
 					//Read the file format version
-					Int32 file_format_version = readIntFromBytes(in_bytes, offset);
+					Int32 file_format_version = KLFCommon.intFromBytes(in_bytes, offset);
 					offset += 4;
 
 					//Make sure the file format versions match
@@ -208,7 +208,7 @@ namespace KerbalLiveFeed
 						while (offset < in_bytes.Length)
 						{
 							//Read the length of the following update
-							Int32 update_length = readIntFromBytes(in_bytes, offset);
+							Int32 update_length = KLFCommon.intFromBytes(in_bytes, offset);
 							offset += 4;
 
 							if (offset + update_length <= in_bytes.Length)
@@ -344,31 +344,14 @@ namespace KerbalLiveFeed
 
 		private void writeIntToStream(KSP.IO.FileStream stream, Int32 val)
 		{
-			byte[] bytes = new byte[4];
-			bytes[0] = (byte)(val & byte.MaxValue);
-			bytes[1] = (byte)((val >> 8) & byte.MaxValue);
-			bytes[2] = (byte)((val >> 16) & byte.MaxValue);
-			bytes[3] = (byte)((val >> 24) & byte.MaxValue);
-
-			stream.Write(bytes, 0, 4);
+			stream.Write(KLFCommon.intToBytes(val), 0, 4);
 		}
 
 		private Int32 readIntFromStream(KSP.IO.FileStream stream)
 		{
 			byte[] bytes = new byte[4];
 			stream.Read(bytes, 0, 4);
-			return readIntFromBytes(bytes);
-		}
-
-		private Int32 readIntFromBytes(byte[] bytes, int offset = 0)
-		{
-			Int32 val = 0;
-			val |= bytes[offset];
-			val |= ((Int32)bytes[offset + 1]) << 8;
-			val |= ((Int32)bytes[offset + 2]) << 16;
-			val |= ((Int32)bytes[offset + 3]) << 24;
-
-			return val;
+			return KLFCommon.intFromBytes(bytes);
 		}
         
 	}

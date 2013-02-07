@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace KLFClient
+namespace KLFServer
 {
-	class Program
+	class ServerMain
 	{
 		static void Main(string[] args)
 		{
