@@ -14,7 +14,7 @@ namespace KerbalLiveFeed
 
         public override void OnStart(StartState state)
         {
-            klfVessel = new KLFVessel("A KLF Vessel", "Me");
+            //klfVessel = new KLFVessel("A KLF Vessel", "Me");
 
             Debug.Log("*** KLF started");
         }
@@ -22,6 +22,7 @@ namespace KerbalLiveFeed
         public override void OnUpdate()
         {
 
+			/*
             Vector3 local_pos = vessel.mainBody.transform.InverseTransformPoint(vessel.GetWorldPos3D());
             Vector3 local_dir = vessel.mainBody.transform.InverseTransformDirection(vessel.transform.up);
             Vector3 local_vel = vessel.mainBody.transform.InverseTransformDirection(vessel.GetObtVelocity());
@@ -36,6 +37,7 @@ namespace KerbalLiveFeed
             klfVessel.situation = vessel.situation;
 
             klfVessel.updateRenderProperties();
+			 */
 
             KLFManager.Instance.updateStep();
         }

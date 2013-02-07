@@ -12,7 +12,7 @@ namespace KerbalLiveFeed
 		private struct VesselEntry
 		{
 			public KLFVessel vessel;
-			public bool updatedFlag;
+			public float lastUpdateTime;
 		}
 
 		//Singleton
@@ -49,6 +49,8 @@ namespace KerbalLiveFeed
 			get;
 		}
 
+		private Queue<KLFVesselUpdate> vesselUpdateQueue;
+
 		//Methods
 
 		private KLFManager()
@@ -58,6 +60,7 @@ namespace KerbalLiveFeed
 			playerName = "Me";
 
 			vessels = new Dictionary<string, VesselEntry>();
+			vesselUpdateQueue = new Queue<KLFVesselUpdate>();
 		}
 
 		public void updateStep()
@@ -67,15 +70,25 @@ namespace KerbalLiveFeed
 
 			lastUpdateTime = UnityEngine.Time.time;
 
+			//Handle all queued vessel updates
+			while (vesselUpdateQueue.Count > 0)
+			{
+				handleVesselUpdate(vesselUpdateQueue.Dequeue());
+			}
+
 			writeVesselsToFile();
 			readUpdatesFromFile();
 
 			//Update the positions of all the vessels
+
 			foreach (KeyValuePair<String, VesselEntry> pair in vessels) {
-				if (pair.Value.vessel != null && pair.Value.vessel.gameObj != null)
+
+				VesselEntry entry = pair.Value;
+
+				if (entry.vessel != null && entry.vessel.gameObj != null)
 				{
-					pair.Value.vessel.updateRenderProperties();
-					pair.Value.vessel.updatePosition();
+					entry.vessel.updateRenderProperties();
+					entry.vessel.updatePosition();
 				}
 			}
 		}
@@ -238,6 +251,52 @@ namespace KerbalLiveFeed
 
 			String vessel_key = sb.ToString();
 
+			KLFVessel vessel = null;
+
+			//Try to find the key in the vessel dictionary
+			VesselEntry entry;
+			if (vessels.TryGetValue(vessel_key, out entry))
+			{
+				vessel = entry.vessel;
+
+				if (vessel == null || vessel.gameObj == null)
+					vessels.Remove(vessel_key);
+				else
+				{
+					//Update the entry's timestamp
+					VesselEntry new_entry = new VesselEntry();
+					new_entry.vessel = entry.vessel;
+					new_entry.lastUpdateTime = UnityEngine.Time.fixedTime;
+
+					vessels[vessel_key] = new_entry;
+				}
+			}
+				
+			if (vessel == null || vessel.gameObj == null) {
+				//Add the vessel to the dictionary
+				vessel = new KLFVessel(vessel_update.vesselName, vessel_update.ownerName);
+				entry = new VesselEntry();
+				entry.vessel = vessel;
+				entry.lastUpdateTime = UnityEngine.Time.fixedTime;
+
+				vessels.Add(vessel_key, entry);
+
+				/*Queue this update for the next update call because updating a vessel on the same step as
+				 * creating it usually causes problems for some reason */
+				vesselUpdateQueue.Enqueue(vessel_update);
+			}
+			else
+				applyVesselUpdate(vessel_update, vessel); //Apply the vessel update to the existing vessel
+
+			Debug.Log("*** Updated handled");
+				
+		}
+
+		private void applyVesselUpdate(KLFVesselUpdate vessel_update, KLFVessel vessel)
+		{
+
+			Debug.Log("*** Handling vessel update!");
+
 			//Find the CelestialBody that matches the one in the update
 			CelestialBody update_body = null;
 
@@ -250,7 +309,7 @@ namespace KerbalLiveFeed
 				}
 			}
 
-			if (update_body)
+			if (update_body != null)
 			{
 
 				//Convert float arrays to Vector3s
@@ -258,35 +317,13 @@ namespace KerbalLiveFeed
 				Vector3 dir = new Vector3(vessel_update.localDirection[0], vessel_update.localDirection[1], vessel_update.localDirection[2]);
 				Vector3 vel = new Vector3(vessel_update.localVelocity[0], vessel_update.localVelocity[1], vessel_update.localVelocity[2]);
 
-				KLFVessel vessel = null;
-
-				//Try to find the key in the vessel dictionary
-				if (vessels.ContainsKey(vessel_key))
-				{
-					vessel = vessels[vessel_key].vessel;
-					if (vessel == null || vessel.gameObj == null)
-						vessels.Remove(vessel_key);
-				}
-				
-				if (vessel == null || vessel.gameObj == null) {
-					//Add the vessel to the dictionary
-					vessel = new KLFVessel(vessel_update.vesselName, vessel_update.ownerName);
-					VesselEntry entry = new VesselEntry();
-					entry.vessel = vessel;
-					vessels.Add(vessel_key, entry);
-				}
-
-				//Update the vessel with the update data
 				vessel.setOrbitalData(update_body, pos, vel, dir);
+
 				vessel.situation = vessel_update.situation;
 				vessel.timeScale = vessel_update.timeScale;
 
 				Debug.Log("*** Vessel sit: " + vessel.situation.ToString());
 
-			}
-			else
-			{
-				Debug.Log("*** Invalid KLF Body: " + vessel_update.bodyName);
 			}
 		}
 

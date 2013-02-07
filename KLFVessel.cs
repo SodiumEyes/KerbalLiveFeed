@@ -57,7 +57,7 @@ namespace KerbalLiveFeed
         {
             get
             {
-				if (mainBody)
+				if (mainBody != null)
 				{
 					if (situation == Vessel.Situations.LANDED || situation == Vessel.Situations.SPLASHED
 						|| situation == Vessel.Situations.PRELAUNCH)
@@ -68,7 +68,7 @@ namespace KerbalLiveFeed
 					else
 					{
 						//Calculate vessel's position at the current (real-world) time
-						double time = referenceUT + (UnityEngine.Time.fixedTime - referenceFixedTime)*timeScale;
+						double time = adjustedUT;
 
 						Vector3 body_pos_at_ref = mainBody.orbit.getTruePositionAtUT(time);
 						Vector3 body_pos_now = mainBody.orbit.getTruePositionAtUT(Planetarium.GetUniversalTime());
@@ -153,6 +153,14 @@ namespace KerbalLiveFeed
 			get;
 		}
 
+		public double adjustedUT
+		{
+			get
+			{
+				return referenceUT + (UnityEngine.Time.fixedTime - referenceFixedTime) * timeScale;
+			}
+		}
+
         //Methods
 
         public KLFVessel(String vessel_name, String owner_name)
@@ -203,7 +211,7 @@ namespace KerbalLiveFeed
 
             mainBody = body;
 
-            if (mainBody)
+			if (mainBody != null)
             {
 
                 localPosition = local_pos;
@@ -246,14 +254,14 @@ namespace KerbalLiveFeed
             else
                 line.SetColors(Color.magenta, Color.magenta);
 
-			orbitRenderer.orbit.UpdateFromUT(Planetarium.GetUniversalTime());
+			orbitRenderer.orbit.UpdateFromUT(adjustedUT);
 
         }
 
         public void updateOrbitProperties()
         {
 
-            if (mainBody)
+			if (mainBody != null)
             {
 
                 Vector3 orbit_pos = translationFromBody;
