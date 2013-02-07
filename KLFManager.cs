@@ -31,7 +31,7 @@ namespace KerbalLiveFeed
 
 		//Properties
 
-		public const Int32 FILE_FORMAT_VERSION = 0;
+		public const Int32 FILE_FORMAT_VERSION = 1;
 		public const String OUT_FILENAME = "out.txt";
 		public const String IN_FILENAME = "in.txt";
 
@@ -142,6 +142,7 @@ namespace KerbalLiveFeed
 			}
 
 			update.situation = vessel.situation;
+			update.timeScale = Planetarium.TimeScale;
 			update.bodyName = vessel.mainBody.bodyName;
 
 			//Serialize the update
@@ -200,47 +201,14 @@ namespace KerbalLiveFeed
 								break;
 						}
 					}
+					else
+					{
+						Debug.Log("*** KLF file format version mismatch:" + file_format_version + " expected:" + FILE_FORMAT_VERSION);
+					}
 
 					//Delete the update file now that it's been read
 					KSP.IO.File.Delete<KLFManager>(IN_FILENAME);
 
-					/*
-					KSP.IO.FileStream in_stream = KSP.IO.File.Open<KLFManager>(IN_FILENAME, KSP.IO.FileMode.Create);
-
-					Debug.Log("*** 1!");
-
-					in_stream.Lock(0, long.MaxValue);
-
-					//Read the file format version
-					Int32 file_format_version = readIntFromStream(in_stream);
-
-					//Make sure the file format versions match
-					if (file_format_version == FILE_FORMAT_VERSION)
-					{
-						while (in_stream.CanRead)
-						{
-							//Read the length of the following update
-							Int32 update_length = readIntFromStream(in_stream);
-
-							//Read the update
-							byte[] update_bytes = new byte[update_length];
-							in_stream.Read(update_bytes, 0, update_length);
-
-							//De-serialize and handle the update
-							handleUpdate(KSP.IO.IOUtils.DeserializeFromBinary(update_bytes));
-						}
-					}
-					else
-					{
-						Debug.Log("*** File format version mismatch:" + file_format_version + " expected:" + FILE_FORMAT_VERSION);
-					}
-
-					in_stream.Unlock(0, long.MaxValue);
-
-					in_stream.Dispose();
-
-					Debug.Log("*** Done reading updates from file!");
-					 * */
 				}
 				catch (KSP.IO.IOException)
 				{
@@ -308,11 +276,12 @@ namespace KerbalLiveFeed
 					vessels.Add(vessel_key, entry);
 				}
 
-				Debug.Log("*** Update body "+update_body.bodyName);
-
 				//Update the vessel with the update data
 				vessel.setOrbitalData(update_body, pos, vel, dir);
 				vessel.situation = vessel_update.situation;
+				vessel.timeScale = vessel_update.timeScale;
+
+				Debug.Log("*** Vessel sit: " + vessel.situation.ToString());
 
 			}
 			else

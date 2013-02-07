@@ -17,6 +17,7 @@ namespace KerbalLiveFeed
         public float[] localVelocity;
 
         public Vessel.Situations situation;
+		public double timeScale;
 
         public String bodyName;
 
@@ -26,6 +27,7 @@ namespace KerbalLiveFeed
             localDirection = new float[3];
             localVelocity = new float[3];
             situation = Vessel.Situations.PRELAUNCH;
+			timeScale = 1.0;
         }
     }
 }

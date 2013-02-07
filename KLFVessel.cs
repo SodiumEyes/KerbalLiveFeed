@@ -59,13 +59,22 @@ namespace KerbalLiveFeed
             {
 				if (mainBody)
 				{
-					double time = referenceUT + (UnityEngine.Time.fixedTime-referenceFixedTime);
+					if (situation == Vessel.Situations.LANDED || situation == Vessel.Situations.SPLASHED
+						|| situation == Vessel.Situations.PRELAUNCH)
+					{
+						//Vessel is fixed in relation to body
+						return mainBody.transform.TransformPoint(localPosition);
+					}
+					else
+					{
+						//Calculate vessel's position at the current (real-world) time
+						double time = referenceUT + (UnityEngine.Time.fixedTime - referenceFixedTime)*timeScale;
 
-					Vector3 body_pos_at_ref = mainBody.orbit.getTruePositionAtUT(time);
-					Vector3 body_pos_now = mainBody.orbit.getTruePositionAtUT(Planetarium.GetUniversalTime());
+						Vector3 body_pos_at_ref = mainBody.orbit.getTruePositionAtUT(time);
+						Vector3 body_pos_now = mainBody.orbit.getTruePositionAtUT(Planetarium.GetUniversalTime());
 
-					return body_pos_now+(orbitRenderer.orbit.getTruePositionAtUT(time)-body_pos_at_ref);
-					//return mainBody.transform.position + translationFromBody;
+						return body_pos_now + (orbitRenderer.orbit.getTruePositionAtUT(time) - body_pos_at_ref);
+					}
 				}
 				else
 					return localPosition;
@@ -83,6 +92,12 @@ namespace KerbalLiveFeed
             set;
             get;
         }
+
+		public double timeScale
+		{
+			set;
+			get;
+		}
 
         public CelestialBody mainBody
         {
@@ -180,6 +195,8 @@ namespace KerbalLiveFeed
             worldVelocity = Vector3.zero;
 
             situation = Vessel.Situations.ORBITING;
+
+			timeScale = 1;
         }
 
         public void setOrbitalData(CelestialBody body, Vector3 local_pos, Vector3 local_vel, Vector3 local_dir) {
@@ -262,6 +279,11 @@ namespace KerbalLiveFeed
         public void updateRenderProperties()
         {
             line.enabled = MapView.MapIsEnabled;
+
+			if (shouldShowOrbit)
+				orbitRenderer.drawMode = OrbitRenderer.DrawMode.REDRAW_AND_RECALCULATE;
+			else
+				orbitRenderer.drawMode = OrbitRenderer.DrawMode.OFF;
         }
 
     }
