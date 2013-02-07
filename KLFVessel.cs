@@ -207,6 +207,12 @@ namespace KerbalLiveFeed
 			timeScale = 1;
         }
 
+		~KLFVessel()
+		{
+			if (gameObj != null)
+				UnityEngine.GameObject.Destroy(gameObj);
+		}
+
         public void setOrbitalData(CelestialBody body, Vector3 local_pos, Vector3 local_vel, Vector3 local_dir) {
 
             mainBody = body;

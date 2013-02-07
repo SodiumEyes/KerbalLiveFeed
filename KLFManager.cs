@@ -35,6 +35,8 @@ namespace KerbalLiveFeed
 		public const String OUT_FILENAME = "out.txt";
 		public const String IN_FILENAME = "in.txt";
 
+		public const float TIMEOUT_DELAY = 10.0f;
+
 		public String playerName
 		{
 			private set;
@@ -81,15 +83,28 @@ namespace KerbalLiveFeed
 
 			//Update the positions of all the vessels
 
+			List<String> delete_list = new List<String>();
+
 			foreach (KeyValuePair<String, VesselEntry> pair in vessels) {
 
 				VesselEntry entry = pair.Value;
 
-				if (entry.vessel != null && entry.vessel.gameObj != null)
+				if ((UnityEngine.Time.fixedTime-entry.lastUpdateTime) <= TIMEOUT_DELAY
+					&& entry.vessel != null && entry.vessel.gameObj != null)
 				{
 					entry.vessel.updateRenderProperties();
 					entry.vessel.updatePosition();
 				}
+				else
+				{
+					delete_list.Add(pair.Key); //Mark the vessel for deletion
+				}
+			}
+
+			//Delete what needs deletin'
+			foreach (String key in delete_list)
+			{
+				vessels.Remove(key);
 			}
 		}
 
