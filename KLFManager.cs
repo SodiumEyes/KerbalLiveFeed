@@ -34,7 +34,7 @@ namespace KerbalLiveFeed
 		public const String OUT_FILENAME = "out.txt";
 		public const String IN_FILENAME = "in.txt";
 
-		public const float TIMEOUT_DELAY = 10.0f;
+		public const float TIMEOUT_DELAY = 3.0f;
 
 		public String playerName
 		{
@@ -97,6 +97,9 @@ namespace KerbalLiveFeed
 				else
 				{
 					delete_list.Add(pair.Key); //Mark the vessel for deletion
+
+					if (entry.vessel != null && entry.vessel.gameObj != null)
+						GameObject.Destroy(entry.vessel.gameObj);
 				}
 			}
 

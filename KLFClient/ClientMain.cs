@@ -7,6 +7,8 @@ using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 
+using System.IO;
+
 namespace KLFClient
 {
 	class ClientMain
@@ -15,11 +17,20 @@ namespace KLFClient
 		public static String username = "username";
 		public static IPAddress ip = IPAddress.Loopback;
 		public static int port = 2075;
+		public static int updateInterval = 500;
+
+		public const String OUT_FILENAME = "PluginData/kerballivefeed/out.txt";
+		public const String IN_FILENAME = "PluginData/kerballivefeed/in.txt";
 
 		public static bool endSession;
-		public static TcpClient tcp_client;
+		public static TcpClient tcpClient;
 
-		public static int RECEIVE_TIMEOUT = 3000;
+		public static Queue<byte[]> pluginUpdateInQueue;
+
+		public static Mutex tcpSendMutex;
+		public static Mutex pluginUpdateInMutex;
+
+		public static Thread pluginUpdateThread;
 
 		static void Main(string[] args)
 		{
@@ -97,18 +108,27 @@ namespace KLFClient
 
 		static void connectionLoop()
 		{
-			tcp_client = new TcpClient();
+			tcpClient = new TcpClient();
 			IPEndPoint endpoint = new IPEndPoint(ip, port);
 
 			Console.WriteLine("Connecting to server...");
 
 			try
 			{
-				tcp_client.Connect(endpoint);
-				tcp_client.ReceiveTimeout = RECEIVE_TIMEOUT;
+				tcpClient.Connect(endpoint);
 
-				if (tcp_client.Connected)
+				if (tcpClient.Connected)
 				{
+
+					pluginUpdateInQueue = new Queue<byte[]>();
+
+					tcpSendMutex = new Mutex();
+					pluginUpdateInMutex = new Mutex();
+
+					//Create a thread to handle plugin updates
+					pluginUpdateThread = new Thread(new ThreadStart(handlePluginUpdates));
+					pluginUpdateThread.Start();
+
 					endSession = false;
 
 					Console.WriteLine("Connected to server!");
@@ -119,16 +139,16 @@ namespace KLFClient
 
 					bool stream_ended = false;
 
-					while (!stream_ended && !endSession && tcp_client.Connected)
+					while (!stream_ended && !endSession && tcpClient.Connected)
 					{
 
 						try
 						{
-							if (tcp_client.GetStream().DataAvailable)
+							if (tcpClient.GetStream().DataAvailable)
 							{
 
 								//Read the message header
-								int num_read = tcp_client.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
+								int num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
 								header_bytes_read += num_read;
 
 								if (header_bytes_read == KLFCommon.MSG_HEADER_LENGTH)
@@ -147,7 +167,7 @@ namespace KLFClient
 
 										while (data_bytes_read < msg_length)
 										{
-											num_read = tcp_client.GetStream().Read(message_data, data_bytes_read, msg_length - data_bytes_read);
+											num_read = tcpClient.GetStream().Read(message_data, data_bytes_read, msg_length - data_bytes_read);
 											if (num_read > 0)
 												data_bytes_read += num_read;
 
@@ -168,8 +188,11 @@ namespace KLFClient
 						}
 					}
 
+					pluginUpdateThread.Abort();
+
 					//client.GetStream().Write(
 					Console.WriteLine("Lost connection with server.");
+					tcpClient.Close();
 					return;
 				}
 
@@ -185,12 +208,6 @@ namespace KLFClient
 
 		static void handleMessage(KLFCommon.ServerMessageID id, byte[] data)
 		{
-			/*
-			if (data == null)
-				Console.WriteLine("Received message id: " + id);
-			else
-				Console.WriteLine("Received message id: " + id + " data length: " + data.Length);
-			 */
 
 			ASCIIEncoding encoder = new ASCIIEncoding();
 
@@ -211,7 +228,9 @@ namespace KLFClient
 					}
 					else
 					{
+						tcpSendMutex.WaitOne();
 						sendHandshakeMessage(); //Reply to the handshake
+						tcpSendMutex.ReleaseMutex();
 					}
 
 					break;
@@ -227,8 +246,108 @@ namespace KLFClient
 				case KLFCommon.ServerMessageID.TEXT_MESSAGE:
 
 					String message = encoder.GetString(data, 0, data.Length);
-					Console.Write("[Server] " + message);
+					Console.WriteLine("[Server] " + message);
 					break;
+
+				case KLFCommon.ServerMessageID.PLUGIN_UPDATE:
+
+					//Add the update the queue
+					pluginUpdateInMutex.WaitOne();
+
+					pluginUpdateInQueue.Enqueue(data);
+
+					pluginUpdateInMutex.ReleaseMutex();
+
+					break;
+			}
+		}
+
+		static void handlePluginUpdates()
+		{
+			while (true)
+			{
+				//Send outgoing plugin updates to server
+				if (File.Exists(OUT_FILENAME))
+				{
+					try
+					{
+						FileStream out_stream = File.OpenRead(OUT_FILENAME);
+						out_stream.Lock(0, long.MaxValue);
+
+						//Read the update
+						byte[] update_bytes = new byte[out_stream.Length];
+						out_stream.Read(update_bytes, 0, (int)out_stream.Length);
+
+						out_stream.Unlock(0, long.MaxValue);
+
+						out_stream.Close();
+						File.Delete(OUT_FILENAME); //Delete the file now that it's been read
+
+						//Make sure the file format version is correct
+						Int32 file_format_version = KLFCommon.intFromBytes(update_bytes, 0);
+						if (file_format_version == KLFCommon.FILE_FORMAT_VERSION)
+						{
+							//Send the update to the server
+							tcpSendMutex.WaitOne();
+
+							//Remove the file format version bytes before sending
+							sendMessageHeader(KLFCommon.ClientMessageID.PLUGIN_UPDATE, update_bytes.Length - 4);
+							tcpClient.GetStream().Write(update_bytes, 4, update_bytes.Length - 4);
+							tcpClient.GetStream().Flush();
+
+							tcpSendMutex.ReleaseMutex();
+						}
+						else
+						{
+							//Don't send the update if the file format version is wrong
+							Console.WriteLine("Error: Plugin version is incompatible with client version!");
+						}
+
+					}
+					catch (Exception)
+					{
+					}
+				}
+
+				//Pass queued updates to plugin
+				pluginUpdateInMutex.WaitOne();
+
+				if (!File.Exists(IN_FILENAME) && pluginUpdateInQueue.Count > 0)
+				{
+					try
+					{
+						FileStream in_stream = File.Create(IN_FILENAME);
+
+						//Write the file format version
+						in_stream.Write(KLFCommon.intToBytes(KLFCommon.FILE_FORMAT_VERSION), 0, 4);
+
+						//Write the updates to the file
+						while (pluginUpdateInQueue.Count > 0)
+						{
+							byte[] update = pluginUpdateInQueue.Dequeue();
+							in_stream.Write(update, 0, update.Length);
+						}
+
+						in_stream.Close();
+
+					}
+					catch (Exception)
+					{
+					}
+
+				}
+				else
+				{
+					//Don't let the update queue get insanely large
+					while (pluginUpdateInQueue.Count > 512)
+					{
+						pluginUpdateInQueue.Dequeue();
+					}
+				}
+
+				pluginUpdateInMutex.ReleaseMutex();
+
+				Thread.Sleep(updateInterval);
 			}
 		}
 
@@ -236,8 +355,8 @@ namespace KLFClient
 
 		private static void sendMessageHeader(KLFCommon.ClientMessageID id, int msg_length)
 		{
-			tcp_client.GetStream().Write(KLFCommon.intToBytes((int)id), 0, 4);
-			tcp_client.GetStream().Write(KLFCommon.intToBytes(msg_length), 0, 4);
+			tcpClient.GetStream().Write(KLFCommon.intToBytes((int)id), 0, 4);
+			tcpClient.GetStream().Write(KLFCommon.intToBytes(msg_length), 0, 4);
 		}
 
 		private static void sendHandshakeMessage()
@@ -249,8 +368,8 @@ namespace KLFClient
 
 			sendMessageHeader(KLFCommon.ClientMessageID.HANDSHAKE, username_bytes.Length);
 
-			tcp_client.GetStream().Write(username_bytes, 0, username_bytes.Length);
-			tcp_client.GetStream().Flush();
+			tcpClient.GetStream().Write(username_bytes, 0, username_bytes.Length);
+			tcpClient.GetStream().Flush();
 
 		}
 

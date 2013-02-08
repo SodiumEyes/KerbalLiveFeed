@@ -33,7 +33,7 @@ namespace KLFServer
 
 			listenThread = new Thread(new ThreadStart(listenForClients));
 
-			tcpListener = new TcpListener(IPAddress.Loopback, port);
+			tcpListener = new TcpListener(IPAddress.Any, port);
 			listenThread.Start();
 
 			while (true)
@@ -140,6 +140,24 @@ namespace KLFServer
 					clients[client_index].mutex.ReleaseMutex();
 
 					Console.WriteLine(username + " has joined the server.");
+
+					break;
+
+				case KLFCommon.ClientMessageID.PLUGIN_UPDATE:
+
+					//Send the update to all other clients
+					for (int i = 0; i < clients.Length; i++)
+					{
+						if (clients[i].tcpClient != null && clients[i].tcpClient.Connected) {
+
+							clients[i].mutex.WaitOne();
+
+							sendMessageHeader(clients[i].tcpClient, KLFCommon.ServerMessageID.PLUGIN_UPDATE, data.Length);
+							clients[i].tcpClient.GetStream().Write(data, 0, data.Length);
+
+							clients[i].mutex.ReleaseMutex();
+						}
+					}
 
 					break;
 			}

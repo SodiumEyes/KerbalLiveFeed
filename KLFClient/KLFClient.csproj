@@ -44,13 +44,8 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ClientMain.cs" />
+    <Compile Include="KLFCommon.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\KerbalLiveFeed.csproj">
-      <Project>{D7FB689F-A23A-4FC9-9098-CCC20B9B9E6D}</Project>
-      <Name>KerbalLiveFeed</Name>
-    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

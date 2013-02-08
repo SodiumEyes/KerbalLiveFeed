@@ -209,8 +209,6 @@ namespace KerbalLiveFeed
 
 		~KLFVessel()
 		{
-			if (gameObj != null)
-				UnityEngine.GameObject.Destroy(gameObj);
 		}
 
         public void setOrbitalData(CelestialBody body, Vector3 local_pos, Vector3 local_vel, Vector3 local_dir) {
@@ -292,9 +290,9 @@ namespace KerbalLiveFeed
 
         public void updateRenderProperties()
         {
-            line.enabled = MapView.MapIsEnabled;
+            line.enabled = gameObj != null && MapView.MapIsEnabled;
 
-			if (shouldShowOrbit)
+			if (gameObj != null && shouldShowOrbit)
 				orbitRenderer.drawMode = OrbitRenderer.DrawMode.REDRAW_AND_RECALCULATE;
 			else
 				orbitRenderer.drawMode = OrbitRenderer.DrawMode.OFF;
