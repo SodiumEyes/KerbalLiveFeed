@@ -3,8 +3,13 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-class KLFCommon
+public class KLFCommon
 {
+
+	public const String PROGRAM_VERSION = "0.0.1";
+	public const Int32 FILE_FORMAT_VERSION = 1;
+	public const Int32 NET_PROTOCOL_VERSION = 0;
+	public const int MSG_HEADER_LENGTH = 8;
 
 	public static byte[] intToBytes(Int32 val)
 	{
@@ -26,6 +31,18 @@ class KLFCommon
 		val |= ((Int32)bytes[offset + 3]) << 24;
 
 		return val;
+	}
+
+	public enum ClientMessageID
+	{
+		HANDSHAKE /*Username*/
+	}
+
+	public enum ServerMessageID
+	{
+		HANDSHAKE /*Protocol Version : Protocol String*/,
+		HANDSHAKE_REFUSAL /*Refusal message*/,
+		TEXT_MESSAGE /*Message text*/,
 	}
 }
 

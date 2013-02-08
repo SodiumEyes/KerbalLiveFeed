@@ -31,7 +31,6 @@ namespace KerbalLiveFeed
 
 		//Properties
 
-		public const Int32 FILE_FORMAT_VERSION = 1;
 		public const String OUT_FILENAME = "out.txt";
 		public const String IN_FILENAME = "in.txt";
 
@@ -123,7 +122,7 @@ namespace KerbalLiveFeed
 					out_stream.Lock(0, long.MaxValue); //Lock that file so the client won't read it until we're done
 
 					//Write the file format version
-					writeIntToStream(out_stream, FILE_FORMAT_VERSION);
+					writeIntToStream(out_stream, KLFCommon.FILE_FORMAT_VERSION);
 
 					//Write the active vessel to the file
 					writeVesselUpdateToFile(out_stream, FlightGlobals.ActiveVessel);
@@ -203,7 +202,7 @@ namespace KerbalLiveFeed
 					offset += 4;
 
 					//Make sure the file format versions match
-					if (file_format_version == FILE_FORMAT_VERSION)
+					if (file_format_version == KLFCommon.FILE_FORMAT_VERSION)
 					{
 						while (offset < in_bytes.Length)
 						{
@@ -231,7 +230,7 @@ namespace KerbalLiveFeed
 					}
 					else
 					{
-						Debug.Log("*** KLF file format version mismatch:" + file_format_version + " expected:" + FILE_FORMAT_VERSION);
+						Debug.Log("*** KLF file format version mismatch:" + file_format_version + " expected:" + KLFCommon.FILE_FORMAT_VERSION);
 					}
 
 					//Delete the update file now that it's been read

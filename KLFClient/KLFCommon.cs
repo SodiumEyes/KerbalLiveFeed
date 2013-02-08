@@ -6,6 +6,10 @@ using System.Text;
 class KLFCommon
 {
 
+	public const String PROGRAM_VERSION = "0.0.1";
+	public const Int32 FILE_FORMAT_VERSION = 1;
+	public const Int32 NET_PROTOCOL_VERSION = 0;
+
 	public static byte[] intToBytes(Int32 val)
 	{
 		byte[] bytes = new byte[4];
