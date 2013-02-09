@@ -6,11 +6,18 @@ using System.Text;
 using System.Net.Sockets;
 using System.Threading;
 using System.Net;
+using System.IO;
 
 namespace KLFServer
 {
 	class Server
 	{
+
+		public const String SERVER_CONFIG_FILENAME = "KLFServerConfig.txt";
+		public const String PORT_LABEL = "port";
+		public const String MAX_CLIENTS_LABEL = "maxClients";
+		public const String JOIN_MESSAGE_LABEL = "joinMessage";
+
 		public int port = 2075;
 		public int maxClients = 32;
 
@@ -18,6 +25,8 @@ namespace KLFServer
 		public TcpListener tcpListener;
 
 		public ServerClient[] clients;
+
+		public String joinMessage = String.Empty;
 
 		public void hostingLoop()
 		{
@@ -82,7 +91,10 @@ namespace KLFServer
 				{
 					Console.WriteLine("Accepted client. Handshaking...");
 					sendHandshakeMessage(client);
-					sendTextMessage(client, "What up, Al?!");
+
+					//Send the join message to the client
+					if (joinMessage.Length > 0)
+						sendTextMessage(client, joinMessage);
 				}
 				else
 				{
@@ -148,7 +160,7 @@ namespace KLFServer
 					//Send the update to all other clients
 					for (int i = 0; i < clients.Length; i++)
 					{
-						if (clients[i].tcpClient != null && clients[i].tcpClient.Connected) {
+						if (i != client_index && clients[i].tcpClient != null && clients[i].tcpClient.Connected) {
 
 							clients[i].mutex.WaitOne();
 
@@ -212,6 +224,73 @@ namespace KLFServer
 			client.GetStream().Write(message_bytes, 0, message_bytes.Length);
 
 			client.GetStream().Flush();
+		}
+
+		//Config
+
+		public void readConfigFile()
+		{
+			try
+			{
+				TextReader reader = File.OpenText(SERVER_CONFIG_FILENAME);
+
+				String line = reader.ReadLine();
+
+				while (line != null)
+				{
+					String label = line; //Store the last line read as the label
+					line = reader.ReadLine(); //Read the value from the next line
+
+					if (line != null)
+					{
+						//Update the value with the given label
+						if (label == PORT_LABEL)
+						{
+							int new_port;
+							if (int.TryParse(line, out new_port) && new_port >= IPEndPoint.MinPort && new_port <= IPEndPoint.MaxPort)
+								port = new_port;
+						}
+						else if (label == MAX_CLIENTS_LABEL)
+						{
+							int new_max;
+							if (int.TryParse(line, out new_max) && new_max > 0)
+								maxClients = new_max;
+						}
+						else if (label == JOIN_MESSAGE_LABEL)
+						{
+							joinMessage = line;
+						}
+
+					}
+
+					line = reader.ReadLine();
+				}
+
+				reader.Close();
+			}
+			catch (FileNotFoundException)
+			{
+			}
+
+		}
+
+		public void writeConfigFile()
+		{
+			TextWriter writer = File.CreateText(SERVER_CONFIG_FILENAME);
+
+			//port
+			writer.WriteLine(PORT_LABEL);
+			writer.WriteLine(port);
+
+			//max clients
+			writer.WriteLine(MAX_CLIENTS_LABEL);
+			writer.WriteLine(maxClients);
+
+			//join message
+			writer.WriteLine(JOIN_MESSAGE_LABEL);
+			writer.WriteLine(joinMessage);
+
+			writer.Close();
 		}
 	}
 }

@@ -33,6 +33,7 @@ namespace KerbalLiveFeed
 
 		public const String OUT_FILENAME = "out.txt";
 		public const String IN_FILENAME = "in.txt";
+		public const String CLIENT_DATA_FILENAME = "clientdata.txt";
 
 		public const float INACTIVE_VESSEL_RANGE = 400000000.0f;
 		public const int MAX_INACTIVE_VESSELS = 4;
@@ -61,7 +62,7 @@ namespace KerbalLiveFeed
 		{
 			lastUpdateTime = 0.0f;
 
-			playerName = "Me";
+			playerName = "player";
 
 			vessels = new Dictionary<string, VesselEntry>();
 			vesselUpdateQueue = new Queue<KLFVesselUpdate>();
@@ -121,7 +122,20 @@ namespace KerbalLiveFeed
 
 				try
 				{
-					Debug.Log("*** Writing vessels to file!");
+
+					if (KSP.IO.File.Exists<KLFManager>(CLIENT_DATA_FILENAME)) {
+						//Read the username from the client data file
+						byte[] bytes = KSP.IO.File.ReadAllBytes<KLFManager>(CLIENT_DATA_FILENAME);
+
+						ASCIIEncoding encoder = new ASCIIEncoding();
+						playerName = encoder.GetString(bytes, 0, bytes.Length);
+
+						Debug.Log("Username set to " + playerName);
+
+						KSP.IO.File.Delete<KLFManager>(CLIENT_DATA_FILENAME); //Delete the file so we don't keep reading it
+					}
+					
+					//Debug.Log("*** Writing vessels to file!");
 
 					KSP.IO.FileStream out_stream = KSP.IO.File.Create<KLFManager>(OUT_FILENAME);
 
@@ -163,12 +177,13 @@ namespace KerbalLiveFeed
 
 					out_stream.Dispose();
 
-					Debug.Log("*** Done writing vessels");
+					//Debug.Log("*** Done writing vessels");
 
 				}
-				catch (KSP.IO.IOException)
+				catch (KSP.IO.IOException e)
 				{
 					Debug.Log("*** IO Exception?!");
+					Debug.Log(e);
 				}
 
 			}
@@ -227,12 +242,12 @@ namespace KerbalLiveFeed
 			{
 				try
 				{
-					Debug.Log("*** Reading updates from file!");
+					//Debug.Log("*** Reading updates from file!");
 
 					//I would have used a FileStream here, but KSP.IO.File.Open is broken?
 					byte[] in_bytes = KSP.IO.File.ReadAllBytes<KLFManager>(IN_FILENAME);
 
-					Debug.Log("*** Read "+in_bytes.Length+" from file!");
+					//Debug.Log("*** Read "+in_bytes.Length+" from file!");
 
 					int offset = 0;
 
@@ -276,9 +291,10 @@ namespace KerbalLiveFeed
 					KSP.IO.File.Delete<KLFManager>(IN_FILENAME);
 
 				}
-				catch (KSP.IO.IOException)
+				catch (KSP.IO.IOException e)
 				{
 					Debug.Log("*** IO Exception?!");
+					Debug.Log(e);
 				}
 			}
 		}
@@ -294,7 +310,7 @@ namespace KerbalLiveFeed
 		private void handleVesselUpdate(KLFVesselUpdate vessel_update)
 		{
 
-			Debug.Log("*** Handling update!");
+			//Debug.Log("*** Handling update!");
 
 			//Build the key for the vessel
 			System.Text.StringBuilder sb = new System.Text.StringBuilder();
@@ -340,25 +356,33 @@ namespace KerbalLiveFeed
 			else
 				applyVesselUpdate(vessel_update, vessel); //Apply the vessel update to the existing vessel
 
-			Debug.Log("*** Updated handled");
+			//Debug.Log("*** Updated handled");
 				
 		}
 
 		private void applyVesselUpdate(KLFVesselUpdate vessel_update, KLFVessel vessel)
 		{
 
-			Debug.Log("*** Handling vessel update!");
+			//Debug.Log("*** Handling vessel update!");
 
 			//Find the CelestialBody that matches the one in the update
 			CelestialBody update_body = null;
 
-			foreach (CelestialBody body in FlightGlobals.Bodies)
+			if (vessel.mainBody != null && vessel.mainBody.bodyName == vessel_update.bodyName)
+				update_body = vessel.mainBody; //Vessel already has the correct body
+			else
 			{
-				if (body.bodyName == vessel_update.bodyName)
+
+				//Find the celestial body in the list of bodies
+				foreach (CelestialBody body in FlightGlobals.Bodies)
 				{
-					update_body = body;
-					break;
+					if (body.bodyName == vessel_update.bodyName)
+					{
+						update_body = body;
+						break;
+					}
 				}
+
 			}
 
 			if (update_body != null)
@@ -369,13 +393,13 @@ namespace KerbalLiveFeed
 				Vector3 dir = new Vector3(vessel_update.localDirection[0], vessel_update.localDirection[1], vessel_update.localDirection[2]);
 				Vector3 vel = new Vector3(vessel_update.localVelocity[0], vessel_update.localVelocity[1], vessel_update.localVelocity[2]);
 
+				vessel.vesselName = vessel_update.vesselName;
+
 				vessel.setOrbitalData(update_body, pos, vel, dir);
 
 				vessel.situation = vessel_update.situation;
 				vessel.state = vessel_update.state;
 				vessel.timeScale = vessel_update.timeScale;
-
-				Debug.Log("*** Vessel state: " + vessel.state);
 
 			}
 		}

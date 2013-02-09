@@ -13,6 +13,10 @@ namespace KLFClient
 {
 	class ClientMain
 	{
+
+		public const String USERNAME_LABEL = "username";
+		public const String IP_LABEL = "ip";
+		public const String PORT_LABEL = "port";
 	
 		public static String username = "username";
 		public static IPAddress ip = IPAddress.Loopback;
@@ -21,6 +25,8 @@ namespace KLFClient
 
 		public const String OUT_FILENAME = "PluginData/kerballivefeed/out.txt";
 		public const String IN_FILENAME = "PluginData/kerballivefeed/in.txt";
+		public const String CLIENT_DATA_FILENAME = "PluginData/kerballivefeed/clientdata.txt";
+		public const String CLIENT_CONFIG_FILENAME = "KLFClientConfig.txt";
 
 		public static bool endSession;
 		public static TcpClient tcpClient;
@@ -34,10 +40,12 @@ namespace KLFClient
 
 		static void Main(string[] args)
 		{
-
 			Console.Title = "KLF Client " + KLFCommon.PROGRAM_VERSION;
 			Console.WriteLine("KLF Client version " + KLFCommon.PROGRAM_VERSION);
 			Console.WriteLine("Created by Alfred Lam");
+			Console.WriteLine();
+
+			readConfigFile();
 
 			while (true)
 			{
@@ -77,6 +85,7 @@ namespace KLFClient
 				{
 					Console.Write("Enter your new username: ");
 					username = Console.ReadLine();
+					writeConfigFile();
 				}
 				else if (in_string == "ip")
 				{
@@ -84,7 +93,10 @@ namespace KLFClient
 
 					IPAddress new_ip;
 					if (IPAddress.TryParse(Console.ReadLine(), out new_ip))
+					{
 						ip = new_ip;
+						writeConfigFile();
+					}
 					else
 						Console.WriteLine("Invalid IP Address");
 				}
@@ -93,7 +105,10 @@ namespace KLFClient
 
 					int new_port;
 					if (int.TryParse(Console.ReadLine(), out new_port) && new_port >= IPEndPoint.MinPort && new_port <= IPEndPoint.MaxPort)
+					{
 						port = new_port;
+						writeConfigFile();
+					}
 					else
 						Console.WriteLine("Invalid port");
 				}
@@ -129,58 +144,72 @@ namespace KLFClient
 					pluginUpdateThread = new Thread(new ThreadStart(handlePluginUpdates));
 					pluginUpdateThread.Start();
 
+					//Create a file to pass the username to the plugin
+					FileStream client_data_stream = File.Open(CLIENT_DATA_FILENAME, FileMode.OpenOrCreate);
+
+					ASCIIEncoding encoder = new ASCIIEncoding();
+					byte[] username_bytes = encoder.GetBytes(username);
+					client_data_stream.Write(username_bytes, 0, username_bytes.Length);
+					client_data_stream.Close();
+
 					endSession = false;
 
 					Console.WriteLine("Connected to server!");
 
 					byte[] message_header = new byte[KLFCommon.MSG_HEADER_LENGTH];
-
 					int header_bytes_read = 0;
-
 					bool stream_ended = false;
 
+					//Start connection loop
 					while (!stream_ended && !endSession && tcpClient.Connected)
 					{
 
 						try
 						{
-							if (tcpClient.GetStream().DataAvailable)
+
+							//Read the message header
+							int num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
+							header_bytes_read += num_read;
+
+							if (header_bytes_read == KLFCommon.MSG_HEADER_LENGTH)
 							{
+								KLFCommon.ServerMessageID id = (KLFCommon.ServerMessageID)KLFCommon.intFromBytes(message_header, 0);
+								int msg_length = KLFCommon.intFromBytes(message_header, 4);
 
-								//Read the message header
-								int num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
-								header_bytes_read += num_read;
+								byte[] message_data = null;
 
-								if (header_bytes_read == KLFCommon.MSG_HEADER_LENGTH)
+								if (msg_length > 0)
 								{
-									KLFCommon.ServerMessageID id = (KLFCommon.ServerMessageID)KLFCommon.intFromBytes(message_header, 0);
-									int msg_length = KLFCommon.intFromBytes(message_header, 4);
+									//Read the message data
+									message_data = new byte[msg_length];
 
-									byte[] message_data = null;
+									int data_bytes_read = 0;
 
-									if (msg_length > 0)
+									while (data_bytes_read < msg_length)
 									{
-										//Read the message data
-										message_data = new byte[msg_length];
+										num_read = tcpClient.GetStream().Read(message_data, data_bytes_read, msg_length - data_bytes_read);
+										if (num_read > 0)
+											data_bytes_read += num_read;
 
-										int data_bytes_read = 0;
-
-										while (data_bytes_read < msg_length)
-										{
-											num_read = tcpClient.GetStream().Read(message_data, data_bytes_read, msg_length - data_bytes_read);
-											if (num_read > 0)
-												data_bytes_read += num_read;
-
-										}
 									}
-
-									handleMessage(id, message_data);
-
-									header_bytes_read = 0;
 								}
 
+								handleMessage(id, message_data);
+
+								header_bytes_read = 0;
 							}
-							
+
+							//Detect if the socket closed
+							if (tcpClient.Client.Poll(0, SelectMode.SelectRead))
+							{
+								byte[] buff = new byte[1];
+								if (tcpClient.Client.Receive(buff, SocketFlags.Peek) == 0)
+								{
+									// Client disconnected
+									stream_ended = true;
+								}
+							}
+
 						}
 						catch (Exception)
 						{
@@ -190,9 +219,13 @@ namespace KLFClient
 
 					pluginUpdateThread.Abort();
 
-					//client.GetStream().Write(
 					Console.WriteLine("Lost connection with server.");
 					tcpClient.Close();
+
+					//Delete the client data file
+					if (File.Exists(CLIENT_DATA_FILENAME))
+						File.Delete(CLIENT_DATA_FILENAME);
+
 					return;
 				}
 
@@ -349,6 +382,71 @@ namespace KLFClient
 
 				Thread.Sleep(updateInterval);
 			}
+		}
+
+		//Config
+
+		static void readConfigFile()
+		{
+			try
+			{
+				TextReader reader = File.OpenText(CLIENT_CONFIG_FILENAME);
+
+				String line = reader.ReadLine();
+
+				while (line != null)
+				{
+					String label = line; //Store the last line read as the label
+					line = reader.ReadLine(); //Read the value from the next line
+
+					if (line != null)
+					{
+						//Update the value with the given label
+						if (label == USERNAME_LABEL)
+							username = line;
+						else if (label == IP_LABEL)
+						{
+							IPAddress new_ip;
+							if (IPAddress.TryParse(line, out new_ip))
+								ip = new_ip;
+						}
+						else if (label == PORT_LABEL)
+						{
+							int new_port;
+							if (int.TryParse(line, out new_port) && new_port >= IPEndPoint.MinPort && new_port <= IPEndPoint.MaxPort)
+								port = new_port;
+						}
+
+					}
+
+					line = reader.ReadLine();
+				}
+
+				reader.Close();
+			}
+			catch (FileNotFoundException)
+			{
+			}
+			
+		}
+
+		static void writeConfigFile()
+		{
+			TextWriter writer = File.CreateText(CLIENT_CONFIG_FILENAME);
+			
+			//username
+			writer.WriteLine(USERNAME_LABEL);
+			writer.WriteLine(username);
+
+			//ip
+			writer.WriteLine(IP_LABEL);
+			writer.WriteLine(ip);
+
+			//port
+			writer.WriteLine(PORT_LABEL);
+			writer.WriteLine(port);
+
+			writer.Close();
 		}
 
 		//Messages

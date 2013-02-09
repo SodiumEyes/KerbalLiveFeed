@@ -4,13 +4,12 @@ using System.Linq;
 using System.Text;
 
 using System.Net;
+using System.IO;
 
 namespace KLFServer
 {
 	class ServerMain
 	{
-
-		
 
 		static void Main(string[] args)
 		{
@@ -18,8 +17,10 @@ namespace KLFServer
 			Console.Title = "KLF Server " + KLFCommon.PROGRAM_VERSION;
 			Console.WriteLine("KLF Server version " + KLFCommon.PROGRAM_VERSION);
 			Console.WriteLine("Created by Alfred Lam");
+			Console.WriteLine();
 
 			Server server = new Server();
+			server.readConfigFile();
 
 			while (true)
 			{
@@ -39,9 +40,15 @@ namespace KLFServer
 				Console.ForegroundColor = default_color;
 				Console.WriteLine(server.maxClients);
 
+				Console.ForegroundColor = ConsoleColor.Green;
+				Console.Write("Join Message: ");
+
+				Console.ForegroundColor = default_color;
+				Console.WriteLine(server.joinMessage);
+
 				Console.ForegroundColor = default_color;
 				Console.WriteLine();
-				Console.WriteLine("Enter \"p\" to change port, \"m\" to change max clients, \"h\" to begin hosting, \"q\" to quit");
+				Console.WriteLine("Enter \"p\" to change port, \"m\" to change max clients, \"j\" to change join message, \"h\" to begin hosting, \"q\" to quit");
 
 				String in_string = Console.ReadLine();
 
@@ -55,7 +62,10 @@ namespace KLFServer
 
 					int new_port;
 					if (int.TryParse(Console.ReadLine(), out new_port) && new_port >= IPEndPoint.MinPort && new_port <= IPEndPoint.MaxPort)
+					{
 						server.port = new_port;
+						server.writeConfigFile();
+					}
 					else
 						Console.WriteLine("Invalid port");
 				}
@@ -65,9 +75,18 @@ namespace KLFServer
 
 					int new_value;
 					if (int.TryParse(Console.ReadLine(), out new_value) && new_value >= 0)
+					{
 						server.maxClients = new_value;
+						server.writeConfigFile();
+					}
 					else
 						Console.WriteLine("Invalid number of clients");
+				}
+				else if (in_string == "j")
+				{
+					Console.Write("Enter the join message: ");
+					server.joinMessage = Console.ReadLine();
+					server.writeConfigFile();
 				}
 				else if (in_string == "h")
 				{
@@ -77,7 +96,6 @@ namespace KLFServer
 			}
 
 		}
-
-		
+	
 	}
 }

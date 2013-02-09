@@ -11,16 +11,48 @@ namespace KerbalLiveFeed
 
         //Properties
 
+		private String _ownerName;
+		private String _vesselName;
+
         public String vesselName
         {
-            private set;
-            get;
+			set
+			{
+				if (vesselName != value)
+				{
+					_vesselName = value;
+					buildGameObjectName();
+				}
+			}
+			get
+			{
+				return _vesselName;
+			}
         }
 
         public String ownerName
         {
-            private set;
-            get;
+			set
+			{
+				if (ownerName != value)
+				{
+					_ownerName = value;
+
+					//Generate a display color from the owner name
+					int val = 0;
+					foreach (char c in _ownerName)
+					{
+						val ^= (int)c;
+					}
+					generateActiveColor(val);
+
+					buildGameObjectName();
+				}
+			}
+			get
+			{
+				return _ownerName;
+			}
         }
 
 		public Guid id
@@ -183,27 +215,13 @@ namespace KerbalLiveFeed
 
         public KLFVessel(String vessel_name, String owner_name, Guid _id)
         {
-            //Build the name of the game object
-            System.Text.StringBuilder sb = new StringBuilder();
-            sb.Append(vessel_name);
-            sb.Append(" (");
-            sb.Append(owner_name);
-            sb.Append(')');
+			gameObj = new GameObject("KLF Vessel");
+			gameObj.layer = 9;
 
             vesselName = vessel_name;
             ownerName = owner_name;
 			id = _id;
 
-			//Generate a display color from the owner name
-			int val = 0;
-			foreach (char c in owner_name)
-			{
-				val ^= (int)c;
-			}
-			generateActiveColor(val);
-
-            gameObj = new GameObject(sb.ToString());
-            gameObj.layer = 9;
 
             line = gameObj.AddComponent<LineRenderer>();
             orbitRenderer = gameObj.AddComponent<OrbitRenderer>();
@@ -417,6 +435,18 @@ namespace KerbalLiveFeed
 			line.SetColors(color, color);
 			orbitRenderer.orbitColor = color * 0.5f;
         }
+
+		private void buildGameObjectName()
+		{
+			//Build the name of the game object
+			System.Text.StringBuilder sb = new StringBuilder();
+			sb.Append(vesselName);
+			sb.Append(" (");
+			sb.Append(ownerName);
+			sb.Append(')');
+
+			gameObj.name = sb.ToString();
+		}
 
     }
 }
