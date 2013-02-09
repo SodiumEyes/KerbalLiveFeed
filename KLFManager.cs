@@ -34,6 +34,9 @@ namespace KerbalLiveFeed
 		public const String OUT_FILENAME = "out.txt";
 		public const String IN_FILENAME = "in.txt";
 
+		public const float INACTIVE_VESSEL_RANGE = 400000000.0f;
+		public const int MAX_INACTIVE_VESSELS = 4;
+
 		public const float TIMEOUT_DELAY = 3.0f;
 
 		public String playerName
@@ -130,6 +133,30 @@ namespace KerbalLiveFeed
 					//Write the active vessel to the file
 					writeVesselUpdateToFile(out_stream, FlightGlobals.ActiveVessel);
 
+					//Write the inactive vessels nearest the active vessel to the file
+					SortedList<float, Vessel> nearest_vessels = new SortedList<float, Vessel>();
+
+					foreach (Vessel vessel in FlightGlobals.Vessels)
+					{
+						if (vessel != FlightGlobals.ActiveVessel)
+						{
+							float distance = (float)Vector3d.Distance(vessel.GetWorldPos3D(), FlightGlobals.ActiveVessel.GetWorldPos3D());
+							if (distance < INACTIVE_VESSEL_RANGE) {
+								nearest_vessels.Add(distance, vessel);
+							}
+						}
+					}
+		
+					int num_written_vessels = 0;
+
+					//Write inactive vessels to file in order of distance from active vessel
+					IEnumerator<KeyValuePair<float, Vessel>> enumerator = nearest_vessels.GetEnumerator();
+					while (num_written_vessels < MAX_INACTIVE_VESSELS && enumerator.MoveNext())
+					{
+						writeVesselUpdateToFile(out_stream, enumerator.Current.Value);
+						num_written_vessels++;
+					}
+
 					out_stream.Flush();
 
 					out_stream.Unlock(0, long.MaxValue);
@@ -159,6 +186,7 @@ namespace KerbalLiveFeed
 
 			update.vesselName = vessel.vesselName;
 			update.ownerName = playerName;
+			update.id = vessel.id;
 
 			Vector3 pos = vessel.mainBody.transform.InverseTransformPoint(vessel.GetWorldPos3D());
 			Vector3 dir = vessel.mainBody.transform.InverseTransformDirection(vessel.transform.up);
@@ -172,6 +200,14 @@ namespace KerbalLiveFeed
 			}
 
 			update.situation = vessel.situation;
+
+			if (vessel == FlightGlobals.ActiveVessel)
+				update.state = Vessel.State.ACTIVE;
+			else if (vessel.isCommandable)
+				update.state = Vessel.State.INACTIVE;
+			else
+				update.state = Vessel.State.DEAD;
+
 			update.timeScale = Planetarium.TimeScale;
 			update.bodyName = vessel.mainBody.bodyName;
 
@@ -263,8 +299,7 @@ namespace KerbalLiveFeed
 			//Build the key for the vessel
 			System.Text.StringBuilder sb = new System.Text.StringBuilder();
 			sb.Append(vessel_update.ownerName);
-			sb.Append('.');
-			sb.Append(vessel_update.vesselName);
+			sb.Append(vessel_update.id.ToString());
 
 			String vessel_key = sb.ToString();
 
@@ -291,7 +326,7 @@ namespace KerbalLiveFeed
 				
 			if (vessel == null || vessel.gameObj == null) {
 				//Add the vessel to the dictionary
-				vessel = new KLFVessel(vessel_update.vesselName, vessel_update.ownerName);
+				vessel = new KLFVessel(vessel_update.vesselName, vessel_update.ownerName, vessel_update.id);
 				entry = new VesselEntry();
 				entry.vessel = vessel;
 				entry.lastUpdateTime = UnityEngine.Time.fixedTime;
@@ -337,9 +372,10 @@ namespace KerbalLiveFeed
 				vessel.setOrbitalData(update_body, pos, vel, dir);
 
 				vessel.situation = vessel_update.situation;
+				vessel.state = vessel_update.state;
 				vessel.timeScale = vessel_update.timeScale;
 
-				Debug.Log("*** Vessel sit: " + vessel.situation.ToString());
+				Debug.Log("*** Vessel state: " + vessel.state);
 
 			}
 		}

@@ -11,12 +11,15 @@ namespace KerbalLiveFeed
     {
         public String vesselName;
         public String ownerName;
+		public Guid id;
 
         public float[] localPosition;
         public float[] localDirection;
         public float[] localVelocity;
 
         public Vessel.Situations situation;
+		public Vessel.State state;
+
 		public double timeScale;
 
         public String bodyName;

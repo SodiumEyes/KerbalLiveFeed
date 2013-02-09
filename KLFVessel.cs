@@ -23,6 +23,12 @@ namespace KerbalLiveFeed
             get;
         }
 
+		public Guid id
+		{
+			private set;
+			get;
+		}
+
         public Vector3 localDirection
         {
             private set;
@@ -93,6 +99,12 @@ namespace KerbalLiveFeed
             get;
         }
 
+		public Vessel.State state
+		{
+			set;
+			get;
+		}
+
 		public double timeScale
 		{
 			set;
@@ -123,6 +135,12 @@ namespace KerbalLiveFeed
             get;
         }
 
+		public Color activeColor
+		{
+			private set;
+			get;
+		}
+
         public bool shouldShowOrbit
         {
             get
@@ -133,7 +151,7 @@ namespace KerbalLiveFeed
                     case Vessel.Situations.ORBITING:
                     case Vessel.Situations.SUB_ORBITAL:
                     case Vessel.Situations.ESCAPING:
-                        return true;
+                        return state == Vessel.State.ACTIVE || orbitRenderer.mouseOver;
 
                     default:
                         return false;
@@ -163,7 +181,7 @@ namespace KerbalLiveFeed
 
         //Methods
 
-        public KLFVessel(String vessel_name, String owner_name)
+        public KLFVessel(String vessel_name, String owner_name, Guid _id)
         {
             //Build the name of the game object
             System.Text.StringBuilder sb = new StringBuilder();
@@ -174,6 +192,15 @@ namespace KerbalLiveFeed
 
             vesselName = vessel_name;
             ownerName = owner_name;
+			id = _id;
+
+			//Generate a display color from the owner name
+			int val = 0;
+			foreach (char c in owner_name)
+			{
+				val ^= (int)c;
+			}
+			generateActiveColor(val);
 
             gameObj = new GameObject(sb.ToString());
             gameObj.layer = 9;
@@ -186,11 +213,10 @@ namespace KerbalLiveFeed
             line.transform.localEulerAngles = Vector3.zero;
 
             line.useWorldSpace = true;
-            line.material = new Material(Shader.Find("Particles/Additive"));
+            line.material = new Material(Shader.Find("Particles/Alpha Blended Premultiply"));
             line.SetVertexCount(2);
             line.enabled = false;
 
-            orbitRenderer.orbitColor = Color.magenta * 0.5f;
             orbitRenderer.forceDraw = true;
 
             mainBody = null;
@@ -209,6 +235,48 @@ namespace KerbalLiveFeed
 
 		~KLFVessel()
 		{
+		}
+
+		public void generateActiveColor(int val)
+		{
+			switch (val % 9)
+			{
+				case 0:
+					activeColor = Color.green;
+					break;
+
+				case 1:
+					activeColor = Color.red;
+					break;
+
+				case 2:
+					activeColor = Color.magenta;
+					break;
+
+				case 3:
+					activeColor = Color.cyan;
+					break;
+
+				case 4:
+					activeColor = Color.yellow;
+					break;
+
+				case 5:
+					activeColor = new Color(0.435f, 0, 1, 1); //Electric indigo
+					break;
+
+				case 6:
+					activeColor = new Color(1, 0.5f, 0, 1); //Orange
+					break;
+
+				case 7:
+					activeColor = new Color(1, 0,  0.5f, 1); //Rosy pink
+					break;
+
+				default:
+					activeColor = new Color(0, 0.75f, 1, 1); //Deep sky blue
+					break;
+			}
 		}
 
         public void setOrbitalData(CelestialBody body, Vector3 local_pos, Vector3 local_vel, Vector3 local_dir) {
@@ -242,21 +310,44 @@ namespace KerbalLiveFeed
             Vector3 scaled_pos = ScaledSpace.LocalToScaledSpace(worldPosition);
 
             //Determine the scale of the line so its thickness is constant from the map camera view
-            float scale = (float)(0.01 * Vector3.Distance(MapView.MapCamera.transform.position, scaled_pos));
+			float apparent_size = 0.01f;
+			bool pointed = true;
+			switch (state)
+			{
+				case Vessel.State.ACTIVE:
+					apparent_size = 0.015f;
+					pointed = true;
+					break;
 
-            line.SetWidth(scale, 0);
+				case Vessel.State.INACTIVE:
+					apparent_size = 0.01f;
+					pointed = true;
+					break;
+
+				case Vessel.State.DEAD:
+					apparent_size = 0.01f;
+					pointed = false;
+					break;
+
+			}
+
+			float scale = (float)(apparent_size * Vector3.Distance(MapView.MapCamera.transform.position, scaled_pos));
 
             //Set line vertex positions
             Vector3 line_half_dir = worldDirection * (scale * ScaledSpace.ScaleFactor);
+
+			if (pointed)
+			{
+				line.SetWidth(scale, 0);
+			}
+			else
+			{
+				line.SetWidth(scale, scale);
+				line_half_dir *= 0.5f;
+			}
             
             line.SetPosition(0, ScaledSpace.LocalToScaledSpace(worldPosition - line_half_dir));
             line.SetPosition(1, ScaledSpace.LocalToScaledSpace(worldPosition + line_half_dir));
-
-            //Change line color when moused over
-            if (orbitRenderer.mouseOver)
-                line.SetColors(Color.white, Color.white);
-            else
-                line.SetColors(Color.magenta, Color.magenta);
 
 			orbitRenderer.orbit.UpdateFromUT(adjustedUT);
 
@@ -296,6 +387,35 @@ namespace KerbalLiveFeed
 				orbitRenderer.drawMode = OrbitRenderer.DrawMode.REDRAW_AND_RECALCULATE;
 			else
 				orbitRenderer.drawMode = OrbitRenderer.DrawMode.OFF;
+
+			//Determine the color
+			Color color = activeColor;
+
+			if (orbitRenderer.mouseOver)
+				color = Color.white; //Change line color when moused over
+			else
+			{
+				
+				switch (state)
+				{
+					case Vessel.State.ACTIVE:
+						color = activeColor;
+						break;
+
+					case Vessel.State.INACTIVE:
+						color = activeColor * 0.5f;
+						color.a = 1;
+						break;
+
+					case Vessel.State.DEAD:
+						color = activeColor * 0.5f;
+						break;
+				}
+				
+			}
+
+			line.SetColors(color, color);
+			orbitRenderer.orbitColor = color * 0.5f;
         }
 
     }

@@ -339,7 +339,7 @@ namespace KLFClient
 				else
 				{
 					//Don't let the update queue get insanely large
-					while (pluginUpdateInQueue.Count > 512)
+					while (pluginUpdateInQueue.Count > 128)
 					{
 						pluginUpdateInQueue.Dequeue();
 					}
