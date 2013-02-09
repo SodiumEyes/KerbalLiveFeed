@@ -34,7 +34,7 @@ namespace KLFServer
 
 			bool stream_ended = false;
 
-			Console.WriteLine("Listening for message from client #" + clientIndex);
+			//Console.WriteLine("Listening for message from client #" + clientIndex);
 
 			while (!stream_ended)
 			{

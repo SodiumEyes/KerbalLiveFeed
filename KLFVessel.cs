@@ -39,10 +39,11 @@ namespace KerbalLiveFeed
 					_ownerName = value;
 
 					//Generate a display color from the owner name
-					int val = 0;
+					int val = 5381;
+
 					foreach (char c in _ownerName)
 					{
-						val ^= (int)c;
+						val = ((val << 5) + val) + c;
 					}
 					generateActiveColor(val);
 
@@ -222,7 +223,6 @@ namespace KerbalLiveFeed
             ownerName = owner_name;
 			id = _id;
 
-
             line = gameObj.AddComponent<LineRenderer>();
             orbitRenderer = gameObj.AddComponent<OrbitRenderer>();
 
@@ -257,22 +257,22 @@ namespace KerbalLiveFeed
 
 		public void generateActiveColor(int val)
 		{
-			switch (val % 9)
+			switch (val % 18)
 			{
 				case 0:
-					activeColor = Color.green;
-					break;
-
-				case 1:
 					activeColor = Color.red;
 					break;
 
+				case 1:
+					activeColor = new Color(1, 0, 0.5f, 1); //Rosy pink
+					break;
+
 				case 2:
-					activeColor = Color.magenta;
+					activeColor = new Color(0.6f, 0, 0.5f, 1); //OU Crimson
 					break;
 
 				case 3:
-					activeColor = Color.cyan;
+					activeColor = new Color(1, 0.5f, 0, 1); //Orange
 					break;
 
 				case 4:
@@ -280,19 +280,55 @@ namespace KerbalLiveFeed
 					break;
 
 				case 5:
-					activeColor = new Color(0.435f, 0, 1, 1); //Electric indigo
+					activeColor = new Color(0, 0.063f, 0.392f, 1); //Gold
 					break;
 
 				case 6:
-					activeColor = new Color(1, 0.5f, 0, 1); //Orange
+					activeColor = Color.green;
 					break;
 
 				case 7:
-					activeColor = new Color(1, 0,  0.5f, 1); //Rosy pink
+					activeColor = new Color(0, 0.651f, 0.576f, 1); //Persian Green
+					break;
+
+				case 8:
+					activeColor = new Color(0, 0.651f, 0.576f, 1); //Persian Green
+					break;
+
+				case 9:
+					activeColor = new Color(0, 0.659f, 0.420f, 1); //Jade
+					break;
+
+				case 10:
+					activeColor = new Color(0.043f, 0.855f, 0.318f, 1); //Malachite
+					break;
+
+				case 11:
+					activeColor = Color.cyan;
+					break;
+
+				case 12:
+					activeColor = new Color(0.537f, 0.812f, 0.883f, 1); //Baby blue;
+					break;
+
+				case 13:
+					activeColor = new Color(0, 0.529f, 0.741f, 1); //NCS blue
+					break;
+
+				case 14:
+					activeColor = new Color(0.255f, 0.412f, 0.882f, 1); //Royal Blue
+					break;
+
+				case 15:
+					activeColor = new Color(0.5f, 0, 1, 1); //Violet
+					break;
+
+				case 16:
+					activeColor = Color.magenta;
 					break;
 
 				default:
-					activeColor = new Color(0, 0.75f, 1, 1); //Deep sky blue
+					activeColor = new Color(0.435f, 0, 1, 1); //Electric indigo
 					break;
 			}
 		}
@@ -367,7 +403,17 @@ namespace KerbalLiveFeed
             line.SetPosition(0, ScaledSpace.LocalToScaledSpace(worldPosition - line_half_dir));
             line.SetPosition(1, ScaledSpace.LocalToScaledSpace(worldPosition + line_half_dir));
 
-			orbitRenderer.orbit.UpdateFromUT(adjustedUT);
+			switch (situation)
+			{
+				case Vessel.Situations.ESCAPING:
+				case Vessel.Situations.FLYING:
+				case Vessel.Situations.ORBITING:
+				case Vessel.Situations.SUB_ORBITAL:
+				case Vessel.Situations.DOCKED:
+					orbitRenderer.orbit.UpdateFromUT(adjustedUT);
+					break;
+			}
+			
 
         }
 
@@ -434,6 +480,12 @@ namespace KerbalLiveFeed
 
 			line.SetColors(color, color);
 			orbitRenderer.orbitColor = color * 0.5f;
+
+			if (state == Vessel.State.ACTIVE && shouldShowOrbit)
+				orbitRenderer.drawIcons = OrbitRenderer.DrawIcons.OBJ_PE_AP;
+			else
+				orbitRenderer.drawIcons = OrbitRenderer.DrawIcons.OBJ;
+
         }
 
 		private void buildGameObjectName()
