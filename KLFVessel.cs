@@ -467,7 +467,7 @@ namespace KerbalLiveFeed
 						break;
 
 					case Vessel.State.INACTIVE:
-						color = activeColor * 0.5f;
+						color = activeColor * 0.75f;
 						color.a = 1;
 						break;
 
