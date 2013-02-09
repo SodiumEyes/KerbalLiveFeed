@@ -45,11 +45,32 @@ namespace KLFServer
 			tcpListener = new TcpListener(IPAddress.Any, port);
 			listenThread.Start();
 
+			Console.WriteLine("Commands:");
+			Console.WriteLine("/quit - quit");
+
 			while (true)
 			{
 				String input = Console.ReadLine();
-				if (input == "q" || input == "quit")
-					break;
+				if (input.Length > 0 && input.ElementAt(0) == '/')
+				{
+					if (input == "/quit")
+						break;
+				}
+				else if (input.Length > 0)
+				{
+					//Send a message to all clients
+					for (int i = 0; i < clients.Length; i++)
+					{
+						clients[i].mutex.WaitOne();
+
+						if (clients[i].tcpClient != null && clients[i].tcpClient.Connected)
+						{
+							sendServerMessage(clients[i].tcpClient, input);
+						}
+
+						clients[i].mutex.ReleaseMutex();
+					}
+				}
 			}
 
 			//End listen and client threads
@@ -94,7 +115,7 @@ namespace KLFServer
 
 					//Send the join message to the client
 					if (joinMessage.Length > 0)
-						sendTextMessage(client, joinMessage);
+						sendServerMessage(client, joinMessage);
 				}
 				else
 				{
@@ -172,18 +193,47 @@ namespace KLFServer
 					}
 
 					break;
+
+				case KLFCommon.ClientMessageID.TEXT_MESSAGE:
+
+					//Compile full message
+					StringBuilder sb = new StringBuilder();
+					sb.Append('[');
+					sb.Append(clients[client_index].username);
+					sb.Append("] ");
+					sb.Append(encoder.GetString(data, 0, data.Length));
+
+					String full_message = sb.ToString();
+
+					//Console.SetCursorPosition(0, Console.CursorTop);
+					Console.WriteLine(full_message);
+
+					//Send the update to all other clients
+					for (int i = 0; i < clients.Length; i++)
+					{
+						if (i != client_index && clients[i].tcpClient != null && clients[i].tcpClient.Connected)
+						{
+
+							clients[i].mutex.WaitOne();
+							sendTextMessage(clients[i].tcpClient, full_message);
+							clients[i].mutex.ReleaseMutex();
+						}
+					}
+
+					break;
+
 			}
 		}
 
 		//Messages
 
-		private static void sendMessageHeader(TcpClient client, KLFCommon.ServerMessageID id, int msg_length)
+		private void sendMessageHeader(TcpClient client, KLFCommon.ServerMessageID id, int msg_length)
 		{
 			client.GetStream().Write(KLFCommon.intToBytes((int)id), 0, 4);
 			client.GetStream().Write(KLFCommon.intToBytes(msg_length), 0, 4);
 		}
 
-		private static void sendHandshakeMessage(TcpClient client)
+		private void sendHandshakeMessage(TcpClient client)
 		{
 			//Encode version string
 			ASCIIEncoding encoder = new ASCIIEncoding();
@@ -200,7 +250,7 @@ namespace KLFServer
 			client.GetStream().Flush();
 		}
 
-		private static void sendHandshakeRefusalMessage(TcpClient client, String message)
+		private void sendHandshakeRefusalMessage(TcpClient client, String message)
 		{
 			//Encode message
 			ASCIIEncoding encoder = new ASCIIEncoding();
@@ -213,7 +263,20 @@ namespace KLFServer
 			client.GetStream().Flush();
 		}
 
-		private static void sendTextMessage(TcpClient client, String message)
+		private void sendServerMessage(TcpClient client, String message)
+		{
+			//Encode message
+			ASCIIEncoding encoder = new ASCIIEncoding();
+			byte[] message_bytes = encoder.GetBytes(message);
+
+			sendMessageHeader(client, KLFCommon.ServerMessageID.SERVER_MESSAGE, message_bytes.Length);
+
+			client.GetStream().Write(message_bytes, 0, message_bytes.Length);
+
+			client.GetStream().Flush();
+		}
+
+		private void sendTextMessage(TcpClient client, String message)
 		{
 			//Encode message
 			ASCIIEncoding encoder = new ASCIIEncoding();

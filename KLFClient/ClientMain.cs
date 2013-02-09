@@ -28,6 +28,8 @@ namespace KLFClient
 		public const String CLIENT_DATA_FILENAME = "PluginData/kerballivefeed/clientdata.txt";
 		public const String CLIENT_CONFIG_FILENAME = "KLFClientConfig.txt";
 
+		public const String PLUGIN_DIRECTORY = "PluginData/kerballivefeed/";
+
 		public static bool endSession;
 		public static TcpClient tcpClient;
 
@@ -37,6 +39,7 @@ namespace KLFClient
 		public static Mutex pluginUpdateInMutex;
 
 		public static Thread pluginUpdateThread;
+		public static Thread chatThread;
 
 		static void Main(string[] args)
 		{
@@ -144,6 +147,14 @@ namespace KLFClient
 					pluginUpdateThread = new Thread(new ThreadStart(handlePluginUpdates));
 					pluginUpdateThread.Start();
 
+					//Create a thread to handle chat
+					chatThread = new Thread(new ThreadStart(handleChat));
+					chatThread.Start();
+
+					//Create the plugin directory if it doesn't exist
+					if (!Directory.Exists(PLUGIN_DIRECTORY))
+						Directory.CreateDirectory(PLUGIN_DIRECTORY);
+
 					//Create a file to pass the username to the plugin
 					FileStream client_data_stream = File.Open(CLIENT_DATA_FILENAME, FileMode.OpenOrCreate);
 
@@ -151,6 +162,13 @@ namespace KLFClient
 					byte[] username_bytes = encoder.GetBytes(username);
 					client_data_stream.Write(username_bytes, 0, username_bytes.Length);
 					client_data_stream.Close();
+
+					//Delete and in/out files, because they are probably remnants from another session
+					if (File.Exists(IN_FILENAME))
+						File.Delete(IN_FILENAME);
+
+					if (File.Exists(OUT_FILENAME))
+						File.Delete(OUT_FILENAME);
 
 					endSession = false;
 
@@ -218,6 +236,7 @@ namespace KLFClient
 					}
 
 					pluginUpdateThread.Abort();
+					chatThread.Abort();
 
 					Console.WriteLine("Lost connection with server.");
 					tcpClient.Close();
@@ -276,10 +295,23 @@ namespace KLFClient
 
 					break;
 
-				case KLFCommon.ServerMessageID.TEXT_MESSAGE:
+				case KLFCommon.ServerMessageID.SERVER_MESSAGE:
 
 					String message = encoder.GetString(data, 0, data.Length);
-					Console.WriteLine("[Server] " + message);
+
+					ConsoleColor default_color = Console.ForegroundColor;
+					Console.ForegroundColor = ConsoleColor.Green;
+					Console.Write("[Server] ");
+
+					Console.ForegroundColor = default_color;
+					Console.WriteLine(message);
+					break;
+
+				case KLFCommon.ServerMessageID.TEXT_MESSAGE:
+
+					message = encoder.GetString(data, 0, data.Length);
+					//Console.SetCursorPosition(0, Console.CursorTop);
+					Console.WriteLine(message);
 					break;
 
 				case KLFCommon.ServerMessageID.PLUGIN_UPDATE:
@@ -384,6 +416,20 @@ namespace KLFClient
 			}
 		}
 
+		static void handleChat()
+		{
+			while (true)
+			{
+				String line = Console.ReadLine();
+				if (line.Length > 0)
+				{
+					tcpSendMutex.WaitOne();
+					sendTextMessage(line);
+					tcpSendMutex.ReleaseMutex();
+				}
+			}
+		}
+
 		//Config
 
 		static void readConfigFile()
@@ -469,6 +515,19 @@ namespace KLFClient
 			tcpClient.GetStream().Write(username_bytes, 0, username_bytes.Length);
 			tcpClient.GetStream().Flush();
 
+		}
+
+		private static void sendTextMessage(String message)
+		{
+			//Encode message
+			ASCIIEncoding encoder = new ASCIIEncoding();
+			byte[] message_bytes = encoder.GetBytes(message);
+
+			sendMessageHeader(KLFCommon.ClientMessageID.TEXT_MESSAGE, message_bytes.Length);
+
+			tcpClient.GetStream().Write(message_bytes, 0, message_bytes.Length);
+
+			tcpClient.GetStream().Flush();
 		}
 
 	}

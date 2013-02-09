@@ -54,6 +54,8 @@ namespace KerbalLiveFeed
 			get;
 		}
 
+		private float lastUsernameReadTime;
+
 		private Queue<KLFVesselUpdate> vesselUpdateQueue;
 
 		//Methods
@@ -61,6 +63,7 @@ namespace KerbalLiveFeed
 		private KLFManager()
 		{
 			lastUpdateTime = 0.0f;
+			lastUsernameReadTime = 0.0f;
 
 			playerName = "player";
 
@@ -123,16 +126,17 @@ namespace KerbalLiveFeed
 				try
 				{
 
-					if (KSP.IO.File.Exists<KLFManager>(CLIENT_DATA_FILENAME)) {
+					if ((UnityEngine.Time.fixedTime - lastUsernameReadTime) > 10.0f
+						&& KSP.IO.File.Exists<KLFManager>(CLIENT_DATA_FILENAME))
+					{
 						//Read the username from the client data file
 						byte[] bytes = KSP.IO.File.ReadAllBytes<KLFManager>(CLIENT_DATA_FILENAME);
 
 						ASCIIEncoding encoder = new ASCIIEncoding();
 						playerName = encoder.GetString(bytes, 0, bytes.Length);
 
-						Debug.Log("Username set to " + playerName);
-
-						KSP.IO.File.Delete<KLFManager>(CLIENT_DATA_FILENAME); //Delete the file so we don't keep reading it
+						//Keep track of when the name was last read so we don't read it every time
+						lastUsernameReadTime = UnityEngine.Time.fixedTime;
 					}
 					
 					//Debug.Log("*** Writing vessels to file!");

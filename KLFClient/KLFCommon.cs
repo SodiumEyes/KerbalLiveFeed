@@ -8,7 +8,7 @@ public class KLFCommon
 
 	public const String PROGRAM_VERSION = "0.0.1";
 	public const Int32 FILE_FORMAT_VERSION = 2;
-	public const Int32 NET_PROTOCOL_VERSION = 0;
+	public const Int32 NET_PROTOCOL_VERSION = 1;
 	public const int MSG_HEADER_LENGTH = 8;
 
 	public static byte[] intToBytes(Int32 val)
@@ -36,14 +36,16 @@ public class KLFCommon
 	public enum ClientMessageID
 	{
 		HANDSHAKE /*Username*/,
-		PLUGIN_UPDATE /*data*/
+		PLUGIN_UPDATE /*data*/,
+		TEXT_MESSAGE /*Message text*/
 	}
 
 	public enum ServerMessageID
 	{
 		HANDSHAKE /*Protocol Version : Protocol String*/,
 		HANDSHAKE_REFUSAL /*Refusal message*/,
-		TEXT_MESSAGE /*Message text*/,
+		SERVER_MESSAGE /*Message text*/,
+		TEXT_MESSAGE /*Username Length : Username : Message text*/,
 		PLUGIN_UPDATE /*data*/
 	}
 }
