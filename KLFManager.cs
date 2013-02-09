@@ -331,8 +331,16 @@ namespace KerbalLiveFeed
 			{
 				vessel = entry.vessel;
 
-				if (vessel == null || vessel.gameObj == null)
+				if (vessel == null || vessel.gameObj == null || vessel.vesselName != vessel_update.vesselName)
+				{
+					//Delete the vessel if it's null or needs to be renamed
 					vessels.Remove(vessel_key);
+
+					if (vessel != null && vessel.gameObj != null)
+						GameObject.Destroy(vessel.gameObj);
+
+					vessel = null;
+				}
 				else
 				{
 					//Update the entry's timestamp
@@ -344,7 +352,7 @@ namespace KerbalLiveFeed
 				}
 			}
 				
-			if (vessel == null || vessel.gameObj == null) {
+			if (vessel == null) {
 				//Add the vessel to the dictionary
 				vessel = new KLFVessel(vessel_update.vesselName, vessel_update.ownerName, vessel_update.id);
 				entry = new VesselEntry();

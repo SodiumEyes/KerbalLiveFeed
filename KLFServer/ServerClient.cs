@@ -91,6 +91,8 @@ namespace KLFServer
 
 				if (message_received && parent != null)
 					parent.handleMessage(clientIndex, id, message_data); //Have the parent server handle the message
+
+				Thread.Sleep(0);
 			}
 
 			Console.WriteLine("Client #" + clientIndex + " " + username + " has disconnected.");

@@ -233,6 +233,8 @@ namespace KLFClient
 						{
 							stream_ended = true;
 						}
+
+						Thread.Sleep(0);
 					}
 
 					pluginUpdateThread.Abort();
