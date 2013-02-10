@@ -51,25 +51,36 @@ namespace KLFServer
 			while (true)
 			{
 				String input = Console.ReadLine();
-				if (input.Length > 0 && input.ElementAt(0) == '/')
+
+				if (input != null && input.Length > 0)
 				{
-					if (input == "/quit")
-						break;
-				}
-				else if (input.Length > 0)
-				{
-					//Send a message to all clients
-					for (int i = 0; i < clients.Length; i++)
+
+					if (input.ElementAt(0) == '/')
 					{
-						clients[i].mutex.WaitOne();
-
-						if (clients[i].tcpClient != null && clients[i].tcpClient.Connected)
+						if (input == "/quit")
+							break;
+						else if (input == "/crash")
 						{
-							sendServerMessage(clients[i].tcpClient, input);
+							Object o = null; //You asked for it!
+							o.ToString();
 						}
-
-						clients[i].mutex.ReleaseMutex();
 					}
+					else
+					{
+						//Send a message to all clients
+						for (int i = 0; i < clients.Length; i++)
+						{
+							clients[i].mutex.WaitOne();
+
+							if (clients[i].tcpClient != null && clients[i].tcpClient.Connected)
+							{
+								sendServerMessage(clients[i].tcpClient, input);
+							}
+
+							clients[i].mutex.ReleaseMutex();
+						}
+					}
+
 				}
 			}
 
@@ -165,59 +176,75 @@ namespace KLFServer
 			{
 				case KLFCommon.ClientMessageID.HANDSHAKE:
 
-					//Read username
-					String username = encoder.GetString(data, 0, data.Length);
+					if (data != null)
+					{
 
-					clients[client_index].mutex.WaitOne();
-					clients[client_index].username = username;
-					clients[client_index].mutex.ReleaseMutex();
+						//Read username
+						String username = encoder.GetString(data, 0, data.Length);
 
-					Console.WriteLine(username + " has joined the server.");
+						clients[client_index].mutex.WaitOne();
+						clients[client_index].username = username;
+						clients[client_index].mutex.ReleaseMutex();
+
+						Console.WriteLine(username + " has joined the server.");
+
+					}
 
 					break;
 
 				case KLFCommon.ClientMessageID.PLUGIN_UPDATE:
 
-					//Send the update to all other clients
-					for (int i = 0; i < clients.Length; i++)
+					if (data != null)
 					{
-						if (i != client_index && clients[i].tcpClient != null && clients[i].tcpClient.Connected) {
 
-							clients[i].mutex.WaitOne();
+						//Send the update to all other clients
+						for (int i = 0; i < clients.Length; i++)
+						{
+							if (i != client_index && clients[i].tcpClient != null && clients[i].tcpClient.Connected)
+							{
 
-							sendMessageHeader(clients[i].tcpClient, KLFCommon.ServerMessageID.PLUGIN_UPDATE, data.Length);
-							clients[i].tcpClient.GetStream().Write(data, 0, data.Length);
+								clients[i].mutex.WaitOne();
 
-							clients[i].mutex.ReleaseMutex();
+								sendMessageHeader(clients[i].tcpClient, KLFCommon.ServerMessageID.PLUGIN_UPDATE, data.Length);
+								clients[i].tcpClient.GetStream().Write(data, 0, data.Length);
+
+								clients[i].mutex.ReleaseMutex();
+							}
 						}
+
 					}
 
 					break;
 
 				case KLFCommon.ClientMessageID.TEXT_MESSAGE:
 
-					//Compile full message
-					StringBuilder sb = new StringBuilder();
-					sb.Append('[');
-					sb.Append(clients[client_index].username);
-					sb.Append("] ");
-					sb.Append(encoder.GetString(data, 0, data.Length));
-
-					String full_message = sb.ToString();
-
-					//Console.SetCursorPosition(0, Console.CursorTop);
-					Console.WriteLine(full_message);
-
-					//Send the update to all other clients
-					for (int i = 0; i < clients.Length; i++)
+					if (data != null)
 					{
-						if (i != client_index && clients[i].tcpClient != null && clients[i].tcpClient.Connected)
-						{
 
-							clients[i].mutex.WaitOne();
-							sendTextMessage(clients[i].tcpClient, full_message);
-							clients[i].mutex.ReleaseMutex();
+						//Compile full message
+						StringBuilder sb = new StringBuilder();
+						sb.Append('[');
+						sb.Append(clients[client_index].username);
+						sb.Append("] ");
+						sb.Append(encoder.GetString(data, 0, data.Length));
+
+						String full_message = sb.ToString();
+
+						//Console.SetCursorPosition(0, Console.CursorTop);
+						Console.WriteLine(full_message);
+
+						//Send the update to all other clients
+						for (int i = 0; i < clients.Length; i++)
+						{
+							if (i != client_index && clients[i].tcpClient != null && clients[i].tcpClient.Connected)
+							{
+
+								clients[i].mutex.WaitOne();
+								sendTextMessage(clients[i].tcpClient, full_message);
+								clients[i].mutex.ReleaseMutex();
+							}
 						}
+
 					}
 
 					break;
@@ -332,6 +359,9 @@ namespace KLFServer
 				reader.Close();
 			}
 			catch (FileNotFoundException)
+			{
+			}
+			catch (UnauthorizedAccessException)
 			{
 			}
 

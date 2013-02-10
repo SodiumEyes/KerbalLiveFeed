@@ -90,7 +90,24 @@ namespace KLFServer
 				}
 				else if (in_string == "h")
 				{
-					server.hostingLoop();
+					try
+					{
+						server.hostingLoop();
+					}
+					catch (Exception e)
+					{
+						//Write an error log
+						TextWriter writer = File.CreateText("KLFServerlog.txt");
+						writer.Write(e.ToString());
+						writer.Close();
+
+						Console.WriteLine("Unexpected expection encountered! Crash report written to KLFServerlog.txt");
+					}
+
+					Console.WriteLine("Press any key to quit");
+					Console.ReadKey();
+
+					break;
 				}
 
 			}

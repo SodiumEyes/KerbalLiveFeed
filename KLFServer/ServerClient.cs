@@ -82,9 +82,9 @@ namespace KLFServer
 						}
 
 					}
-					catch (Exception)
+					catch (InvalidOperationException)
 					{
-						stream_ended = true;
+						stream_ended = true; //TCP socket has closed
 					}
 
 				}

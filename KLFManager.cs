@@ -38,7 +38,7 @@ namespace KerbalLiveFeed
 		public const float INACTIVE_VESSEL_RANGE = 400000000.0f;
 		public const int MAX_INACTIVE_VESSELS = 4;
 
-		public const float TIMEOUT_DELAY = 3.0f;
+		public const float TIMEOUT_DELAY = 6.0f;
 
 		public String playerName
 		{
