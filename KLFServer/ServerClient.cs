@@ -81,13 +81,30 @@ namespace KLFServer
 							message_received = true;
 						}
 
+						//Detect if the socket closed
+						if (tcpClient.Client.Poll(0, SelectMode.SelectRead))
+						{
+							byte[] buff = new byte[1];
+							if (tcpClient.Client.Receive(buff, SocketFlags.Peek) == 0)
+							{
+								//Client disconnected
+								stream_ended = true;
+							}
+						}
+
 					}
 					catch (InvalidOperationException)
 					{
 						stream_ended = true; //TCP socket has closed
 					}
+					catch (System.IO.IOException)
+					{
+						stream_ended = true; //TCP socket has closed
+					}
 
 				}
+				else
+					break;
 
 				if (message_received && parent != null)
 					parent.handleMessage(clientIndex, id, message_data); //Have the parent server handle the message

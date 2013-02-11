@@ -160,7 +160,13 @@ namespace KerbalLiveFeed
 						{
 							float distance = (float)Vector3d.Distance(vessel.GetWorldPos3D(), FlightGlobals.ActiveVessel.GetWorldPos3D());
 							if (distance < INACTIVE_VESSEL_RANGE) {
-								nearest_vessels.Add(distance, vessel);
+								try
+								{
+									nearest_vessels.Add(distance, vessel);
+								}
+								catch (ArgumentException)
+								{
+								}
 							}
 						}
 					}
@@ -359,7 +365,7 @@ namespace KerbalLiveFeed
 				entry.vessel = vessel;
 				entry.lastUpdateTime = UnityEngine.Time.fixedTime;
 
-				vessels.Add(vessel_key, entry);
+				vessels[vessel_key] = entry;
 
 				/*Queue this update for the next update call because updating a vessel on the same step as
 				 * creating it usually causes problems for some reason */

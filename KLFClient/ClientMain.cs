@@ -172,7 +172,7 @@ namespace KLFClient
 
 					endSession = false;
 
-					Console.WriteLine("Connected to server!");
+					Console.WriteLine("Connected to server! Handshaking...");
 
 					byte[] message_header = new byte[KLFCommon.MSG_HEADER_LENGTH];
 					int header_bytes_read = 0;
@@ -229,7 +229,11 @@ namespace KLFClient
 							}
 
 						}
-						catch (Exception)
+						catch (System.IO.IOException)
+						{
+							stream_ended = true;
+						}
+						catch (System.ObjectDisposedException)
 						{
 							stream_ended = true;
 						}
@@ -371,7 +375,16 @@ namespace KLFClient
 						}
 
 					}
-					catch (Exception)
+					catch (System.IO.FileNotFoundException)
+					{
+					}
+					catch (System.UnauthorizedAccessException)
+					{
+					}
+					catch (System.IO.DirectoryNotFoundException)
+					{
+					}
+					catch (System.ObjectDisposedException)
 					{
 					}
 				}
@@ -425,9 +438,23 @@ namespace KLFClient
 				String line = Console.ReadLine();
 				if (line.Length > 0)
 				{
-					tcpSendMutex.WaitOne();
-					sendTextMessage(line);
-					tcpSendMutex.ReleaseMutex();
+
+					if (line.ElementAt(0) == '/')
+					{
+						if (line == "/quit")
+						{
+							tcpSendMutex.WaitOne();
+							tcpClient.Close(); //Close the tcp client
+							tcpSendMutex.ReleaseMutex();
+						}
+							
+					}
+					else
+					{
+						tcpSendMutex.WaitOne();
+						sendTextMessage(line);
+						tcpSendMutex.ReleaseMutex();
+					}
 				}
 			}
 		}

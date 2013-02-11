@@ -18,6 +18,8 @@ namespace KLFServer
 		public const String MAX_CLIENTS_LABEL = "maxClients";
 		public const String JOIN_MESSAGE_LABEL = "joinMessage";
 
+		public const bool SEND_UPDATES_TO_SENDER = false;
+
 		public int port = 2075;
 		public int maxClients = 32;
 
@@ -200,13 +202,12 @@ namespace KLFServer
 						//Send the update to all other clients
 						for (int i = 0; i < clients.Length; i++)
 						{
-							if (i != client_index && clients[i].tcpClient != null && clients[i].tcpClient.Connected)
+							if ((i != client_index || SEND_UPDATES_TO_SENDER) && clients[i].tcpClient != null && clients[i].tcpClient.Connected)
 							{
 
 								clients[i].mutex.WaitOne();
 
-								sendMessageHeader(clients[i].tcpClient, KLFCommon.ServerMessageID.PLUGIN_UPDATE, data.Length);
-								clients[i].tcpClient.GetStream().Write(data, 0, data.Length);
+								sendPluginUpdate(clients[i].tcpClient, data);
 
 								clients[i].mutex.ReleaseMutex();
 							}
@@ -236,7 +237,7 @@ namespace KLFServer
 						//Send the update to all other clients
 						for (int i = 0; i < clients.Length; i++)
 						{
-							if (i != client_index && clients[i].tcpClient != null && clients[i].tcpClient.Connected)
+							if ((i != client_index) && clients[i].tcpClient != null && clients[i].tcpClient.Connected)
 							{
 
 								clients[i].mutex.WaitOne();
@@ -262,58 +263,125 @@ namespace KLFServer
 
 		private void sendHandshakeMessage(TcpClient client)
 		{
-			//Encode version string
-			ASCIIEncoding encoder = new ASCIIEncoding();
-			byte[] version_string = encoder.GetBytes(KLFCommon.PROGRAM_VERSION);
+			try
+			{
 
-			sendMessageHeader(client, KLFCommon.ServerMessageID.HANDSHAKE, 4 + version_string.Length);
+				//Encode version string
+				ASCIIEncoding encoder = new ASCIIEncoding();
+				byte[] version_string = encoder.GetBytes(KLFCommon.PROGRAM_VERSION);
 
-			//Write net protocol version
-			client.GetStream().Write(KLFCommon.intToBytes(KLFCommon.NET_PROTOCOL_VERSION), 0, 4);
+				sendMessageHeader(client, KLFCommon.ServerMessageID.HANDSHAKE, 4 + version_string.Length);
 
-			//Write version string
-			client.GetStream().Write(version_string, 0, version_string.Length);
+				//Write net protocol version
+				client.GetStream().Write(KLFCommon.intToBytes(KLFCommon.NET_PROTOCOL_VERSION), 0, 4);
 
-			client.GetStream().Flush();
+				//Write version string
+				client.GetStream().Write(version_string, 0, version_string.Length);
+
+				client.GetStream().Flush();
+
+			}
+			catch (System.IO.IOException)
+			{
+			}
+			catch (System.ObjectDisposedException)
+			{
+			}
 		}
 
 		private void sendHandshakeRefusalMessage(TcpClient client, String message)
 		{
-			//Encode message
-			ASCIIEncoding encoder = new ASCIIEncoding();
-			byte[] message_bytes = encoder.GetBytes(message);
+			try
+			{
 
-			sendMessageHeader(client, KLFCommon.ServerMessageID.HANDSHAKE_REFUSAL, message_bytes.Length);
+				//Encode message
+				ASCIIEncoding encoder = new ASCIIEncoding();
+				byte[] message_bytes = encoder.GetBytes(message);
 
-			client.GetStream().Write(message_bytes, 0, message_bytes.Length);
+				sendMessageHeader(client, KLFCommon.ServerMessageID.HANDSHAKE_REFUSAL, message_bytes.Length);
 
-			client.GetStream().Flush();
+				client.GetStream().Write(message_bytes, 0, message_bytes.Length);
+
+				client.GetStream().Flush();
+
+			}
+			catch (System.IO.IOException)
+			{
+			}
+			catch (System.ObjectDisposedException)
+			{
+			}
 		}
 
 		private void sendServerMessage(TcpClient client, String message)
 		{
-			//Encode message
-			ASCIIEncoding encoder = new ASCIIEncoding();
-			byte[] message_bytes = encoder.GetBytes(message);
 
-			sendMessageHeader(client, KLFCommon.ServerMessageID.SERVER_MESSAGE, message_bytes.Length);
+			try
+			{
 
-			client.GetStream().Write(message_bytes, 0, message_bytes.Length);
+				//Encode message
+				ASCIIEncoding encoder = new ASCIIEncoding();
+				byte[] message_bytes = encoder.GetBytes(message);
 
-			client.GetStream().Flush();
+				sendMessageHeader(client, KLFCommon.ServerMessageID.SERVER_MESSAGE, message_bytes.Length);
+
+				client.GetStream().Write(message_bytes, 0, message_bytes.Length);
+
+				client.GetStream().Flush();
+
+			}
+			catch (System.IO.IOException)
+			{
+			}
+			catch (System.ObjectDisposedException)
+			{
+			}
 		}
 
 		private void sendTextMessage(TcpClient client, String message)
 		{
-			//Encode message
-			ASCIIEncoding encoder = new ASCIIEncoding();
-			byte[] message_bytes = encoder.GetBytes(message);
 
-			sendMessageHeader(client, KLFCommon.ServerMessageID.TEXT_MESSAGE, message_bytes.Length);
+			try
+			{
 
-			client.GetStream().Write(message_bytes, 0, message_bytes.Length);
+				//Encode message
+				ASCIIEncoding encoder = new ASCIIEncoding();
+				byte[] message_bytes = encoder.GetBytes(message);
 
-			client.GetStream().Flush();
+				sendMessageHeader(client, KLFCommon.ServerMessageID.TEXT_MESSAGE, message_bytes.Length);
+
+				client.GetStream().Write(message_bytes, 0, message_bytes.Length);
+
+				client.GetStream().Flush();
+
+			}
+			catch (System.IO.IOException)
+			{
+			}
+			catch (System.ObjectDisposedException)
+			{
+			}
+		}
+
+		private void sendPluginUpdate(TcpClient client, byte[] data)
+		{
+
+			try
+			{
+
+				//Encode message
+				sendMessageHeader(client, KLFCommon.ServerMessageID.PLUGIN_UPDATE, data.Length);
+				client.GetStream().Write(data, 0, data.Length);
+
+				client.GetStream().Flush();
+
+			}
+			catch (System.IO.IOException)
+			{
+			}
+			catch (System.ObjectDisposedException)
+			{
+			}
 		}
 
 		//Config
