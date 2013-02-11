@@ -153,7 +153,9 @@ namespace KLFClient
 
 					//Create the plugin directory if it doesn't exist
 					if (!Directory.Exists(PLUGIN_DIRECTORY))
+					{
 						Directory.CreateDirectory(PLUGIN_DIRECTORY);
+					}
 
 					//Create a file to pass the username to the plugin
 					FileStream client_data_stream = File.Open(CLIENT_DATA_FILENAME, FileMode.OpenOrCreate);
@@ -165,10 +167,26 @@ namespace KLFClient
 
 					//Delete and in/out files, because they are probably remnants from another session
 					if (File.Exists(IN_FILENAME))
-						File.Delete(IN_FILENAME);
+					{
+						try
+						{
+							File.Delete(IN_FILENAME);
+						}
+						catch (System.UnauthorizedAccessException)
+						{
+						}
+					}
 
 					if (File.Exists(OUT_FILENAME))
-						File.Delete(OUT_FILENAME);
+					{
+						try
+						{
+							File.Delete(OUT_FILENAME);
+						}
+						catch (System.UnauthorizedAccessException)
+						{
+						}
+					}
 
 					endSession = false;
 
@@ -538,10 +556,15 @@ namespace KLFClient
 			//Encode username
 			ASCIIEncoding encoder = new ASCIIEncoding();
 			byte[] username_bytes = encoder.GetBytes(username);
+			byte[] version_bytes = encoder.GetBytes(KLFCommon.PROGRAM_VERSION);
 
-			sendMessageHeader(KLFCommon.ClientMessageID.HANDSHAKE, username_bytes.Length);
+			sendMessageHeader(KLFCommon.ClientMessageID.HANDSHAKE, username_bytes.Length + version_bytes.Length + 4);
 
+			//Write username bytes length
+			tcpClient.GetStream().Write(KLFCommon.intToBytes(username_bytes.Length), 0, 4);
 			tcpClient.GetStream().Write(username_bytes, 0, username_bytes.Length);
+			tcpClient.GetStream().Write(version_bytes, 0, version_bytes.Length);
+
 			tcpClient.GetStream().Flush();
 
 		}

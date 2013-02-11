@@ -14,7 +14,7 @@ namespace KerbalLiveFeed
 
         public override void OnStart(StartState state)
         {
-            Debug.Log("*** KLF started");
+            Debug.Log("*** KLF version "+KLFCommon.PROGRAM_VERSION+" started");
         }
 
         public override void OnUpdate()

@@ -47,6 +47,24 @@ namespace KLFServer
 			tcpListener = new TcpListener(IPAddress.Any, port);
 			listenThread.Start();
 
+			//Try to forward the port using UPnP
+			bool upnp_enabled = false;
+			try
+			{
+				if (UPnP.NAT.Discover())
+				{
+					Console.WriteLine("NAT Firewall discovered! Users won't be able to connect unless port "+port+" is forwarded.");
+					Console.WriteLine("External IP: " + UPnP.NAT.GetExternalIP().ToString());
+					UPnP.NAT.ForwardPort(port, ProtocolType.Tcp, "KLF (TCP)");
+					Console.WriteLine("Forwarded port "+port+" with UPnP");
+					upnp_enabled = true;
+				}
+			}
+			catch (Exception)
+			{
+				//Console.WriteLine(e);
+			}
+
 			Console.WriteLine("Commands:");
 			Console.WriteLine("/quit - quit");
 
@@ -105,6 +123,18 @@ namespace KLFServer
 
 			}
 
+			if (upnp_enabled)
+			{
+				//Delete port forwarding rule
+				try
+				{
+					UPnP.NAT.DeleteForwardingRule(port, ProtocolType.Tcp);
+				}
+				catch (Exception)
+				{
+				}
+			}
+
 			tcpListener.Stop();
 
 			clients = null;
@@ -120,6 +150,8 @@ namespace KLFServer
 			while (true)
 			{
 				TcpClient client = tcpListener.AcceptTcpClient();
+
+				Console.WriteLine("Client ip: " + ((IPEndPoint)client.Client.RemoteEndPoint).ToString());
 
 				if (addClient(client))
 				{
@@ -182,13 +214,18 @@ namespace KLFServer
 					{
 
 						//Read username
-						String username = encoder.GetString(data, 0, data.Length);
+						Int32 username_length = KLFCommon.intFromBytes(data, 0);
+						String username = encoder.GetString(data, 4, username_length);
+
+						int offset = 4 + username_length;
+
+						String version = encoder.GetString(data, offset, data.Length - offset);
 
 						clients[client_index].mutex.WaitOne();
 						clients[client_index].username = username;
 						clients[client_index].mutex.ReleaseMutex();
 
-						Console.WriteLine(username + " has joined the server.");
+						Console.WriteLine(username + " has joined the server using client version "+version);
 
 					}
 
