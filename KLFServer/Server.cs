@@ -17,11 +17,17 @@ namespace KLFServer
 		public const String PORT_LABEL = "port";
 		public const String MAX_CLIENTS_LABEL = "maxClients";
 		public const String JOIN_MESSAGE_LABEL = "joinMessage";
+		public const String UPDATE_INTERVAL_LABEL = "updateInterval";
 
 		public const bool SEND_UPDATES_TO_SENDER = false;
 
+		public const int MIN_UPDATE_INTERVAL = 20;
+		public const int MAX_UPDATE_INTERVAL = 5000;
+
 		public int port = 2075;
 		public int maxClients = 32;
+		public int updateInterval = 500;
+		public int numClients;
 
 		public Thread listenThread;
 		public TcpListener tcpListener;
@@ -41,6 +47,8 @@ namespace KLFServer
 				clients[i].clientIndex = i;
 				clients[i].parent = this;
 			}
+
+			numClients = 0;
 
 			listenThread = new Thread(new ThreadStart(listenForClients));
 
@@ -161,6 +169,9 @@ namespace KLFServer
 					//Send the join message to the client
 					if (joinMessage.Length > 0)
 						sendServerMessage(client, joinMessage);
+
+					//Send a server setting update to all clients
+					sendServerSettings();
 				}
 				else
 				{
@@ -190,6 +201,7 @@ namespace KLFServer
 					client.username = "new user";
 
 					client.startMessageThread();
+					numClients++;
 
 					client.mutex.ReleaseMutex();
 
@@ -200,6 +212,14 @@ namespace KLFServer
 			}
 
 			return false;
+		}
+
+		public void clientDisconnect(int client_index)
+		{
+			Console.WriteLine("Client #" + client_index + " " + clients[client_index].username + " has disconnected.");
+			numClients--;
+
+			sendServerSettings();
 		}
 
 		public void handleMessage(int client_index, KLFCommon.ClientMessageID id, byte[] data)
@@ -421,6 +441,41 @@ namespace KLFServer
 			}
 		}
 
+		private void sendServerSettings()
+		{
+			for (int i = 0; i < clients.Length; i++)
+			{
+				if (clients[i].tcpClient != null && clients[i].tcpClient.Connected)
+				{
+					clients[i].mutex.WaitOne();
+					sendServerSettings(clients[i].tcpClient);
+					clients[i].mutex.ReleaseMutex();
+				}
+			}
+		}
+
+		private void sendServerSettings(TcpClient client)
+		{
+
+			try
+			{
+
+				//Encode message
+				sendMessageHeader(client, KLFCommon.ServerMessageID.SERVER_SETTINGS, 8);
+				client.GetStream().Write(KLFCommon.intToBytes(updateInterval), 0, 4);
+				client.GetStream().Write(KLFCommon.intToBytes(numClients*2), 0, 4);
+
+				client.GetStream().Flush();
+
+			}
+			catch (System.IO.IOException)
+			{
+			}
+			catch (System.ObjectDisposedException)
+			{
+			}
+		}
+
 		//Config
 
 		public void readConfigFile()
@@ -455,6 +510,12 @@ namespace KLFServer
 						{
 							joinMessage = line;
 						}
+						else if (label == UPDATE_INTERVAL_LABEL)
+						{
+							int new_val;
+							if (int.TryParse(line, out new_val) && new_val >= MIN_UPDATE_INTERVAL && new_val <= MAX_UPDATE_INTERVAL)
+								updateInterval = new_val;
+						}
 
 					}
 
@@ -487,6 +548,10 @@ namespace KLFServer
 			//join message
 			writer.WriteLine(JOIN_MESSAGE_LABEL);
 			writer.WriteLine(joinMessage);
+
+			//update interval
+			writer.WriteLine(UPDATE_INTERVAL_LABEL);
+			writer.WriteLine(updateInterval);
 
 			writer.Close();
 		}

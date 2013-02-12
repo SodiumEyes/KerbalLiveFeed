@@ -46,7 +46,8 @@ public class KLFCommon
 		HANDSHAKE_REFUSAL /*Refusal message*/,
 		SERVER_MESSAGE /*Message text*/,
 		TEXT_MESSAGE /*Message text*/,
-		PLUGIN_UPDATE /*data*/
+		PLUGIN_UPDATE /*data*/,
+		SERVER_SETTINGS /*UpdateInterval : MaxQueueSize*/
 	}
 }
 

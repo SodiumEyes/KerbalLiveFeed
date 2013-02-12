@@ -46,11 +46,18 @@ namespace KLFServer
 				Console.ForegroundColor = default_color;
 				Console.WriteLine(server.joinMessage);
 
+				Console.ForegroundColor = ConsoleColor.Green;
+				Console.Write("Update Interval: ");
+
+				Console.ForegroundColor = default_color;
+				Console.WriteLine(server.updateInterval);
+
 				Console.ForegroundColor = default_color;
 				Console.WriteLine();
-				Console.WriteLine("Enter \"p\" to change port, \"m\" to change max clients, \"j\" to change join message, \"h\" to begin hosting, \"q\" to quit");
+				Console.WriteLine("Enter P to change port, M to change max clients, J to change join message");
+				Console.WriteLine("Enter U to change update interval, Enter H to begin hosting, Q to quit");
 
-				String in_string = Console.ReadLine();
+				String in_string = Console.ReadLine().ToLower();
 
 				if (in_string == "q")
 				{
@@ -87,6 +94,18 @@ namespace KLFServer
 					Console.Write("Enter the join message: ");
 					server.joinMessage = Console.ReadLine();
 					server.writeConfigFile();
+				}
+				else if (in_string == "u")
+				{
+					Console.Write("Enter the update interval: ");
+					int new_value;
+					if (int.TryParse(Console.ReadLine(), out new_value) && new_value >= Server.MIN_UPDATE_INTERVAL && new_value <= Server.MAX_UPDATE_INTERVAL)
+					{
+						server.updateInterval = new_value;
+						server.writeConfigFile();
+					}
+					else
+						Console.WriteLine("Invalid update interval");
 				}
 				else if (in_string == "h")
 				{

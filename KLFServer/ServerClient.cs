@@ -112,7 +112,7 @@ namespace KLFServer
 				Thread.Sleep(0);
 			}
 
-			Console.WriteLine("Client #" + clientIndex + " " + username + " has disconnected.");
+			parent.clientDisconnect(clientIndex);
 
 			messageThread.Abort();
 		}
