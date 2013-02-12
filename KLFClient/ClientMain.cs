@@ -17,11 +17,17 @@ namespace KLFClient
 		public const String USERNAME_LABEL = "username";
 		public const String IP_LABEL = "ip";
 		public const String PORT_LABEL = "port";
+		public const String UPDATE_INTERVAL_LABEL = "updateInterval";
+
+		public const int DEFAULT_UPDATE_INTERVAL = 500;
+		public const int MIN_UPDATE_INTERVAL = 100;
+		public const int MAX_UPDATE_INTERVAL = 6000;
+		public const int MAX_QUEUED_UPDATES = 64;
 	
 		public static String username = "username";
 		public static IPAddress ip = IPAddress.Loopback;
 		public static int port = 2075;
-		public static int updateInterval = 500;
+		public static int updateInterval = DEFAULT_UPDATE_INTERVAL;
 
 		public const String OUT_FILENAME = "PluginData/kerballivefeed/out.txt";
 		public const String IN_FILENAME = "PluginData/kerballivefeed/in.txt";
@@ -74,11 +80,18 @@ namespace KLFClient
 				Console.ForegroundColor = default_color;
 				Console.WriteLine(port);
 
+				Console.ForegroundColor = ConsoleColor.Green;
+				Console.Write("Update Interval: ");
+
+				Console.ForegroundColor = default_color;
+				Console.WriteLine(updateInterval);
+
 				Console.ForegroundColor = default_color;
 				Console.WriteLine();
-				Console.WriteLine("Enter \"n\" to change name, \"ip\" to change IP, \"p\" to change port, \"c\" to connect, \"q\" to quit");
+				Console.WriteLine("Enter N to change name, IP to change IP, P to change port");
+				Console.WriteLine("U to change update interval, C to connect, Q to quit");
 
-				String in_string = Console.ReadLine();
+				String in_string = Console.ReadLine().ToLower();
 
 				if (in_string == "q")
 				{
@@ -110,6 +123,22 @@ namespace KLFClient
 					if (int.TryParse(Console.ReadLine(), out new_port) && new_port >= IPEndPoint.MinPort && new_port <= IPEndPoint.MaxPort)
 					{
 						port = new_port;
+						writeConfigFile();
+					}
+					else
+						Console.WriteLine("Invalid port");
+				}
+				else if (in_string == "u")
+				{
+					Console.ForegroundColor = ConsoleColor.Red;
+					Console.WriteLine("Warning! Changing the update interval from the default "+DEFAULT_UPDATE_INTERVAL+" is not recommended!");
+					Console.ForegroundColor = default_color;
+					Console.Write("Enter the Update Interval: ");
+
+					int new_val;
+					if (int.TryParse(Console.ReadLine(), out new_val) && new_val >= MIN_UPDATE_INTERVAL && new_val <= MAX_UPDATE_INTERVAL)
+					{
+						updateInterval = new_val;
 						writeConfigFile();
 					}
 					else
@@ -175,6 +204,9 @@ namespace KLFClient
 						catch (System.UnauthorizedAccessException)
 						{
 						}
+						catch (System.IO.IOException)
+						{
+						}
 					}
 
 					if (File.Exists(OUT_FILENAME))
@@ -184,6 +216,9 @@ namespace KLFClient
 							File.Delete(OUT_FILENAME);
 						}
 						catch (System.UnauthorizedAccessException)
+						{
+						}
+						catch (System.IO.IOException)
 						{
 						}
 					}
@@ -437,7 +472,7 @@ namespace KLFClient
 				else
 				{
 					//Don't let the update queue get insanely large
-					while (pluginUpdateInQueue.Count > 128)
+					while (pluginUpdateInQueue.Count > MAX_QUEUED_UPDATES)
 					{
 						pluginUpdateInQueue.Dequeue();
 					}
@@ -509,6 +544,12 @@ namespace KLFClient
 							if (int.TryParse(line, out new_port) && new_port >= IPEndPoint.MinPort && new_port <= IPEndPoint.MaxPort)
 								port = new_port;
 						}
+						else if (label == UPDATE_INTERVAL_LABEL)
+						{
+							int new_val;
+							if (int.TryParse(line, out new_val) && new_val >= MIN_UPDATE_INTERVAL && new_val <= MAX_UPDATE_INTERVAL)
+								updateInterval = new_val;
+						}
 
 					}
 
@@ -538,6 +579,10 @@ namespace KLFClient
 			//port
 			writer.WriteLine(PORT_LABEL);
 			writer.WriteLine(port);
+
+			//update interval
+			writer.WriteLine(UPDATE_INTERVAL_LABEL);
+			writer.WriteLine(updateInterval);
 
 			writer.Close();
 		}
