@@ -317,6 +317,7 @@ namespace KLFClient
 						tcpSendMutex.WaitOne();
 						sendHandshakeMessage(); //Reply to the handshake
 						tcpSendMutex.ReleaseMutex();
+						sendTextMessage("Connected");
 					}
 
 					break;
