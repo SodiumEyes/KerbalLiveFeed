@@ -155,29 +155,57 @@ namespace KLFServer
 
 			Console.WriteLine("Listening for clients...");
 			tcpListener.Start(4);
+
 			while (true)
 			{
-				TcpClient client = tcpListener.AcceptTcpClient();
 
-				Console.WriteLine("Client ip: " + ((IPEndPoint)client.Client.RemoteEndPoint).ToString());
+				TcpClient client = null;
+				String error_message = String.Empty;
 
-				if (addClient(client))
+				try
 				{
-					Console.WriteLine("Accepted client. Handshaking...");
-					sendHandshakeMessage(client);
+					client = tcpListener.AcceptTcpClient(); //Accept a TCP client
+				}
+				catch (System.Net.Sockets.SocketException e)
+				{
+					client = null;
+					error_message = e.ToString();
+				}
 
-					//Send the join message to the client
-					if (joinMessage.Length > 0)
-						sendServerMessage(client, joinMessage);
+				if (client != null && client.Connected)
+				{
+					//Console.WriteLine("Client ip: " + ((IPEndPoint)client.Client.RemoteEndPoint).ToString());
 
-					//Send a server setting update to all clients
-					sendServerSettings();
+					//Try to add the client
+					if (addClient(client))
+					{
+						//Send a handshake to the client
+						Console.WriteLine("Accepted client. Handshaking...");
+						sendHandshakeMessage(client);
+
+						//Send the join message to the client
+						if (joinMessage.Length > 0)
+							sendServerMessage(client, joinMessage);
+
+						//Send a server setting update to all clients
+						sendServerSettings();
+					}
+					else
+					{
+						//Client array is full
+						Console.WriteLine("Client attempted to connect, but server is full.");
+						sendHandshakeRefusalMessage(client, "Server is currently full");
+						client.Close();
+					}
 				}
 				else
+					client = null;
+
+				if (client == null)
 				{
-					Console.WriteLine("Client attempted to connect, but server is full.");
-					sendHandshakeRefusalMessage(client, "Server is currently full");
-					client.Close();
+					//There was an error accepting the client
+					Console.WriteLine("Error accepting client: ");
+					Console.WriteLine(error_message);
 				}
 
 			}

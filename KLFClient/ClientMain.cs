@@ -394,9 +394,11 @@ namespace KLFClient
 				//Send outgoing plugin updates to server
 				if (File.Exists(OUT_FILENAME))
 				{
+
+					FileStream out_stream = null;
 					try
 					{
-						FileStream out_stream = File.OpenRead(OUT_FILENAME);
+						out_stream = File.OpenRead(OUT_FILENAME);
 						out_stream.Lock(0, long.MaxValue);
 
 						//Read the update
@@ -441,6 +443,14 @@ namespace KLFClient
 					catch (System.ObjectDisposedException)
 					{
 					}
+					catch (System.IO.IOException)
+					{
+					}
+
+					if (out_stream != null)
+					{
+						out_stream.Close(); //Close the file in case the other close statement was reached
+					}
 				}
 
 				//Pass queued updates to plugin
@@ -448,9 +458,12 @@ namespace KLFClient
 
 				if (!File.Exists(IN_FILENAME) && pluginUpdateInQueue.Count > 0)
 				{
+
+					FileStream in_stream = null;
+
 					try
 					{
-						FileStream in_stream = File.Create(IN_FILENAME);
+						in_stream = File.Create(IN_FILENAME);
 
 						//Write the file format version
 						in_stream.Write(KLFCommon.intToBytes(KLFCommon.FILE_FORMAT_VERSION), 0, 4);
@@ -462,12 +475,14 @@ namespace KLFClient
 							in_stream.Write(update, 0, update.Length);
 						}
 
-						in_stream.Close();
-
 					}
 					catch (Exception)
 					{
+						in_stream = null;
 					}
+
+					if (in_stream != null)
+						in_stream.Close();
 
 				}
 				else
