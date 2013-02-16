@@ -100,7 +100,7 @@ namespace KLFServer
 						{
 							clients[i].mutex.WaitOne();
 
-							if (clients[i].tcpClient != null && clients[i].tcpClient.Connected)
+							if (clientIsValid(i))
 							{
 								sendServerMessage(clients[i].tcpClient, input);
 							}
@@ -219,11 +219,36 @@ namespace KLFServer
 			Console.WriteLine("Client #" + client_index + " " + clients[client_index].username + " has disconnected.");
 			numClients--;
 
+			StringBuilder sb = new StringBuilder();
+
+			//Build disconnect message
+			sb.Clear();
+			sb.Append("User ");
+			sb.Append(clients[client_index].username);
+			sb.Append(" has disconnected from the server.");
+
+			String message = sb.ToString();
+
+			//Send the join message to all other clients
+			for (int i = 0; i < clients.Length; i++)
+			{
+				if ((i != client_index) && clientIsValid(i))
+				{
+
+					clients[i].mutex.WaitOne();
+					sendServerMessage(clients[i].tcpClient, message);
+					clients[i].mutex.ReleaseMutex();
+				}
+			}
+
 			sendServerSettings();
 		}
 
 		public void handleMessage(int client_index, KLFCommon.ClientMessageID id, byte[] data)
 		{
+			if (!clientIsValid(client_index))
+				return;
+
 			ASCIIEncoding encoder = new ASCIIEncoding();
 
 			switch (id)
@@ -232,6 +257,7 @@ namespace KLFServer
 
 					if (data != null)
 					{
+						StringBuilder sb = new StringBuilder();
 
 						//Read username
 						Int32 username_length = KLFCommon.intFromBytes(data, 0);
@@ -242,10 +268,58 @@ namespace KLFServer
 						String version = encoder.GetString(data, offset, data.Length - offset);
 
 						clients[client_index].mutex.WaitOne();
+
 						clients[client_index].username = username;
+
+						//Send the active user count to the client
+						if (numClients == 2)
+						{
+							//Get the username of the other user on the server
+							sb.Append("There is currently 1 other user on this server: ");
+							for (int i = 0; i < clients.Length; i++)
+							{
+								if (i != client_index && clientIsValid(i))
+								{
+									sb.Append(clients[i].username);
+									break;
+								}
+							}
+						}
+						else
+						{
+							sb.Append("There are currently ");
+							sb.Append(numClients - 1);
+							sb.Append(" other users on this server.");
+							if (numClients > 1)
+							{
+								sb.Append(" Enter !list to see them.");
+							}
+						}
+
+						sendServerMessage(clients[client_index].tcpClient, sb.ToString());
 						clients[client_index].mutex.ReleaseMutex();
 
 						Console.WriteLine(username + " has joined the server using client version "+version);
+
+						//Build join message
+						sb.Clear();
+						sb.Append("User ");
+						sb.Append(username);
+						sb.Append(" has joined the server.");
+
+						String join_message = sb.ToString();
+
+						//Send the join message to all other clients
+						for (int i = 0; i < clients.Length; i++)
+						{
+							if ((i != client_index) && clientIsValid(i))
+							{
+
+								clients[i].mutex.WaitOne();
+								sendServerMessage(clients[i].tcpClient, join_message);
+								clients[i].mutex.ReleaseMutex();
+							}
+						}
 
 					}
 
@@ -259,7 +333,7 @@ namespace KLFServer
 						//Send the update to all other clients
 						for (int i = 0; i < clients.Length; i++)
 						{
-							if ((i != client_index || SEND_UPDATES_TO_SENDER) && clients[i].tcpClient != null && clients[i].tcpClient.Connected)
+							if ((i != client_index || SEND_UPDATES_TO_SENDER) && clientIsValid(i))
 							{
 
 								clients[i].mutex.WaitOne();
@@ -279,12 +353,35 @@ namespace KLFServer
 					if (data != null)
 					{
 
-						//Compile full message
 						StringBuilder sb = new StringBuilder();
+						String message_text = encoder.GetString(data, 0, data.Length);
+
+						if (message_text.Length > 0 && message_text.First() == '!')
+						{
+							if (message_text == "!list")
+							{
+								//Compile list of usernames
+								sb.Append("Connected users:\n");
+								for (int i = 0; i < clients.Length; i++)
+								{
+									if (clientIsValid(i)) {
+										sb.Append(clients[i].username);
+										sb.Append('\n');
+									}
+								}
+
+								clients[client_index].mutex.WaitOne();
+								sendTextMessage(clients[client_index].tcpClient, sb.ToString());
+								clients[client_index].mutex.ReleaseMutex();
+								break;
+							}
+						}
+
+						//Compile full message
 						sb.Append('[');
 						sb.Append(clients[client_index].username);
 						sb.Append("] ");
-						sb.Append(encoder.GetString(data, 0, data.Length));
+						sb.Append(message_text);
 
 						String full_message = sb.ToString();
 
@@ -294,9 +391,8 @@ namespace KLFServer
 						//Send the update to all other clients
 						for (int i = 0; i < clients.Length; i++)
 						{
-							if ((i != client_index) && clients[i].tcpClient != null && clients[i].tcpClient.Connected)
+							if ((i != client_index) && clientIsValid(i))
 							{
-
 								clients[i].mutex.WaitOne();
 								sendTextMessage(clients[i].tcpClient, full_message);
 								clients[i].mutex.ReleaseMutex();
@@ -308,6 +404,11 @@ namespace KLFServer
 					break;
 
 			}
+		}
+
+		public bool clientIsValid(int index)
+		{
+			return index >= 0 && index < clients.Length && clients[index].tcpClient != null && clients[index].tcpClient.Connected;
 		}
 
 		//Messages
@@ -445,7 +546,7 @@ namespace KLFServer
 		{
 			for (int i = 0; i < clients.Length; i++)
 			{
-				if (clients[i].tcpClient != null && clients[i].tcpClient.Connected)
+				if (clientIsValid(i))
 				{
 					clients[i].mutex.WaitOne();
 					sendServerSettings(clients[i].tcpClient);

@@ -29,6 +29,8 @@ namespace KLFClient
 		public const String CLIENT_DATA_FILENAME = "PluginData/kerballivefeed/clientdata.txt";
 		public const String CLIENT_CONFIG_FILENAME = "KLFClientConfig.txt";
 
+		public const int MAX_USERNAME_LENGTH = 32;
+
 		public const String PLUGIN_DIRECTORY = "PluginData/kerballivefeed/";
 
 		public static bool endSession;
@@ -91,6 +93,9 @@ namespace KLFClient
 				{
 					Console.Write("Enter your new username: ");
 					username = Console.ReadLine();
+					if (username.Length > MAX_USERNAME_LENGTH)
+						username = username.Substring(0, MAX_USERNAME_LENGTH); //Trim username
+
 					writeConfigFile();
 				}
 				else if (in_string == "ip")
@@ -120,7 +125,19 @@ namespace KLFClient
 				}
 				else if (in_string == "c") {
 
-					connectionLoop();
+					try
+					{
+						connectionLoop();
+					}
+					catch (Exception e)
+					{
+						//Write an error log
+						TextWriter writer = File.CreateText("KLFClientlog.txt");
+						writer.Write(e.ToString());
+						writer.Close();
+
+						Console.WriteLine("Unexpected expection encountered! Crash report written to KLFClientlog.txt");
+					}
 				}
 
 			}
