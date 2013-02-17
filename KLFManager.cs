@@ -250,14 +250,24 @@ namespace KerbalLiveFeed
 		{
 			if (FlightGlobals.ready && KSP.IO.File.Exists<KLFManager>(IN_FILENAME))
 			{
+				byte[] in_bytes = null;
+
 				try
 				{
-					//Debug.Log("*** Reading updates from file!");
-
 					//I would have used a FileStream here, but KSP.IO.File.Open is broken?
-					byte[] in_bytes = KSP.IO.File.ReadAllBytes<KLFManager>(IN_FILENAME);
+					in_bytes = KSP.IO.File.ReadAllBytes<KLFManager>(IN_FILENAME); //Read the updates from the file
 
-					//Debug.Log("*** Read "+in_bytes.Length+" from file!");
+					//Delete the update file now that it's been read
+					KSP.IO.File.Delete<KLFManager>(IN_FILENAME);
+
+				}
+				catch (KSP.IO.IOException)
+				{
+					in_bytes = null;
+				}
+
+				if (in_bytes != null)
+				{
 
 					int offset = 0;
 
@@ -287,6 +297,7 @@ namespace KerbalLiveFeed
 
 								//De-serialize and handle the update
 								handleUpdate(KSP.IO.IOUtils.DeserializeFromBinary(update_bytes));
+								
 							}
 							else
 								break;
@@ -297,15 +308,8 @@ namespace KerbalLiveFeed
 						Debug.Log("*** KLF file format version mismatch:" + file_format_version + " expected:" + KLFCommon.FILE_FORMAT_VERSION);
 					}
 
-					//Delete the update file now that it's been read
-					KSP.IO.File.Delete<KLFManager>(IN_FILENAME);
+				}
 
-				}
-				catch (KSP.IO.IOException e)
-				{
-					Debug.Log("*** IO Exception?!");
-					Debug.Log(e);
-				}
 			}
 		}
 
@@ -365,7 +369,10 @@ namespace KerbalLiveFeed
 				entry.vessel = vessel;
 				entry.lastUpdateTime = UnityEngine.Time.fixedTime;
 
-				vessels[vessel_key] = entry;
+				if (vessels.ContainsKey(vessel_key))
+					vessels[vessel_key] = entry;
+				else
+					vessels.Add(vessel_key, entry);
 
 				/*Queue this update for the next update call because updating a vessel on the same step as
 				 * creating it usually causes problems for some reason */

@@ -109,10 +109,20 @@ namespace KerbalLiveFeed
 						//Calculate vessel's position at the current (real-world) time
 						double time = adjustedUT;
 
-						Vector3 body_pos_at_ref = mainBody.orbit.getTruePositionAtUT(time);
-						Vector3 body_pos_now = mainBody.orbit.getTruePositionAtUT(Planetarium.GetUniversalTime());
+						if (mainBody.referenceBody != null && mainBody.referenceBody != mainBody && mainBody.orbit != null)
+						{
+							//Adjust for the movement of the vessel's parent body
+							Vector3 body_pos_at_ref = body_pos_at_ref = mainBody.orbit.getTruePositionAtUT(time);
+							Vector3 body_pos_now = body_pos_now = mainBody.orbit.getTruePositionAtUT(Planetarium.GetUniversalTime());
 
-						return body_pos_now + (orbitRenderer.orbit.getTruePositionAtUT(time) - body_pos_at_ref);
+							return body_pos_now + (orbitRenderer.orbit.getTruePositionAtUT(time) - body_pos_at_ref);
+						}
+						else
+						{
+							//Vessel is probably orbiting the sun
+							return orbitRenderer.orbit.getTruePositionAtUT(time);
+						}
+
 					}
 				}
 				else
@@ -351,7 +361,9 @@ namespace KerbalLiveFeed
 
                 //Update game object transform
 				updateOrbitProperties();
+
                 updatePosition();
+
             }
 
         }
@@ -399,7 +411,7 @@ namespace KerbalLiveFeed
 				line.SetWidth(scale, scale);
 				line_half_dir *= 0.5f;
 			}
-            
+
             line.SetPosition(0, ScaledSpace.LocalToScaledSpace(worldPosition - line_half_dir));
             line.SetPosition(1, ScaledSpace.LocalToScaledSpace(worldPosition + line_half_dir));
 
@@ -412,9 +424,7 @@ namespace KerbalLiveFeed
 				case Vessel.Situations.DOCKED:
 					orbitRenderer.orbit.UpdateFromUT(adjustedUT);
 					break;
-			}
-			
-
+			}	
         }
 
         public void updateOrbitProperties()
