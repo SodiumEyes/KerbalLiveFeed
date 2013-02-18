@@ -81,7 +81,7 @@ namespace KLFClient
 				Console.ForegroundColor = default_color;
 				Console.WriteLine();
 				Console.WriteLine("Enter N to change name, IP to change IP, P to change port");
-				Console.WriteLine("U to change update interval, C to connect, Q to quit");
+				Console.WriteLine("C to connect, Q to quit");
 
 				String in_string = Console.ReadLine().ToLower();
 

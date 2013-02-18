@@ -7,6 +7,7 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Net;
 using System.IO;
+using System.Diagnostics;
 
 namespace KLFServer
 {
@@ -36,8 +37,20 @@ namespace KLFServer
 
 		public String joinMessage = String.Empty;
 
+		public Stopwatch stopwatch = new Stopwatch();
+
+		public long currentMillisecond
+		{
+			get
+			{
+				return stopwatch.ElapsedMilliseconds;
+			}
+		}
+
 		public void hostingLoop()
 		{
+			stopwatch.Start();
+
 			Console.WriteLine("Hosting server on port " + port + "...");
 
 			clients = new ServerClient[maxClients];
@@ -100,7 +113,7 @@ namespace KLFServer
 						{
 							clients[i].mutex.WaitOne();
 
-							if (clientIsValid(i))
+							if (clientIsReady(i))
 							{
 								sendServerMessage(clients[i].tcpClient, input);
 							}
@@ -148,6 +161,8 @@ namespace KLFServer
 			clients = null;
 
 			Console.WriteLine("Server session ended.");
+
+			stopwatch.Stop();
 		}
 
 		private void listenForClients()
@@ -244,29 +259,40 @@ namespace KLFServer
 
 		public void clientDisconnect(int client_index)
 		{
-			Console.WriteLine("Client #" + client_index + " " + clients[client_index].username + " has disconnected.");
 			numClients--;
 
-			StringBuilder sb = new StringBuilder();
-
-			//Build disconnect message
-			sb.Clear();
-			sb.Append("User ");
-			sb.Append(clients[client_index].username);
-			sb.Append(" has disconnected from the server.");
-
-			String message = sb.ToString();
-
-			//Send the join message to all other clients
-			for (int i = 0; i < clients.Length; i++)
+			//Only send the disconnect message if the client performed handshake successfully
+			if (clients[client_index].receivedHandshake)
 			{
-				if ((i != client_index) && clientIsValid(i))
-				{
 
-					clients[i].mutex.WaitOne();
-					sendServerMessage(clients[i].tcpClient, message);
-					clients[i].mutex.ReleaseMutex();
+				Console.WriteLine("Client #" + client_index + " " + clients[client_index].username + " has disconnected.");
+
+				StringBuilder sb = new StringBuilder();
+
+				//Build disconnect message
+				sb.Clear();
+				sb.Append("User ");
+				sb.Append(clients[client_index].username);
+				sb.Append(" has disconnected from the server.");
+
+				String message = sb.ToString();
+
+				//Send the join message to all other clients
+				for (int i = 0; i < clients.Length; i++)
+				{
+					if ((i != client_index) && clientIsReady(i))
+					{
+
+						clients[i].mutex.WaitOne();
+						sendServerMessage(clients[i].tcpClient, message);
+						clients[i].mutex.ReleaseMutex();
+					}
 				}
+
+			}
+			else
+			{
+				Console.WriteLine("Client failed to handshake successfully.");
 			}
 
 			sendServerSettings();
@@ -295,10 +321,6 @@ namespace KLFServer
 
 						String version = encoder.GetString(data, offset, data.Length - offset);
 
-						clients[client_index].mutex.WaitOne();
-
-						clients[client_index].username = username;
-
 						//Send the active user count to the client
 						if (numClients == 2)
 						{
@@ -306,7 +328,7 @@ namespace KLFServer
 							sb.Append("There is currently 1 other user on this server: ");
 							for (int i = 0; i < clients.Length; i++)
 							{
-								if (i != client_index && clientIsValid(i))
+								if (i != client_index && clientIsReady(i))
 								{
 									sb.Append(clients[i].username);
 									break;
@@ -324,7 +346,12 @@ namespace KLFServer
 							}
 						}
 
+						clients[client_index].mutex.WaitOne();
+
+						clients[client_index].receivedHandshake = true;
+						clients[client_index].username = username;
 						sendServerMessage(clients[client_index].tcpClient, sb.ToString());
+
 						clients[client_index].mutex.ReleaseMutex();
 
 						Console.WriteLine(username + " has joined the server using client version "+version);
@@ -340,7 +367,7 @@ namespace KLFServer
 						//Send the join message to all other clients
 						for (int i = 0; i < clients.Length; i++)
 						{
-							if ((i != client_index) && clientIsValid(i))
+							if ((i != client_index) && clientIsReady(i))
 							{
 
 								clients[i].mutex.WaitOne();
@@ -355,13 +382,13 @@ namespace KLFServer
 
 				case KLFCommon.ClientMessageID.PLUGIN_UPDATE:
 
-					if (data != null)
+					if (data != null && clientIsReady(client_index))
 					{
 
 						//Send the update to all other clients
 						for (int i = 0; i < clients.Length; i++)
 						{
-							if ((i != client_index || SEND_UPDATES_TO_SENDER) && clientIsValid(i))
+							if ((i != client_index || SEND_UPDATES_TO_SENDER) && clientIsReady(i))
 							{
 
 								clients[i].mutex.WaitOne();
@@ -378,7 +405,7 @@ namespace KLFServer
 
 				case KLFCommon.ClientMessageID.TEXT_MESSAGE:
 
-					if (data != null)
+					if (data != null && clientIsReady(client_index))
 					{
 
 						StringBuilder sb = new StringBuilder();
@@ -392,7 +419,8 @@ namespace KLFServer
 								sb.Append("Connected users:\n");
 								for (int i = 0; i < clients.Length; i++)
 								{
-									if (clientIsValid(i)) {
+									if (clientIsReady(i))
+									{
 										sb.Append(clients[i].username);
 										sb.Append('\n');
 									}
@@ -419,7 +447,7 @@ namespace KLFServer
 						//Send the update to all other clients
 						for (int i = 0; i < clients.Length; i++)
 						{
-							if ((i != client_index) && clientIsValid(i))
+							if ((i != client_index) && clientIsReady(i))
 							{
 								clients[i].mutex.WaitOne();
 								sendTextMessage(clients[i].tcpClient, full_message);
@@ -437,6 +465,11 @@ namespace KLFServer
 		public bool clientIsValid(int index)
 		{
 			return index >= 0 && index < clients.Length && clients[index].tcpClient != null && clients[index].tcpClient.Connected;
+		}
+
+		public bool clientIsReady(int index)
+		{
+			return clientIsValid(index) && clients[index].receivedHandshake;
 		}
 
 		//Messages

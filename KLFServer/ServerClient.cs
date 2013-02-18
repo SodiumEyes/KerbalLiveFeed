@@ -21,6 +21,11 @@ namespace KLFServer
 
 		public Mutex mutex;
 
+		public long handshakeTimeoutTime;
+		public bool receivedHandshake;
+
+		public const long HANDSHAKE_TIMEOUT_MS = 4000;
+
 		public ServerClient()
 		{
 			mutex = new Mutex();
@@ -34,6 +39,12 @@ namespace KLFServer
 
 			bool stream_ended = false;
 
+			//Set the handshake timeout timer
+			mutex.WaitOne();
+			handshakeTimeoutTime = parent.currentMillisecond + HANDSHAKE_TIMEOUT_MS;
+			receivedHandshake = false;
+			mutex.ReleaseMutex();
+
 			//Console.WriteLine("Listening for message from client #" + clientIndex);
 
 			while (!stream_ended)
@@ -44,7 +55,20 @@ namespace KLFServer
 				byte[] message_data = null;
 
 				mutex.WaitOne();
-				bool should_read = tcpClient != null && tcpClient.Connected;
+
+				bool should_read = false;
+
+				//Close the timeout if connection is invalid or the handshake has not been received in the alloted time
+				if (tcpClient == null || !tcpClient.Connected || (!receivedHandshake && handshakeTimeoutTime <= parent.currentMillisecond))
+				{
+					should_read = false;
+					stream_ended = true;
+				}
+				else
+				{
+					should_read = receivedHandshake || tcpClient.GetStream().DataAvailable;
+				} 
+
 				mutex.ReleaseMutex();
 
 				if (should_read)
@@ -103,14 +127,16 @@ namespace KLFServer
 					}
 
 				}
-				else
-					break;
 
 				if (message_received && parent != null)
 					parent.handleMessage(clientIndex, id, message_data); //Have the parent server handle the message
 
 				Thread.Sleep(0);
 			}
+
+			mutex.WaitOne();
+			tcpClient.Close();
+			mutex.ReleaseMutex();
 
 			parent.clientDisconnect(clientIndex);
 
