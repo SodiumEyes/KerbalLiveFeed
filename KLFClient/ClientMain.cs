@@ -14,6 +14,12 @@ namespace KLFClient
 	class ClientMain
 	{
 
+		public struct InTextMessage
+		{
+			public bool fromServer;
+			public String message;
+		}
+
 		public const String USERNAME_LABEL = "username";
 		public const String IP_LABEL = "ip";
 		public const String PORT_LABEL = "port";
@@ -30,6 +36,7 @@ namespace KLFClient
 		public const String CLIENT_CONFIG_FILENAME = "KLFClientConfig.txt";
 
 		public const int MAX_USERNAME_LENGTH = 32;
+		public const int MAX_TEXT_MESSAGE_QUEUE = 128;
 
 		public const String PLUGIN_DIRECTORY = "PluginData/kerballivefeed/";
 
@@ -37,9 +44,11 @@ namespace KLFClient
 		public static TcpClient tcpClient;
 
 		public static Queue<byte[]> pluginUpdateInQueue;
+		public static Queue<InTextMessage> textMessageQueue;
 
 		public static Mutex tcpSendMutex;
 		public static Mutex pluginUpdateInMutex;
+		public static Mutex textMessageQueueMutex;
 		public static Mutex serverSettingsMutex;
 
 		public static Thread pluginUpdateThread;
@@ -159,10 +168,12 @@ namespace KLFClient
 				{
 
 					pluginUpdateInQueue = new Queue<byte[]>();
+					textMessageQueue = new Queue<InTextMessage>();
 
 					tcpSendMutex = new Mutex();
 					pluginUpdateInMutex = new Mutex();
 					serverSettingsMutex = new Mutex();
+					textMessageQueueMutex = new Mutex();
 
 					//Create a thread to handle plugin updates
 					pluginUpdateThread = new Thread(new ThreadStart(handlePluginUpdates));
@@ -286,9 +297,21 @@ namespace KLFClient
 						Thread.Sleep(0);
 					}
 
+					//Obtain all mutexes and abort all threads
+					tcpSendMutex.WaitOne();
+					serverSettingsMutex.WaitOne();
+					pluginUpdateInMutex.WaitOne();
+					textMessageQueueMutex.WaitOne();
+
 					pluginUpdateThread.Abort();
 					chatThread.Abort();
 
+					tcpSendMutex.ReleaseMutex();
+					serverSettingsMutex.ReleaseMutex();
+					pluginUpdateInMutex.ReleaseMutex();
+					textMessageQueueMutex.ReleaseMutex();
+
+					//Close the connection
 					Console.WriteLine("Lost connection with server.");
 					tcpClient.Close();
 
@@ -348,21 +371,30 @@ namespace KLFClient
 
 				case KLFCommon.ServerMessageID.SERVER_MESSAGE:
 
-					String message = encoder.GetString(data, 0, data.Length);
+					InTextMessage in_message = new InTextMessage();
 
-					ConsoleColor default_color = Console.ForegroundColor;
-					Console.ForegroundColor = ConsoleColor.Green;
-					Console.Write("[Server] ");
+					in_message.fromServer = true;
+					in_message.message = encoder.GetString(data, 0, data.Length);
 
-					Console.ForegroundColor = default_color;
-					Console.WriteLine(message);
+					//Queue the message
+					textMessageQueueMutex.WaitOne();
+					enqueueTextMessage(in_message);
+					textMessageQueueMutex.ReleaseMutex();
+
 					break;
 
 				case KLFCommon.ServerMessageID.TEXT_MESSAGE:
 
-					message = encoder.GetString(data, 0, data.Length);
-					//Console.SetCursorPosition(0, Console.CursorTop);
-					Console.WriteLine(message);
+					in_message = new InTextMessage();
+
+					in_message.fromServer = false;
+					in_message.message = encoder.GetString(data, 0, data.Length);
+
+					//Queue the message
+					textMessageQueueMutex.WaitOne();
+					enqueueTextMessage(in_message);
+					textMessageQueueMutex.ReleaseMutex();
+
 					break;
 
 				case KLFCommon.ServerMessageID.PLUGIN_UPDATE:
@@ -510,30 +542,107 @@ namespace KLFClient
 
 		static void handleChat()
 		{
+
+			StringBuilder sb = new StringBuilder();
+			ConsoleColor default_color = Console.ForegroundColor;
+
 			while (true)
 			{
-				String line = Console.ReadLine();
-				if (line.Length > 0)
-				{
 
-					if (line.ElementAt(0) == '/')
-					{
-						if (line == "/quit")
-						{
-							tcpSendMutex.WaitOne();
-							tcpClient.Close(); //Close the tcp client
-							tcpSendMutex.ReleaseMutex();
-						}
-							
-					}
-					else
-					{
-						tcpSendMutex.WaitOne();
-						sendTextMessage(line);
-						tcpSendMutex.ReleaseMutex();
+				//Handle outgoing messsages
+				if (Console.KeyAvailable)
+				{
+					ConsoleKeyInfo key = Console.ReadKey();
+
+					switch (key.Key) {
+
+						case ConsoleKey.Enter:
+
+							String line = sb.ToString();
+
+							if (line.Length > 0)
+							{
+								if (line.ElementAt(0) == '/')
+								{
+									if (line == "/quit")
+									{
+										tcpSendMutex.WaitOne();
+										tcpClient.Close(); //Close the tcp client
+										tcpSendMutex.ReleaseMutex();
+									}
+
+								}
+								else
+								{
+									tcpSendMutex.WaitOne();
+									sendTextMessage(line);
+									tcpSendMutex.ReleaseMutex();
+								}
+							}
+
+							sb.Clear();
+							Console.WriteLine();
+							break;
+
+						case ConsoleKey.Backspace:
+						case ConsoleKey.Delete:
+							if (sb.Length > 0)
+							{
+								sb.Remove(sb.Length - 1, 1);
+								Console.Write(' ');
+								if (Console.CursorLeft > 0)
+									Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
+							}
+							break;
+
+						default:
+							if (key.KeyChar != '\0')
+								sb.Append(key.KeyChar);
+							else if (Console.CursorLeft > 0)
+								Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
+							break;
+
 					}
 				}
+
+				if (sb.Length == 0)
+				{
+					//Handle incoming messages
+					textMessageQueueMutex.WaitOne();
+
+					try
+					{
+						while (textMessageQueue.Count > 0)
+						{
+							InTextMessage message = textMessageQueue.Dequeue();
+							if (message.fromServer)
+							{
+								Console.ForegroundColor = ConsoleColor.Green;
+								Console.Write("[Server] ");
+								Console.ForegroundColor = default_color;
+							}
+
+							Console.WriteLine(message.message);
+						}
+					}
+					catch (System.IO.IOException)
+					{
+					}
+
+					textMessageQueueMutex.ReleaseMutex();
+				}
+
+				Thread.Sleep(0);
 			}
+		}
+
+		static void enqueueTextMessage(InTextMessage message)
+		{
+			//Dequeue an old text message if there are a lot of messages backed up
+			if (textMessageQueue.Count >= MAX_TEXT_MESSAGE_QUEUE)
+				textMessageQueue.Dequeue();
+
+			textMessageQueue.Enqueue(message);
 		}
 
 		//Config
