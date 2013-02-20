@@ -57,7 +57,13 @@ namespace KLFServer
 				Console.WriteLine("Enter P to change port, M to change max clients, J to change join message");
 				Console.WriteLine("Enter U to change update interval, Enter H to begin hosting, Q to quit");
 
-				String in_string = Console.ReadLine().ToLower();
+				String in_string;
+				if (server.noPrompt) { // Auto-starting the server if so defined in the config.
+					in_string = "h";
+				}
+				else {
+					in_string = Console.ReadLine().ToLower();
+				}
 
 				if (in_string == "q")
 				{
