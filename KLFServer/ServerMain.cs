@@ -52,10 +52,17 @@ namespace KLFServer
 				Console.ForegroundColor = default_color;
 				Console.WriteLine(server.updateInterval);
 
+				Console.ForegroundColor = ConsoleColor.Green;
+				Console.Write("Auto-Restart: ");
+
+				Console.ForegroundColor = default_color;
+				Console.WriteLine(server.autoRestart);
+
 				Console.ForegroundColor = default_color;
 				Console.WriteLine();
 				Console.WriteLine("Enter P to change port, M to change max clients, J to change join message");
-				Console.WriteLine("Enter U to change update interval, Enter H to begin hosting, Q to quit");
+				Console.WriteLine("Enter U to change update interval, Enter A to toggle auto-restart");
+				Console.WriteLine("Enter H to begin hosting, Q to quit");
 
 				String in_string = Console.ReadLine().ToLower();
 
@@ -107,30 +114,58 @@ namespace KLFServer
 					else
 						Console.WriteLine("Invalid update interval");
 				}
+				else if (in_string == "a")
+				{
+					server.autoRestart = !server.autoRestart;
+					server.writeConfigFile();
+				}
 				else if (in_string == "h")
 				{
-					try
+					if (server.autoRestart)
 					{
-						server.hostingLoop();
+						while (!server.quit)
+							hostServer(server);
 					}
-					catch (Exception e)
-					{
-						//Write an error log
-						TextWriter writer = File.CreateText("KLFServerlog.txt");
-						writer.Write(e.ToString());
-						writer.Close();
-
-						Console.WriteLine("Unexpected expection encountered! Crash report written to KLFServerlog.txt");
-					}
-
-					Console.WriteLine("Press any key to quit");
-					Console.ReadKey();
+					else
+						hostServer(server);
 
 					break;
 				}
 
 			}
 
+		}
+
+		static void hostServer(Server server)
+		{
+			try
+			{
+				server.hostingLoop();
+			}
+			catch (Exception e)
+			{
+				//Write an error log
+				TextWriter writer = File.CreateText("KLFServerlog.txt");
+				writer.Write(e.ToString());
+				writer.Close();
+
+				Console.WriteLine();
+
+				ConsoleColor default_color = Console.ForegroundColor;
+				Console.ForegroundColor = ConsoleColor.Red;
+				Server.stampedConsoleWriteLine("Unexpected expection encountered! Crash report written to KLFServerlog.txt");
+				Console.WriteLine(e.ToString());
+
+				Console.ForegroundColor = default_color;
+
+				Console.WriteLine();
+			}
+
+			if (!server.autoRestart)
+			{
+				Console.WriteLine("Press any key to quit");
+				Console.ReadKey();
+			}
 		}
 	
 	}

@@ -19,6 +19,7 @@ namespace KLFServer
 		public const String MAX_CLIENTS_LABEL = "maxClients";
 		public const String JOIN_MESSAGE_LABEL = "joinMessage";
 		public const String UPDATE_INTERVAL_LABEL = "updateInterval";
+		public const String AUTO_RESTART_LABEL = "autoRestart";
 
 		public const bool SEND_UPDATES_TO_SENDER = false;
 
@@ -29,8 +30,14 @@ namespace KLFServer
 		public int maxClients = 32;
 		public int updateInterval = 500;
 		public int numClients;
+		public bool autoRestart = false;
+		public bool quit = false;
+
+		public Exception threadException;
+		public Mutex threadExceptionMutex;
 
 		public Thread listenThread;
+		public Thread commandThread;
 		public TcpListener tcpListener;
 
 		public ServerClient[] clients;
@@ -49,9 +56,40 @@ namespace KLFServer
 
 		public void hostingLoop()
 		{
+			//Clean pre-existing state variables
+			if (tcpListener != null)
+			{
+				try
+				{
+					tcpListener.Stop();
+				}
+				catch (System.Net.Sockets.SocketException)
+				{
+				}
+			}
+
+			if (clients != null)
+			{
+				for (int i = 0; i < clients.Length; i++)
+				{
+					if (clients[i].tcpClient != null)
+						clients[i].tcpClient.Close();
+
+					if (clients[i].messageThread != null && clients[i].messageThread.ThreadState == System.Threading.ThreadState.Running)
+						clients[i].messageThread.Abort();
+				}
+			}
+
+			if (listenThread != null && listenThread.ThreadState == System.Threading.ThreadState.Running)
+				listenThread.Abort();
+
+			if (commandThread != null && commandThread.ThreadState == System.Threading.ThreadState.Running)
+				commandThread.Abort();
+
+			//Start hosting server
 			stopwatch.Start();
 
-			Console.WriteLine("Hosting server on port " + port + "...");
+			stampedConsoleWriteLine("Hosting server on port " + port + "...");
 
 			clients = new ServerClient[maxClients];
 			for (int i = 0; i < clients.Length; i++)
@@ -64,6 +102,10 @@ namespace KLFServer
 			numClients = 0;
 
 			listenThread = new Thread(new ThreadStart(listenForClients));
+			commandThread = new Thread(new ThreadStart(handleCommands));
+
+			threadException = null;
+			threadExceptionMutex = new Mutex();
 
 			tcpListener = new TcpListener(IPAddress.Any, port);
 			listenThread.Start();
@@ -74,59 +116,39 @@ namespace KLFServer
 			{
 				if (UPnP.NAT.Discover())
 				{
-					Console.WriteLine("NAT Firewall discovered! Users won't be able to connect unless port "+port+" is forwarded.");
-					Console.WriteLine("External IP: " + UPnP.NAT.GetExternalIP().ToString());
+					stampedConsoleWriteLine("NAT Firewall discovered! Users won't be able to connect unless port "+port+" is forwarded.");
+					stampedConsoleWriteLine("External IP: " + UPnP.NAT.GetExternalIP().ToString());
 					UPnP.NAT.ForwardPort(port, ProtocolType.Tcp, "KLF (TCP)");
-					Console.WriteLine("Forwarded port "+port+" with UPnP");
+					stampedConsoleWriteLine("Forwarded port "+port+" with UPnP");
 					upnp_enabled = true;
 				}
 			}
 			catch (Exception)
 			{
-				//Console.WriteLine(e);
 			}
 
-			Console.WriteLine("Commands:");
-			Console.WriteLine("/quit - quit");
+			stampedConsoleWriteLine("Commands:");
+			stampedConsoleWriteLine("/quit - quit");
 
-			while (true)
+			commandThread.Start();
+
+			//Check for exceptions that occur in threads
+			while (!quit)
 			{
-				String input = Console.ReadLine();
-
-				if (input != null && input.Length > 0)
+				threadExceptionMutex.WaitOne();
+				if (threadException != null)
 				{
-
-					if (input.ElementAt(0) == '/')
-					{
-						if (input == "/quit")
-							break;
-						else if (input == "/crash")
-						{
-							Object o = null; //You asked for it!
-							o.ToString();
-						}
-					}
-					else
-					{
-						//Send a message to all clients
-						for (int i = 0; i < clients.Length; i++)
-						{
-							clients[i].mutex.WaitOne();
-
-							if (clientIsReady(i))
-							{
-								sendServerMessage(clients[i].tcpClient, input);
-							}
-
-							clients[i].mutex.ReleaseMutex();
-						}
-					}
-
+					throw threadException;
 				}
+				threadExceptionMutex.ReleaseMutex();
+
+				Thread.Sleep(0);
 			}
 
-			//End listen and client threads
+			//End threads
 			listenThread.Abort();
+
+			commandThread.Abort();
 
 			for (int i = 0; i < clients.Length; i++)
 			{
@@ -160,85 +182,147 @@ namespace KLFServer
 
 			clients = null;
 
-			Console.WriteLine("Server session ended.");
+			stampedConsoleWriteLine("Server session ended.");
 
 			stopwatch.Stop();
+		}
+
+		private void handleCommands()
+		{
+			try
+			{
+				while (true)
+				{
+					String input = Console.ReadLine();
+
+					if (input != null && input.Length > 0)
+					{
+
+						if (input.ElementAt(0) == '/')
+						{
+							if (input == "/quit")
+							{
+								quit = true;
+								break;
+							}
+							else if (input == "/crash")
+							{
+								Object o = null; //You asked for it!
+								o.ToString();
+							}
+						}
+						else
+						{
+							//Send a message to all clients
+							for (int i = 0; i < clients.Length; i++)
+							{
+								clients[i].mutex.WaitOne();
+
+								if (clientIsReady(i))
+								{
+									sendServerMessage(clients[i].tcpClient, input);
+								}
+
+								clients[i].mutex.ReleaseMutex();
+							}
+						}
+
+					}
+				}
+			}
+			catch (Exception e)
+			{
+				threadExceptionMutex.WaitOne();
+				if (threadException == null)
+					threadException = e; //Pass exception to main thread
+				threadExceptionMutex.ReleaseMutex();
+			}
 		}
 
 		private void listenForClients()
 		{
 
-			Console.WriteLine("Listening for clients...");
-			tcpListener.Start(4);
-
-			while (true)
+			try
 			{
+				stampedConsoleWriteLine("Listening for clients...");
+				tcpListener.Start(4);
 
-				TcpClient client = null;
-				String error_message = String.Empty;
-
-				try
+				while (true)
 				{
-					client = tcpListener.AcceptTcpClient(); //Accept a TCP client
-				}
-				catch (System.Net.Sockets.SocketException e)
-				{
-					if (client != null)
-						client.Close();
-					client = null;
-					error_message = e.ToString();
-				}
 
-				if (client != null && client.Connected)
-				{
-					//Console.WriteLine("Client ip: " + ((IPEndPoint)client.Client.RemoteEndPoint).ToString());
+					TcpClient client = null;
+					String error_message = String.Empty;
 
-					//Try to add the client
-					int client_index = addClient(client);
-					if (client_index >= 0)
+					try
 					{
-						clients[client_index].mutex.WaitOne();
+						client = tcpListener.AcceptTcpClient(); //Accept a TCP client
+					}
+					catch (System.Net.Sockets.SocketException e)
+					{
+						if (client != null)
+							client.Close();
+						client = null;
+						error_message = e.ToString();
+					}
 
-						if (clientIsValid(client_index))
+					if (client != null && client.Connected)
+					{
+						//stampedConsoleWriteLine("Client ip: " + ((IPEndPoint)client.Client.RemoteEndPoint).ToString());
+
+						//Try to add the client
+						int client_index = addClient(client);
+						if (client_index >= 0)
 						{
+							clients[client_index].mutex.WaitOne();
 
-							//Send a handshake to the client
-							Console.WriteLine("Accepted client. Handshaking...");
-							sendHandshakeMessage(client);
+							if (clientIsValid(client_index))
+							{
 
-							//Send the join message to the client
-							if (joinMessage.Length > 0)
-								sendServerMessage(client, joinMessage);
+								//Send a handshake to the client
+								stampedConsoleWriteLine("Accepted client. Handshaking...");
+								sendHandshakeMessage(client);
 
+								//Send the join message to the client
+								if (joinMessage.Length > 0)
+									sendServerMessage(client, joinMessage);
+
+							}
+
+							clients[client_index].mutex.ReleaseMutex();
+
+							//Send a server setting update to all clients
+							sendServerSettings();
 						}
-
-						clients[client_index].mutex.ReleaseMutex();
-
-						//Send a server setting update to all clients
-						sendServerSettings();
+						else
+						{
+							//Client array is full
+							stampedConsoleWriteLine("Client attempted to connect, but server is full.");
+							sendHandshakeRefusalMessage(client, "Server is currently full");
+							client.Close();
+						}
 					}
 					else
 					{
-						//Client array is full
-						Console.WriteLine("Client attempted to connect, but server is full.");
-						sendHandshakeRefusalMessage(client, "Server is currently full");
-						client.Close();
+						if (client != null)
+							client.Close();
+						client = null;
 					}
-				}
-				else
-				{
-					if (client != null)
-						client.Close();
-					client = null;
-				}
 
-				if (client == null)
-				{
-					//There was an error accepting the client
-					Console.WriteLine("Error accepting client: ");
-					Console.WriteLine(error_message);
-				}
+					if (client == null)
+					{
+						//There was an error accepting the client
+						stampedConsoleWriteLine("Error accepting client: ");
+						stampedConsoleWriteLine(error_message);
+					}
 
+				}
+			}
+			catch (Exception e)
+			{
+				threadExceptionMutex.WaitOne();
+				if (threadException == null)
+					threadException = e; //Pass exception to main thread
+				threadExceptionMutex.ReleaseMutex();
 			}
 		}
 
@@ -287,7 +371,7 @@ namespace KLFServer
 			if (clients[client_index].receivedHandshake)
 			{
 
-				Console.WriteLine("Client #" + client_index + " " + clients[client_index].username + " has disconnected.");
+				stampedConsoleWriteLine("Client #" + client_index + " " + clients[client_index].username + " has disconnected.");
 
 				StringBuilder sb = new StringBuilder();
 
@@ -314,7 +398,7 @@ namespace KLFServer
 			}
 			else
 			{
-				Console.WriteLine("Client failed to handshake successfully.");
+				stampedConsoleWriteLine("Client failed to handshake successfully.");
 			}
 
 			sendServerSettings();
@@ -376,7 +460,7 @@ namespace KLFServer
 
 						clients[client_index].mutex.ReleaseMutex();
 
-						Console.WriteLine(username + " has joined the server using client version "+version);
+						stampedConsoleWriteLine(username + " has joined the server using client version "+version);
 
 						//Build join message
 						sb.Clear();
@@ -464,7 +548,7 @@ namespace KLFServer
 						String full_message = sb.ToString();
 
 						//Console.SetCursorPosition(0, Console.CursorTop);
-						Console.WriteLine(full_message);
+						stampedConsoleWriteLine(full_message);
 
 						//Send the update to all other clients
 						for (int i = 0; i < clients.Length; i++)
@@ -492,6 +576,19 @@ namespace KLFServer
 		public bool clientIsReady(int index)
 		{
 			return clientIsValid(index) && clients[index].receivedHandshake;
+		}
+
+		public static void stampedConsoleWriteLine(String message)
+		{
+			ConsoleColor default_color = Console.ForegroundColor;
+			Console.ForegroundColor = ConsoleColor.DarkGray;
+
+			Console.Write('[');
+			Console.Write(DateTime.Now.ToString("HH:mm:ss"));
+			Console.Write("] ");
+
+			Console.ForegroundColor = default_color;
+			Console.WriteLine(message);
 		}
 
 		//Messages
@@ -700,6 +797,12 @@ namespace KLFServer
 							if (int.TryParse(line, out new_val) && new_val >= MIN_UPDATE_INTERVAL && new_val <= MAX_UPDATE_INTERVAL)
 								updateInterval = new_val;
 						}
+						else if (label == AUTO_RESTART_LABEL)
+						{
+							bool new_val;
+							if (bool.TryParse(line, out new_val))
+								autoRestart = new_val;
+						}
 
 					}
 
@@ -736,6 +839,10 @@ namespace KLFServer
 			//update interval
 			writer.WriteLine(UPDATE_INTERVAL_LABEL);
 			writer.WriteLine(updateInterval);
+
+			//auto-restart
+			writer.WriteLine(AUTO_RESTART_LABEL);
+			writer.WriteLine(autoRestart);
 
 			writer.Close();
 		}

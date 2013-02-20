@@ -35,114 +35,124 @@ namespace KLFServer
 
 		public void listenForMessages()
 		{
-			byte[] message_header = new byte[KLFCommon.MSG_HEADER_LENGTH];
-
-			int header_bytes_read = 0;
-
-			bool stream_ended = false;
-
-			//Set the handshake timeout timer
-			mutex.WaitOne();
-			handshakeTimeoutTime = parent.currentMillisecond + HANDSHAKE_TIMEOUT_MS;
-			receivedHandshake = false;
-			mutex.ReleaseMutex();
-
-			//Console.WriteLine("Listening for message from client #" + clientIndex);
-
-			while (!stream_ended)
+			try
 			{
+				byte[] message_header = new byte[KLFCommon.MSG_HEADER_LENGTH];
 
-				bool message_received = false;
-				KLFCommon.ClientMessageID id = KLFCommon.ClientMessageID.HANDSHAKE;
-				byte[] message_data = null;
+				int header_bytes_read = 0;
 
+				bool stream_ended = false;
+
+				//Set the handshake timeout timer
 				mutex.WaitOne();
-
-				bool should_read = false;
-
-				//Close the timeout if connection is invalid or the handshake has not been received in the alloted time
-				if (tcpClient == null || !tcpClient.Connected || (!receivedHandshake && handshakeTimeoutTime <= parent.currentMillisecond))
-				{
-					should_read = false;
-					stream_ended = true;
-				}
-				else
-				{
-					should_read = receivedHandshake || tcpClient.GetStream().DataAvailable;
-				} 
-
+				handshakeTimeoutTime = parent.currentMillisecond + HANDSHAKE_TIMEOUT_MS;
+				receivedHandshake = false;
 				mutex.ReleaseMutex();
 
-				if (should_read)
+				//Console.WriteLine("Listening for message from client #" + clientIndex);
+
+				while (!stream_ended)
 				{
 
-					try
+					bool message_received = false;
+					KLFCommon.ClientMessageID id = KLFCommon.ClientMessageID.HANDSHAKE;
+					byte[] message_data = null;
+
+					mutex.WaitOne();
+
+					bool should_read = false;
+
+					//Close the timeout if connection is invalid or the handshake has not been received in the alloted time
+					if (tcpClient == null || !tcpClient.Connected || (!receivedHandshake && handshakeTimeoutTime <= parent.currentMillisecond))
+					{
+						should_read = false;
+						stream_ended = true;
+					}
+					else
+					{
+						should_read = receivedHandshake || tcpClient.GetStream().DataAvailable;
+					}
+
+					mutex.ReleaseMutex();
+
+					if (should_read)
 					{
 
-						//Read the message header
-						int num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
-						header_bytes_read += num_read;
-
-						if (header_bytes_read == KLFCommon.MSG_HEADER_LENGTH)
+						try
 						{
-							id = (KLFCommon.ClientMessageID)KLFCommon.intFromBytes(message_header, 0);
-							int msg_length = KLFCommon.intFromBytes(message_header, 4);
 
-							if (msg_length > 0)
+							//Read the message header
+							int num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
+							header_bytes_read += num_read;
+
+							if (header_bytes_read == KLFCommon.MSG_HEADER_LENGTH)
 							{
-								//Read the message data
-								message_data = new byte[msg_length];
+								id = (KLFCommon.ClientMessageID)KLFCommon.intFromBytes(message_header, 0);
+								int msg_length = KLFCommon.intFromBytes(message_header, 4);
 
-								int data_bytes_read = 0;
-
-								while (data_bytes_read < msg_length)
+								if (msg_length > 0)
 								{
-									num_read = tcpClient.GetStream().Read(message_data, data_bytes_read, msg_length - data_bytes_read);
-									if (num_read > 0)
-										data_bytes_read += num_read;
+									//Read the message data
+									message_data = new byte[msg_length];
+
+									int data_bytes_read = 0;
+
+									while (data_bytes_read < msg_length)
+									{
+										num_read = tcpClient.GetStream().Read(message_data, data_bytes_read, msg_length - data_bytes_read);
+										if (num_read > 0)
+											data_bytes_read += num_read;
+									}
+								}
+
+								header_bytes_read = 0;
+								message_received = true;
+							}
+
+							//Detect if the socket closed
+							if (tcpClient.Client.Poll(0, SelectMode.SelectRead))
+							{
+								byte[] buff = new byte[1];
+								if (tcpClient.Client.Receive(buff, SocketFlags.Peek) == 0)
+								{
+									//Client disconnected
+									stream_ended = true;
 								}
 							}
 
-							header_bytes_read = 0;
-							message_received = true;
 						}
-
-						//Detect if the socket closed
-						if (tcpClient.Client.Poll(0, SelectMode.SelectRead))
+						catch (InvalidOperationException)
 						{
-							byte[] buff = new byte[1];
-							if (tcpClient.Client.Receive(buff, SocketFlags.Peek) == 0)
-							{
-								//Client disconnected
-								stream_ended = true;
-							}
+							stream_ended = true; //TCP socket has closed
+						}
+						catch (System.IO.IOException)
+						{
+							stream_ended = true; //TCP socket has closed
 						}
 
 					}
-					catch (InvalidOperationException)
-					{
-						stream_ended = true; //TCP socket has closed
-					}
-					catch (System.IO.IOException)
-					{
-						stream_ended = true; //TCP socket has closed
-					}
 
+					if (message_received && parent != null)
+						parent.handleMessage(clientIndex, id, message_data); //Have the parent server handle the message
+
+					Thread.Sleep(0);
 				}
 
-				if (message_received && parent != null)
-					parent.handleMessage(clientIndex, id, message_data); //Have the parent server handle the message
+				mutex.WaitOne();
+				tcpClient.Close();
+				mutex.ReleaseMutex();
 
-				Thread.Sleep(0);
+				parent.clientDisconnect(clientIndex);
+
+				messageThread.Abort();
 			}
-
-			mutex.WaitOne();
-			tcpClient.Close();
-			mutex.ReleaseMutex();
-
-			parent.clientDisconnect(clientIndex);
-
-			messageThread.Abort();
+			catch (Exception e)
+			{
+				parent.threadExceptionMutex.WaitOne();
+				if (parent.threadException == null)
+					parent.threadException = e; //Pass exception to parent
+				parent.threadExceptionMutex.ReleaseMutex();
+			}
 		}
 
 		internal void startMessageThread()
