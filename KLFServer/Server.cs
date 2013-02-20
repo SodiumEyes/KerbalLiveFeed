@@ -53,7 +53,7 @@ namespace KLFServer
 		{
 			stopwatch.Start();
 
-			Console.WriteLine("Hosting server on port " + port + "...");
+			consoleWriteLine("Hosting server on port " + port + "...");
 
 			clients = new ServerClient[maxClients];
 			for (int i = 0; i < clients.Length; i++)
@@ -76,10 +76,10 @@ namespace KLFServer
 			{
 				if (UPnP.NAT.Discover())
 				{
-					Console.WriteLine("NAT Firewall discovered! Users won't be able to connect unless port "+port+" is forwarded.");
-					Console.WriteLine("External IP: " + UPnP.NAT.GetExternalIP().ToString());
+					consoleWriteLine("NAT Firewall discovered! Users won't be able to connect unless port "+port+" is forwarded.");
+					consoleWriteLine("External IP: " + UPnP.NAT.GetExternalIP().ToString());
 					UPnP.NAT.ForwardPort(port, ProtocolType.Tcp, "KLF (TCP)");
-					Console.WriteLine("Forwarded port "+port+" with UPnP");
+					consoleWriteLine("Forwarded port "+port+" with UPnP");
 					upnp_enabled = true;
 				}
 			}
@@ -88,8 +88,8 @@ namespace KLFServer
 				//Console.WriteLine(e);
 			}
 
-			Console.WriteLine("Commands:");
-			Console.WriteLine("/quit - quit");
+			consoleWriteLine("Commands:");
+			consoleWriteLine("/quit - quit");
 
 			while (true)
 			{
@@ -162,7 +162,7 @@ namespace KLFServer
 
 			clients = null;
 
-			Console.WriteLine("Server session ended.");
+			consoleWriteLine("Server session ended.");
 
 			stopwatch.Stop();
 		}
@@ -170,7 +170,7 @@ namespace KLFServer
 		private void listenForClients()
 		{
 
-			Console.WriteLine("Listening for clients...");
+			consoleWriteLine("Listening for clients...");
 			tcpListener.Start(4);
 
 			while (true)
@@ -197,7 +197,7 @@ namespace KLFServer
 					if (addClient(client))
 					{
 						//Send a handshake to the client
-						Console.WriteLine("Accepted client. Handshaking...");
+						consoleWriteLine("Accepted client. Handshaking...");
 						sendHandshakeMessage(client);
 
 						//Send the join message to the client
@@ -210,7 +210,7 @@ namespace KLFServer
 					else
 					{
 						//Client array is full
-						Console.WriteLine("Client attempted to connect, but server is full.");
+						consoleWriteLine("Client attempted to connect, but server is full.");
 						sendHandshakeRefusalMessage(client, "Server is currently full");
 						client.Close();
 					}
@@ -221,8 +221,8 @@ namespace KLFServer
 				if (client == null)
 				{
 					//There was an error accepting the client
-					Console.WriteLine("Error accepting client: ");
-					Console.WriteLine(error_message);
+					consoleWriteLine("Error accepting client: ");
+					consoleWriteLine(error_message);
 				}
 
 			}
@@ -267,7 +267,7 @@ namespace KLFServer
 			if (clients[client_index].receivedHandshake)
 			{
 
-				Console.WriteLine("Client #" + client_index + " " + clients[client_index].username + " has disconnected.");
+				consoleWriteLine("Client #" + client_index + " " + clients[client_index].username + " has disconnected.");
 
 				StringBuilder sb = new StringBuilder();
 
@@ -294,7 +294,7 @@ namespace KLFServer
 			}
 			else
 			{
-				Console.WriteLine("Client failed to handshake successfully.");
+				consoleWriteLine("Client failed to handshake successfully.");
 			}
 
 			sendServerSettings();
@@ -356,7 +356,7 @@ namespace KLFServer
 
 						clients[client_index].mutex.ReleaseMutex();
 
-						Console.WriteLine(username + " has joined the server using client version "+version);
+						consoleWriteLine(username + " has joined the server using client version "+version);
 
 						//Build join message
 						sb.Clear();
@@ -444,7 +444,7 @@ namespace KLFServer
 						String full_message = sb.ToString();
 
 						//Console.SetCursorPosition(0, Console.CursorTop);
-						Console.WriteLine(full_message);
+						consoleWriteLine(full_message);
 
 						//Send the update to all other clients
 						for (int i = 0; i < clients.Length; i++)
@@ -724,6 +724,11 @@ namespace KLFServer
 			writer.WriteLine(NO_PROMPT);
 			writer.WriteLine(noPrompt);
 			writer.Close();
+		}
+
+		public void consoleWriteLine(string text) {
+			string timestamp = "[" + DateTime.Now.ToString ("HH:mm:ss") + "] ";
+			Console.WriteLine (timestamp + text);
 		}
 	}
 }
