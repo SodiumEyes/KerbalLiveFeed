@@ -19,6 +19,7 @@ namespace KLFServer
 		public const String MAX_CLIENTS_LABEL = "maxClients";
 		public const String JOIN_MESSAGE_LABEL = "joinMessage";
 		public const String UPDATE_INTERVAL_LABEL = "updateInterval";
+		public const String NO_PROMPT = "noPrompt";
 
 		public const bool SEND_UPDATES_TO_SENDER = false;
 
@@ -29,6 +30,7 @@ namespace KLFServer
 		public int maxClients = 32;
 		public int updateInterval = 500;
 		public int numClients;
+		public bool noPrompt = false;
 
 		public Thread listenThread;
 		public TcpListener tcpListener;
@@ -678,6 +680,10 @@ namespace KLFServer
 							if (int.TryParse(line, out new_val) && new_val >= MIN_UPDATE_INTERVAL && new_val <= MAX_UPDATE_INTERVAL)
 								updateInterval = new_val;
 						}
+						else if (label == NO_PROMPT)
+						{
+							bool.TryParse (line, out noPrompt);
+						}
 
 					}
 
@@ -715,6 +721,8 @@ namespace KLFServer
 			writer.WriteLine(UPDATE_INTERVAL_LABEL);
 			writer.WriteLine(updateInterval);
 
+			writer.WriteLine(NO_PROMPT);
+			writer.WriteLine(noPrompt);
 			writer.Close();
 		}
 	}
