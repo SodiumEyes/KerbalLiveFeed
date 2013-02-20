@@ -183,6 +183,8 @@ namespace KLFServer
 				}
 				catch (System.Net.Sockets.SocketException e)
 				{
+					if (client != null)
+						client.Close();
 					client = null;
 					error_message = e.ToString();
 				}
@@ -192,15 +194,25 @@ namespace KLFServer
 					//Console.WriteLine("Client ip: " + ((IPEndPoint)client.Client.RemoteEndPoint).ToString());
 
 					//Try to add the client
-					if (addClient(client))
+					int client_index = addClient(client);
+					if (client_index >= 0)
 					{
-						//Send a handshake to the client
-						Console.WriteLine("Accepted client. Handshaking...");
-						sendHandshakeMessage(client);
+						clients[client_index].mutex.WaitOne();
 
-						//Send the join message to the client
-						if (joinMessage.Length > 0)
-							sendServerMessage(client, joinMessage);
+						if (clientIsValid(client_index))
+						{
+
+							//Send a handshake to the client
+							Console.WriteLine("Accepted client. Handshaking...");
+							sendHandshakeMessage(client);
+
+							//Send the join message to the client
+							if (joinMessage.Length > 0)
+								sendServerMessage(client, joinMessage);
+
+						}
+
+						clients[client_index].mutex.ReleaseMutex();
 
 						//Send a server setting update to all clients
 						sendServerSettings();
@@ -214,7 +226,11 @@ namespace KLFServer
 					}
 				}
 				else
+				{
+					if (client != null)
+						client.Close();
 					client = null;
+				}
 
 				if (client == null)
 				{
@@ -226,8 +242,12 @@ namespace KLFServer
 			}
 		}
 
-		private bool addClient(TcpClient tcp_client)
+		private int addClient(TcpClient tcp_client)
 		{
+
+			if (tcp_client == null || !tcp_client.Connected)
+				return -1;
+
 			//Find an open client slot
 			for (int i = 0; i < clients.Length; i++)
 			{
@@ -236,30 +256,32 @@ namespace KLFServer
 				client.mutex.WaitOne();
 
 				//Check if the client is valid
-				if (client.tcpClient == null || !client.tcpClient.Connected)
+				if (client.canBeReplaced && !clientIsValid(i))
 				{
 
 					//Add the client
 					client.tcpClient = tcp_client;
 					client.username = "new user";
+					client.canBeReplaced = false;
 
 					client.startMessageThread();
 					numClients++;
 
 					client.mutex.ReleaseMutex();
 
-					return true;
+					return i;
 				}
 
 				client.mutex.ReleaseMutex();
 			}
 
-			return false;
+			return -1;
 		}
 
 		public void clientDisconnect(int client_index)
 		{
 			numClients--;
+			clients[client_index].canBeReplaced = true;
 
 			//Only send the disconnect message if the client performed handshake successfully
 			if (clients[client_index].receivedHandshake)

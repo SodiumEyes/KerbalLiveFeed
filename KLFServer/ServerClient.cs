@@ -23,12 +23,14 @@ namespace KLFServer
 
 		public long handshakeTimeoutTime;
 		public bool receivedHandshake;
+		public bool canBeReplaced;
 
 		public const long HANDSHAKE_TIMEOUT_MS = 4000;
 
 		public ServerClient()
 		{
 			mutex = new Mutex();
+			canBeReplaced = true;
 		}
 
 		public void listenForMessages()

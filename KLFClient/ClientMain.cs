@@ -145,6 +145,9 @@ namespace KLFClient
 						writer.Write(e.ToString());
 						writer.Close();
 
+						if (tcpClient != null)
+							tcpClient.Close();
+
 						Console.WriteLine("Unexpected expection encountered! Crash report written to KLFClientlog.txt");
 					}
 				}
@@ -323,10 +326,18 @@ namespace KLFClient
 				}
 
 			}
-			catch (Exception e)
+			catch (SocketException e)
 			{
-				Console.WriteLine("Exception " + e.ToString());
+				Console.WriteLine("Exception: " + e.ToString());
 			}
+			catch (ObjectDisposedException e)
+			{
+				Console.WriteLine("Exception: " + e.ToString());
+			}
+
+			//Close the socket if it's still open
+			if (tcpClient != null)
+				tcpClient.Close();
 
 			Console.WriteLine("Unable to connect to server");
 
@@ -472,7 +483,7 @@ namespace KLFClient
 					catch (System.IO.DirectoryNotFoundException)
 					{
 					}
-					catch (System.ObjectDisposedException)
+					catch (System.InvalidOperationException)
 					{
 					}
 					catch (System.IO.IOException)
@@ -720,34 +731,49 @@ namespace KLFClient
 
 		private static void sendHandshakeMessage()
 		{
+			try
+			{
 
-			//Encode username
-			ASCIIEncoding encoder = new ASCIIEncoding();
-			byte[] username_bytes = encoder.GetBytes(username);
-			byte[] version_bytes = encoder.GetBytes(KLFCommon.PROGRAM_VERSION);
+				//Encode username
+				ASCIIEncoding encoder = new ASCIIEncoding();
+				byte[] username_bytes = encoder.GetBytes(username);
+				byte[] version_bytes = encoder.GetBytes(KLFCommon.PROGRAM_VERSION);
 
-			sendMessageHeader(KLFCommon.ClientMessageID.HANDSHAKE, username_bytes.Length + version_bytes.Length + 4);
+				sendMessageHeader(KLFCommon.ClientMessageID.HANDSHAKE, username_bytes.Length + version_bytes.Length + 4);
 
-			//Write username bytes length
-			tcpClient.GetStream().Write(KLFCommon.intToBytes(username_bytes.Length), 0, 4);
-			tcpClient.GetStream().Write(username_bytes, 0, username_bytes.Length);
-			tcpClient.GetStream().Write(version_bytes, 0, version_bytes.Length);
+				//Write username bytes length
+				tcpClient.GetStream().Write(KLFCommon.intToBytes(username_bytes.Length), 0, 4);
+				tcpClient.GetStream().Write(username_bytes, 0, username_bytes.Length);
+				tcpClient.GetStream().Write(version_bytes, 0, version_bytes.Length);
 
-			tcpClient.GetStream().Flush();
+				tcpClient.GetStream().Flush();
+
+			}
+			catch (System.InvalidOperationException)
+			{
+			}
 
 		}
 
 		private static void sendTextMessage(String message)
 		{
-			//Encode message
-			ASCIIEncoding encoder = new ASCIIEncoding();
-			byte[] message_bytes = encoder.GetBytes(message);
+			try
+			{
 
-			sendMessageHeader(KLFCommon.ClientMessageID.TEXT_MESSAGE, message_bytes.Length);
+				//Encode message
+				ASCIIEncoding encoder = new ASCIIEncoding();
+				byte[] message_bytes = encoder.GetBytes(message);
 
-			tcpClient.GetStream().Write(message_bytes, 0, message_bytes.Length);
+				sendMessageHeader(KLFCommon.ClientMessageID.TEXT_MESSAGE, message_bytes.Length);
 
-			tcpClient.GetStream().Flush();
+				tcpClient.GetStream().Write(message_bytes, 0, message_bytes.Length);
+
+				tcpClient.GetStream().Flush();
+
+			}
+			catch (System.InvalidOperationException)
+			{
+			}
 		}
 
 	}
