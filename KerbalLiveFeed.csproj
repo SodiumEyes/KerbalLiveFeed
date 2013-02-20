@@ -48,6 +48,7 @@
   <ItemGroup>
     <Compile Include="KerbalLiveFeedModule.cs" />
     <Compile Include="KLFCommon.cs" />
+    <Compile Include="KLFInfoDisplay.cs" />
     <Compile Include="KLFManager.cs">
       <SubType>Code</SubType>
     </Compile>

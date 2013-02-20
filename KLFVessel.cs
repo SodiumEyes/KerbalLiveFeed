@@ -45,7 +45,7 @@ namespace KerbalLiveFeed
 					{
 						val = ((val << 5) + val) + c;
 					}
-					generateActiveColor(val);
+					generateActiveColor(Math.Abs(val));
 
 					buildGameObjectName();
 				}
@@ -267,7 +267,7 @@ namespace KerbalLiveFeed
 
 		public void generateActiveColor(int val)
 		{
-			switch (val % 18)
+			switch (val % 17)
 			{
 				case 0:
 					activeColor = Color.red;
@@ -333,12 +333,8 @@ namespace KerbalLiveFeed
 					activeColor = new Color(0.5f, 0, 1, 1); //Violet
 					break;
 
-				case 16:
-					activeColor = Color.magenta;
-					break;
-
 				default:
-					activeColor = new Color(0.435f, 0, 1, 1); //Electric indigo
+					activeColor = Color.magenta;
 					break;
 			}
 		}

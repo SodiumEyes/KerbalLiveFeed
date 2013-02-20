@@ -9,7 +9,7 @@ namespace KerbalLiveFeed
 	public class KLFManager
 	{
 
-		private struct VesselEntry
+		public struct VesselEntry
 		{
 			public KLFVessel vessel;
 			public float lastUpdateTime;
@@ -46,7 +46,7 @@ namespace KerbalLiveFeed
 			get;
 		}
 
-		private Dictionary<String, VesselEntry> vessels;
+		public Dictionary<String, VesselEntry> vessels;
 
 		public float lastUpdateTime
 		{
