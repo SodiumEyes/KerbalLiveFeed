@@ -163,6 +163,7 @@ namespace KLFServer
 
 			if (!server.autoRestart)
 			{
+				server.clearState();
 				Console.WriteLine("Press any key to quit");
 				Console.ReadKey();
 			}

@@ -146,6 +146,9 @@ namespace KLFServer
 
 				messageThread.Abort();
 			}
+			catch (ThreadAbortException)
+			{
+			}
 			catch (Exception e)
 			{
 				parent.threadExceptionMutex.WaitOne();

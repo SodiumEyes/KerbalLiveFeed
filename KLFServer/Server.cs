@@ -56,35 +56,7 @@ namespace KLFServer
 
 		public void hostingLoop()
 		{
-			//Clean pre-existing state variables
-			if (tcpListener != null)
-			{
-				try
-				{
-					tcpListener.Stop();
-				}
-				catch (System.Net.Sockets.SocketException)
-				{
-				}
-			}
-
-			if (clients != null)
-			{
-				for (int i = 0; i < clients.Length; i++)
-				{
-					if (clients[i].tcpClient != null)
-						clients[i].tcpClient.Close();
-
-					if (clients[i].messageThread != null && clients[i].messageThread.ThreadState == System.Threading.ThreadState.Running)
-						clients[i].messageThread.Abort();
-				}
-			}
-
-			if (listenThread != null && listenThread.ThreadState == System.Threading.ThreadState.Running)
-				listenThread.Abort();
-
-			if (commandThread != null && commandThread.ThreadState == System.Threading.ThreadState.Running)
-				commandThread.Abort();
+			clearState();
 
 			//Start hosting server
 			stopwatch.Start();
@@ -230,6 +202,9 @@ namespace KLFServer
 					}
 				}
 			}
+			catch (ThreadAbortException)
+			{
+			}
 			catch (Exception e)
 			{
 				threadExceptionMutex.WaitOne();
@@ -316,6 +291,9 @@ namespace KLFServer
 					}
 
 				}
+			}
+			catch (ThreadAbortException)
+			{
 			}
 			catch (Exception e)
 			{
@@ -589,6 +567,38 @@ namespace KLFServer
 
 			Console.ForegroundColor = default_color;
 			Console.WriteLine(message);
+		}
+
+		public void clearState()
+		{
+			if (tcpListener != null)
+			{
+				try
+				{
+					tcpListener.Stop();
+				}
+				catch (System.Net.Sockets.SocketException)
+				{
+				}
+			}
+
+			if (clients != null)
+			{
+				for (int i = 0; i < clients.Length; i++)
+				{
+					if (clients[i].tcpClient != null)
+						clients[i].tcpClient.Close();
+
+					if (clients[i].messageThread != null && clients[i].messageThread.ThreadState == System.Threading.ThreadState.Running)
+						clients[i].messageThread.Abort();
+				}
+			}
+
+			if (listenThread != null && listenThread.ThreadState == System.Threading.ThreadState.Running)
+				listenThread.Abort();
+
+			if (commandThread != null && commandThread.ThreadState == System.Threading.ThreadState.Running)
+				commandThread.Abort();
 		}
 
 		//Messages

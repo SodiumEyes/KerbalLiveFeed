@@ -315,7 +315,11 @@ namespace KLFClient
 					textMessageQueueMutex.ReleaseMutex();
 
 					//Close the connection
+					ConsoleColor default_color = Console.ForegroundColor;
+					Console.ForegroundColor = ConsoleColor.Red;
+					Console.WriteLine();
 					Console.WriteLine("Lost connection with server.");
+					Console.ForegroundColor = default_color;
 					tcpClient.Close();
 
 					//Delete the client data file
