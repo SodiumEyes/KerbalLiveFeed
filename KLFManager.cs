@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace KerbalLiveFeed
 {
-	public class KLFManager
+	public class KLFManager : MonoBehaviour
 	{
 
 		public struct VesselEntry
@@ -17,17 +17,7 @@ namespace KerbalLiveFeed
 
 		//Singleton
 
-		private static KLFManager instance = null;
-
-		public static KLFManager Instance
-		{
-			get
-			{
-				if (instance == null)
-					instance = new KLFManager();
-				return instance;
-			}
-		}
+		public static GameObject GameObjectInstance;
 
 		//Properties
 
@@ -40,44 +30,18 @@ namespace KerbalLiveFeed
 
 		public const float TIMEOUT_DELAY = 6.0f;
 
-		public String playerName
-		{
-			private set;
-			get;
-		}
+		public String playerName = "player";
 
-		public Dictionary<String, VesselEntry> vessels;
+		public Dictionary<String, VesselEntry> vessels = new Dictionary<string, VesselEntry>();
 
-		public float lastUpdateTime
-		{
-			private set;
-			get;
-		}
+		private float lastUsernameReadTime = 0.0f;
 
-		private float lastUsernameReadTime;
-
-		private Queue<KLFVesselUpdate> vesselUpdateQueue;
+		private Queue<KLFVesselUpdate> vesselUpdateQueue = new Queue<KLFVesselUpdate>();
 
 		//Methods
 
-		private KLFManager()
-		{
-			lastUpdateTime = 0.0f;
-			lastUsernameReadTime = 0.0f;
-
-			playerName = "player";
-
-			vessels = new Dictionary<string, VesselEntry>();
-			vesselUpdateQueue = new Queue<KLFVesselUpdate>();
-		}
-
 		public void updateStep()
 		{
-			if (lastUpdateTime >= UnityEngine.Time.time)
-				return; //Don't update more than once per game update
-
-			lastUpdateTime = UnityEngine.Time.time;
-
 			//Handle all queued vessel updates
 			while (vesselUpdateQueue.Count > 0)
 			{
@@ -120,7 +84,7 @@ namespace KerbalLiveFeed
 		private void writeVesselsToFile()
 		{
 
-			if (FlightGlobals.ready && !KSP.IO.File.Exists<KLFManager>(OUT_FILENAME))
+			if (FlightGlobals.ready && !KSP.IO.File.Exists<KLFManager>(OUT_FILENAME) && FlightGlobals.ActiveVessel != null)
 			{
 
 				try
@@ -315,6 +279,9 @@ namespace KerbalLiveFeed
 
 		private void handleUpdate(object obj)
 		{
+			if (FlightGlobals.ActiveVessel == null)
+				return; //Don't handle updates while not flying a ship
+
 			if (obj is KLFVesselUpdate)
 			{
 				handleVesselUpdate((KLFVesselUpdate)obj);
@@ -323,9 +290,7 @@ namespace KerbalLiveFeed
 
 		private void handleVesselUpdate(KLFVesselUpdate vessel_update)
 		{
-
-			//Debug.Log("*** Handling update!");
-
+			
 			//Build the key for the vessel
 			System.Text.StringBuilder sb = new System.Text.StringBuilder();
 			sb.Append(vessel_update.ownerName);
@@ -380,15 +345,11 @@ namespace KerbalLiveFeed
 			}
 			else
 				applyVesselUpdate(vessel_update, vessel); //Apply the vessel update to the existing vessel
-
-			//Debug.Log("*** Updated handled");
 				
 		}
 
 		private void applyVesselUpdate(KLFVesselUpdate vessel_update, KLFVessel vessel)
 		{
-
-			//Debug.Log("*** Handling vessel update!");
 
 			//Find the CelestialBody that matches the one in the update
 			CelestialBody update_body = null;
@@ -439,6 +400,220 @@ namespace KerbalLiveFeed
 			byte[] bytes = new byte[4];
 			stream.Read(bytes, 0, 4);
 			return KLFCommon.intFromBytes(bytes);
+		}
+
+		//MonoBehaviour
+
+		public void Awake()
+		{
+			DontDestroyOnLoad(this);
+			CancelInvoke();
+			InvokeRepeating("updateStep", 0.1f, 0.1f);
+		}
+
+		public void OnGUI()
+		{
+			if (KLFInfoDisplay.infoDisplayActive && FlightGlobals.ready && (FlightGlobals.ActiveVessel != null || MapView.MapIsEnabled))
+			{
+
+				if (KLFInfoDisplay.layoutOptions == null)
+					KLFInfoDisplay.layoutOptions = new GUILayoutOption[6];
+
+				KLFInfoDisplay.layoutOptions[0] = GUILayout.ExpandHeight(true);
+				KLFInfoDisplay.layoutOptions[1] = GUILayout.ExpandWidth(true);
+
+				if (KLFInfoDisplay.infoDisplayMinimized)
+				{
+					KLFInfoDisplay.layoutOptions[2] = GUILayout.MinHeight(KLFInfoDisplay.WINDOW_HEIGHT_MINIMIZED);
+					KLFInfoDisplay.layoutOptions[3] = GUILayout.MaxHeight(KLFInfoDisplay.WINDOW_HEIGHT_MINIMIZED);
+
+					KLFInfoDisplay.layoutOptions[4] = GUILayout.MinWidth(KLFInfoDisplay.WINDOW_WIDTH_MINIMIZED);
+					KLFInfoDisplay.layoutOptions[5] = GUILayout.MaxWidth(KLFInfoDisplay.WINDOW_WIDTH_MINIMIZED);
+				}
+				else
+				{
+					KLFInfoDisplay.layoutOptions[2] = GUILayout.MinHeight(KLFInfoDisplay.WINDOW_HEIGHT);
+					KLFInfoDisplay.layoutOptions[3] = GUILayout.MaxHeight(KLFInfoDisplay.WINDOW_MAX_HEIGHT);
+
+					if (KLFInfoDisplay.infoDisplayWide)
+					{
+						KLFInfoDisplay.layoutOptions[4] = GUILayout.MinWidth(KLFInfoDisplay.WINDOW_WIDTH_WIDE);
+						KLFInfoDisplay.layoutOptions[5] = GUILayout.MaxWidth(KLFInfoDisplay.WINDOW_WIDTH_WIDE);
+					}
+					else
+					{
+						KLFInfoDisplay.layoutOptions[4] = GUILayout.MinWidth(KLFInfoDisplay.WINDOW_WIDTH_DEFAULT);
+						KLFInfoDisplay.layoutOptions[5] = GUILayout.MaxWidth(KLFInfoDisplay.WINDOW_WIDTH_DEFAULT);
+					}
+				}
+
+				GUI.skin = HighLogic.Skin;
+				KLFInfoDisplay.infoWindowPos = GUILayout.Window(
+					999999,
+					KLFInfoDisplay.infoWindowPos,
+					WindowGUI,
+					"Kerbal LiveFeed v"+KLFCommon.PROGRAM_VERSION,
+					KLFInfoDisplay.layoutOptions
+					);
+			}
+		}
+
+		//GUI
+
+		private void WindowGUI(int windowID)
+		{
+
+			GUILayout.BeginVertical();
+
+			bool minimized = KLFInfoDisplay.infoDisplayMinimized;
+
+			if (!minimized)
+				GUILayout.BeginHorizontal();
+			
+			KLFInfoDisplay.infoDisplayMinimized = GUILayout.Toggle(KLFInfoDisplay.infoDisplayMinimized, "Minimize", GUI.skin.button);
+
+			if (!minimized)
+			{
+				KLFInfoDisplay.infoDisplayDetailed = GUILayout.Toggle(KLFInfoDisplay.infoDisplayDetailed, "Detail", GUI.skin.button);
+				GUILayout.EndHorizontal();
+
+				KLFInfoDisplay.infoScrollPos = GUILayout.BeginScrollView(KLFInfoDisplay.infoScrollPos);
+				GUILayout.BeginVertical();
+
+				//Init label styles
+				GUIStyle playerNameStyle = new GUIStyle(GUI.skin.label);
+				playerNameStyle.normal.textColor = Color.white;
+				playerNameStyle.fontStyle = FontStyle.Bold;
+				playerNameStyle.alignment = TextAnchor.MiddleLeft;
+				playerNameStyle.margin = new RectOffset(0, 0, 2, 0);
+				playerNameStyle.padding = new RectOffset(0, 0, 0, 0);
+
+				GUIStyle vesselNameStyle = new GUIStyle(GUI.skin.label);
+				vesselNameStyle.normal.textColor = Color.white;
+				vesselNameStyle.margin = new RectOffset(4, 0, 0, 0);
+
+				vesselNameStyle.padding = new RectOffset(0, 0, 0, 0);
+
+				GUIStyle stateTextStyle = new GUIStyle(GUI.skin.label);
+				stateTextStyle.normal.textColor = new Color(0.75f, 0.75f, 0.75f);
+				stateTextStyle.margin = new RectOffset(4, 0, 0, 0);
+				stateTextStyle.padding = new RectOffset(0, 0, 0, 0);
+
+				GUIStyle detailTextStyle = new GUIStyle(GUI.skin.label);
+				detailTextStyle.normal.textColor = new Color(0.85f, 0.85f, 0.85f);
+				detailTextStyle.margin = new RectOffset(4, 0, 0, 0);
+				detailTextStyle.padding = new RectOffset(0, 0, 0, 0);
+
+				//Create a list of vessels to display, keyed by owner name
+				SortedDictionary<String, VesselEntry> display_vessels = new SortedDictionary<string, VesselEntry>();
+
+				foreach (KeyValuePair<String, VesselEntry> pair in vessels)
+				{
+					VesselEntry existing_vessel;
+					if (pair.Value.vessel.mainBody != null && pair.Value.vessel.state == Vessel.State.ACTIVE)
+					{
+						if (display_vessels.TryGetValue(pair.Value.vessel.ownerName, out existing_vessel))
+						{
+							//If the same owner has two active vessels, use the one with the most recent update time
+							if (pair.Value.lastUpdateTime > existing_vessel.lastUpdateTime)
+							{
+								display_vessels[pair.Value.vessel.ownerName] = pair.Value;
+							}
+						}
+						else
+							display_vessels.Add(pair.Value.vessel.ownerName, pair.Value);
+					}
+
+				}
+
+
+				foreach (KeyValuePair<String, VesselEntry> pair in display_vessels)
+				{
+					KLFVessel info_vessel = pair.Value.vessel;
+
+					playerNameStyle.normal.textColor = info_vessel.activeColor * 0.75f + Color.white * 0.25f;
+
+					GUILayout.Label(info_vessel.ownerName, playerNameStyle);
+					GUILayout.Label(info_vessel.vesselName, vesselNameStyle);
+
+					String state_string = "";
+
+					switch (info_vessel.situation)
+					{
+						case Vessel.Situations.DOCKED:
+							state_string = "Docked at ";
+							break;
+
+						case Vessel.Situations.ESCAPING:
+							state_string = "Escaping ";
+							break;
+
+						case Vessel.Situations.FLYING:
+							state_string = "Flying at ";
+							break;
+
+						case Vessel.Situations.LANDED:
+							state_string = "Landed at ";
+							break;
+
+						case Vessel.Situations.ORBITING:
+							state_string = "Orbiting ";
+							break;
+
+						case Vessel.Situations.PRELAUNCH:
+							state_string = "Prelaunch at ";
+							break;
+
+						case Vessel.Situations.SPLASHED:
+							state_string = "Splashed at ";
+							break;
+
+						case Vessel.Situations.SUB_ORBITAL:
+							if (info_vessel.orbitRenderer.orbit.timeToAp < info_vessel.orbitRenderer.orbit.period / 2.0)
+								state_string = "Ascending from ";
+							else
+								state_string = "Descending toward ";
+
+							break;
+					}
+
+					GUILayout.Label(state_string + info_vessel.mainBody.bodyName, stateTextStyle);
+
+					if (KLFInfoDisplay.infoDisplayDetailed)
+					{
+						state_string = "Alt: ";
+
+						double alt = info_vessel.orbitRenderer.orbit.altitude;
+						if (alt >= 10000.0)
+						{
+							state_string += (int)Math.Round(alt/1000.0);
+							state_string += "km";
+						}
+						else
+						{
+							state_string += (int)alt;
+							state_string += "m";
+						}
+
+						state_string += " Vel:";
+
+						double vel = info_vessel.orbitRenderer.orbit.GetVel().magnitude;
+						state_string += (int)Math.Round(vel);
+						state_string += "m/s";
+
+						GUILayout.Label(state_string, detailTextStyle);
+					}
+
+				}
+				GUILayout.EndVertical();
+				GUILayout.EndScrollView();
+
+			}
+
+			GUILayout.EndVertical();
+
+			GUI.DragWindow();
+
 		}
         
 	}
