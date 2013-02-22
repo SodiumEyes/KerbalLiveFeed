@@ -205,27 +205,40 @@ namespace KerbalLiveFeed
 						if (module is KerbalEVA)
 						{
 							KerbalEVA kerbal = (KerbalEVA)module;
+
 							update.percentFuel = (byte)Math.Round(kerbal.Fuel / kerbal.FuelCapacity * 100);
+							update.percentRCS = byte.MaxValue;
 							update.numCrew = byte.MaxValue;
+
 							is_eva = true;
 							break;
 						}
 							
 					}
 				}
-				
+
 				if (!is_eva) {
 
-					update.numCrew = (byte)vessel.GetCrewCount();
+					if (vessel.GetCrewCapacity() > 0)
+						update.numCrew = (byte)vessel.GetCrewCount();
+					else
+						update.numCrew = byte.MaxValue;
 
 					Dictionary<string, float> fuel_densities = new Dictionary<string, float>();
+					Dictionary<string, float> rcs_fuel_densities = new Dictionary<string, float>();
 
 					//Determine what kinds of fuel this vessel can use and their densities
+
+					bool has_engines = false;
+					bool has_rcs = false;
+
 					foreach (Part part in vessel.parts)
 					{
 
 						foreach (ModuleEngines engine in part.Modules.OfType<ModuleEngines>())
 						{
+							has_engines = true;
+
 							foreach (ModuleEngines.Propellant propellant in engine.propellants)
 							{
 								if (propellant.name == "ElectricCharge" || propellant.name == "IntakeAir")
@@ -238,11 +251,24 @@ namespace KerbalLiveFeed
 							}
 						}
 
+						foreach (ModuleRCS rcs in part.Modules.OfType<ModuleRCS>())
+						{
+							if (rcs.requiresFuel)
+							{
+								has_rcs = true;
+								if (!rcs_fuel_densities.ContainsKey(rcs.resourceName))
+									rcs_fuel_densities.Add(rcs.resourceName, PartResourceLibrary.Instance.GetDefinition(rcs.resourceName).density);
+							}
+						}
+
 					}
 
 					//Determine how much fuel this vessel has and can hold
 					float fuel_capacity = 0.0f;
 					float fuel_amount = 0.0f;
+					float rcs_capacity = 0.0f;
+					float rcs_amount = 0.0f;
+
 					foreach (Part part in vessel.parts)
 					{
 						if (part != null && part.Resources != null)
@@ -250,20 +276,33 @@ namespace KerbalLiveFeed
 							foreach (PartResource resource in part.Resources)
 							{
 								float density = 0.0f;
+
 								//Check that this vessel can use this type of resource as fuel
-								if (fuel_densities.TryGetValue(resource.resourceName, out density))
+								if (has_engines && fuel_densities.TryGetValue(resource.resourceName, out density))
 								{
 									fuel_capacity += ((float)resource.maxAmount) * density;
 									fuel_amount += ((float)resource.amount) * density;
+								}
+
+								if (has_rcs && rcs_fuel_densities.TryGetValue(resource.resourceName, out density))
+								{
+									rcs_capacity += ((float)resource.maxAmount) * density;
+									rcs_amount += ((float)resource.amount) * density;
 								}
 							}
 						}
 					}
 
-					if (fuel_capacity > 0.0f)
-					{
+					if (has_engines && fuel_capacity > 0.0f)
 						update.percentFuel = (byte)Math.Round(fuel_amount / fuel_capacity * 100);
-					}
+					else
+						update.percentFuel = byte.MaxValue;
+
+					if (has_rcs && rcs_capacity > 0.0f)
+						update.percentRCS = (byte)Math.Round(rcs_amount / rcs_capacity * 100);
+					else
+						update.percentRCS = byte.MaxValue;
+
 				}
 			}
 			else if (vessel.isCommandable)
@@ -353,8 +392,6 @@ namespace KerbalLiveFeed
 
 		private void handleUpdate(object obj)
 		{
-			if (FlightGlobals.ActiveVessel == null)
-				return; //Don't handle updates while not flying a ship
 
 			if (obj is KLFVesselUpdate)
 			{
@@ -364,6 +401,9 @@ namespace KerbalLiveFeed
 
 		private void handleVesselUpdate(KLFVesselUpdate vessel_update)
 		{
+
+			if (FlightGlobals.ActiveVessel == null)
+				return; //Don't handle updates while not flying a ship
 			
 			//Build the key for the vessel
 			System.Text.StringBuilder sb = new System.Text.StringBuilder();
@@ -522,7 +562,7 @@ namespace KerbalLiveFeed
 					999999,
 					KLFInfoDisplay.infoWindowPos,
 					WindowGUI,
-					"Kerbal LiveFeed v"+KLFCommon.PROGRAM_VERSION,
+					KLFInfoDisplay.infoDisplayMinimized ? "KLF" : "Kerbal LiveFeed v"+KLFCommon.PROGRAM_VERSION,
 					KLFInfoDisplay.layoutOptions
 					);
 			}
@@ -569,11 +609,6 @@ namespace KerbalLiveFeed
 				stateTextStyle.margin = new RectOffset(4, 0, 0, 0);
 				stateTextStyle.padding = new RectOffset(0, 0, 0, 0);
 
-				GUIStyle detailTextStyle = new GUIStyle(GUI.skin.label);
-				detailTextStyle.normal.textColor = new Color(0.85f, 0.85f, 0.85f);
-				detailTextStyle.margin = new RectOffset(4, 0, 0, 0);
-				detailTextStyle.padding = new RectOffset(0, 0, 0, 0);
-
 				//Create a list of vessels to display, keyed by owner name
 				SortedDictionary<String, VesselEntry> display_vessels = new SortedDictionary<string, VesselEntry>();
 
@@ -606,67 +641,86 @@ namespace KerbalLiveFeed
 					GUILayout.Label(info_vessel.ownerName, playerNameStyle);
 					GUILayout.Label(info_vessel.vesselName, vesselNameStyle);
 
-					String state_string = "";
+					StringBuilder sb = new StringBuilder();
 
-					switch (info_vessel.info.situation)
+					if (info_vessel.info.mass <= 0.0f)
 					{
-						case Vessel.Situations.DOCKED:
-							state_string = "Docked at ";
-							break;
-
-						case Vessel.Situations.ESCAPING:
-							state_string = "Escaping ";
-							break;
-
-						case Vessel.Situations.FLYING:
-							state_string = "Flying at ";
-							break;
-
-						case Vessel.Situations.LANDED:
-							state_string = "Landed at ";
-							break;
-
-						case Vessel.Situations.ORBITING:
-							state_string = "Orbiting ";
-							break;
-
-						case Vessel.Situations.PRELAUNCH:
-							state_string = "Prelaunch at ";
-							break;
-
-						case Vessel.Situations.SPLASHED:
-							state_string = "Splashed at ";
-							break;
-
-						case Vessel.Situations.SUB_ORBITAL:
-							if (info_vessel.orbitRenderer.orbit.timeToAp < info_vessel.orbitRenderer.orbit.period / 2.0)
-								state_string = "Ascending from ";
-							else
-								state_string = "Descending toward ";
-
-							break;
+						sb.Append("Exploded at ");
+						sb.Append(info_vessel.mainBody.bodyName);
 					}
-
-					GUILayout.Label(state_string + info_vessel.mainBody.bodyName, stateTextStyle);
-
-					if (KLFInfoDisplay.infoDisplayDetailed)
+					else
 					{
-						state_string = "Fuel: ";
-						state_string += info_vessel.info.percentFuel;
-						state_string += "% ";
-
-						state_string += "Mass: ";
-						state_string += info_vessel.info.mass.ToString("0.0");
-						state_string += "t ";
-
-						if (info_vessel.info.numCrew < byte.MaxValue)
+						switch (info_vessel.info.situation)
 						{
-							state_string += "Crew: ";
-							state_string += info_vessel.info.numCrew;
+							case Vessel.Situations.DOCKED:
+								sb.Append("Docked at ");
+								break;
+
+							case Vessel.Situations.ESCAPING:
+								sb.Append("Escaping ");
+								break;
+
+							case Vessel.Situations.FLYING:
+								sb.Append("Flying at ");
+								break;
+
+							case Vessel.Situations.LANDED:
+								sb.Append("Landed at ");
+								break;
+
+							case Vessel.Situations.ORBITING:
+								sb.Append("Orbiting ");
+								break;
+
+							case Vessel.Situations.PRELAUNCH:
+								sb.Append("Prelaunch at ");
+								break;
+
+							case Vessel.Situations.SPLASHED:
+								sb.Append("Splashed at ");
+								break;
+
+							case Vessel.Situations.SUB_ORBITAL:
+								if (info_vessel.orbitRenderer.orbit.timeToAp < info_vessel.orbitRenderer.orbit.period / 2.0)
+									sb.Append("Ascending from ");
+								else
+									sb.Append("Descending to ");
+
+								break;
 						}
 
-						GUILayout.Label(state_string, detailTextStyle);
+						sb.Append(info_vessel.mainBody.bodyName);
+
+						if (KLFInfoDisplay.infoDisplayDetailed)
+						{
+
+							sb.Append(" - Mass: ");
+							sb.Append(info_vessel.info.mass.ToString("0.0"));
+							sb.Append("t\n");
+
+							if (info_vessel.info.percentFuel < byte.MaxValue)
+							{
+								sb.Append("Fuel: ");
+								sb.Append(info_vessel.info.percentFuel);
+								sb.Append("% ");
+							}
+
+							if (info_vessel.info.percentRCS < byte.MaxValue)
+							{
+								sb.Append("RCS: ");
+								sb.Append(info_vessel.info.percentRCS);
+								sb.Append("% ");
+							}
+
+							if (info_vessel.info.numCrew < byte.MaxValue)
+							{
+								sb.Append("Crew: ");
+								sb.Append(info_vessel.info.numCrew);
+							}
+						}
 					}
+
+					GUILayout.Label(sb.ToString(), stateTextStyle);
 
 				}
 				GUILayout.EndVertical();

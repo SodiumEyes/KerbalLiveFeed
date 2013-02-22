@@ -26,8 +26,8 @@ namespace KerbalLiveFeed
 
 		//Properties
 
-		public const float WINDOW_WIDTH_MINIMIZED = 150;
-		public const float WINDOW_WIDTH_DEFAULT = 240;
+		public const float WINDOW_WIDTH_MINIMIZED = 60;
+		public const float WINDOW_WIDTH_DEFAULT = 250;
 		public const float WINDOW_WIDTH_WIDE = 275;
 		public const float WINDOW_HEIGHT = 320;
 		public const float WINDOW_MAX_HEIGHT = 720;

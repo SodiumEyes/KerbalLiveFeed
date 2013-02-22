@@ -17,6 +17,7 @@ namespace KerbalLiveFeed
 
 		public byte numCrew;
 		public byte percentFuel;
+		public byte percentRCS;
 		public float mass;
 
 		public KLFVesselInfo()
@@ -26,6 +27,7 @@ namespace KerbalLiveFeed
 
 			numCrew = 0;
 			percentFuel = 0;
+			percentRCS = 0;
 			mass = 0.0f;
 		}
 	}
