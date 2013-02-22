@@ -51,8 +51,12 @@ namespace KLFClient
 		public static Mutex textMessageQueueMutex;
 		public static Mutex serverSettingsMutex;
 
+		public static Exception threadException;
+		public static Mutex threadExceptionMutex;
+
 		public static Thread pluginUpdateThread;
 		public static Thread chatThread;
+		public static Thread incomingMessageThread;
 
 		static void Main(string[] args)
 		{
@@ -148,7 +152,12 @@ namespace KLFClient
 						if (tcpClient != null)
 							tcpClient.Close();
 
+						Console.ForegroundColor = ConsoleColor.Red;
+						Console.WriteLine();
 						Console.WriteLine("Unexpected expection encountered! Crash report written to KLFClientlog.txt");
+						Console.WriteLine();
+
+						Console.ForegroundColor = default_color;
 					}
 				}
 
@@ -170,6 +179,8 @@ namespace KLFClient
 				if (tcpClient.Connected)
 				{
 
+					endSession = false;
+
 					pluginUpdateInQueue = new Queue<byte[]>();
 					textMessageQueue = new Queue<InTextMessage>();
 
@@ -177,6 +188,9 @@ namespace KLFClient
 					pluginUpdateInMutex = new Mutex();
 					serverSettingsMutex = new Mutex();
 					textMessageQueueMutex = new Mutex();
+					threadExceptionMutex = new Mutex();
+
+					threadException = null;
 
 					//Create a thread to handle plugin updates
 					pluginUpdateThread = new Thread(new ThreadStart(handlePluginUpdates));
@@ -185,6 +199,10 @@ namespace KLFClient
 					//Create a thread to handle chat
 					chatThread = new Thread(new ThreadStart(handleChat));
 					chatThread.Start();
+
+					//Create a thread to handle incoming message
+					incomingMessageThread = new Thread(new ThreadStart(handleIncomingMessages));
+					incomingMessageThread.Start();
 
 					//Create the plugin directory if it doesn't exist
 					if (!Directory.Exists(PLUGIN_DIRECTORY))
@@ -233,71 +251,15 @@ namespace KLFClient
 
 					Console.WriteLine("Connected to server! Handshaking...");
 
-					byte[] message_header = new byte[KLFCommon.MSG_HEADER_LENGTH];
-					int header_bytes_read = 0;
-					bool stream_ended = false;
-
-					//Start connection loop
-					while (!stream_ended && !endSession && tcpClient.Connected)
+					while (!endSession)
 					{
-
-						try
+						threadExceptionMutex.WaitOne();
+						if (threadException != null)
 						{
-
-							//Read the message header
-							int num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
-							header_bytes_read += num_read;
-
-							if (header_bytes_read == KLFCommon.MSG_HEADER_LENGTH)
-							{
-								KLFCommon.ServerMessageID id = (KLFCommon.ServerMessageID)KLFCommon.intFromBytes(message_header, 0);
-								int msg_length = KLFCommon.intFromBytes(message_header, 4);
-
-								byte[] message_data = null;
-
-								if (msg_length > 0)
-								{
-									//Read the message data
-									message_data = new byte[msg_length];
-
-									int data_bytes_read = 0;
-
-									while (data_bytes_read < msg_length)
-									{
-										num_read = tcpClient.GetStream().Read(message_data, data_bytes_read, msg_length - data_bytes_read);
-										if (num_read > 0)
-											data_bytes_read += num_read;
-
-									}
-								}
-
-								handleMessage(id, message_data);
-
-								header_bytes_read = 0;
-							}
-
-							//Detect if the socket closed
-							if (tcpClient.Client.Poll(0, SelectMode.SelectRead))
-							{
-								byte[] buff = new byte[1];
-								if (tcpClient.Client.Receive(buff, SocketFlags.Peek) == 0)
-								{
-									// Client disconnected
-									stream_ended = true;
-								}
-							}
-
+							threadExceptionMutex.ReleaseMutex();
+							throw threadException;
 						}
-						catch (System.IO.IOException)
-						{
-							stream_ended = true;
-						}
-						catch (System.ObjectDisposedException)
-						{
-							stream_ended = true;
-						}
-
-						Thread.Sleep(0);
+						threadExceptionMutex.ReleaseMutex();
 					}
 
 					//Obtain all mutexes and abort all threads
@@ -305,14 +267,17 @@ namespace KLFClient
 					serverSettingsMutex.WaitOne();
 					pluginUpdateInMutex.WaitOne();
 					textMessageQueueMutex.WaitOne();
+					threadExceptionMutex.WaitOne();
 
 					pluginUpdateThread.Abort();
 					chatThread.Abort();
+					incomingMessageThread.Abort();
 
 					tcpSendMutex.ReleaseMutex();
 					serverSettingsMutex.ReleaseMutex();
 					pluginUpdateInMutex.ReleaseMutex();
 					textMessageQueueMutex.ReleaseMutex();
+					threadExceptionMutex.ReleaseMutex();
 
 					//Close the connection
 					ConsoleColor default_color = Console.ForegroundColor;
@@ -434,220 +399,352 @@ namespace KLFClient
 			}
 		}
 
-		static void handlePluginUpdates()
+		static void handleIncomingMessages()
 		{
-			while (true)
+			try
 			{
-				//Send outgoing plugin updates to server
-				if (File.Exists(OUT_FILENAME))
+
+				byte[] message_header = new byte[KLFCommon.MSG_HEADER_LENGTH];
+				int header_bytes_read = 0;
+				bool stream_ended = false;
+
+				//Start connection loop
+				while (!stream_ended && !endSession && tcpClient.Connected)
 				{
 
-					FileStream out_stream = null;
 					try
 					{
-						out_stream = File.OpenRead(OUT_FILENAME);
-						out_stream.Lock(0, long.MaxValue);
 
-						//Read the update
-						byte[] update_bytes = new byte[out_stream.Length];
-						out_stream.Read(update_bytes, 0, (int)out_stream.Length);
+						//Read the message header
+						int num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
+						header_bytes_read += num_read;
 
-						out_stream.Unlock(0, long.MaxValue);
-
-						out_stream.Close();
-						File.Delete(OUT_FILENAME); //Delete the file now that it's been read
-
-						//Make sure the file format version is correct
-						Int32 file_format_version = KLFCommon.intFromBytes(update_bytes, 0);
-						if (file_format_version == KLFCommon.FILE_FORMAT_VERSION)
+						if (header_bytes_read == KLFCommon.MSG_HEADER_LENGTH)
 						{
-							//Send the update to the server
-							tcpSendMutex.WaitOne();
+							KLFCommon.ServerMessageID id = (KLFCommon.ServerMessageID)KLFCommon.intFromBytes(message_header, 0);
+							int msg_length = KLFCommon.intFromBytes(message_header, 4);
 
-							//Remove the file format version bytes before sending
-							sendMessageHeader(KLFCommon.ClientMessageID.PLUGIN_UPDATE, update_bytes.Length - 4);
-							tcpClient.GetStream().Write(update_bytes, 4, update_bytes.Length - 4);
-							tcpClient.GetStream().Flush();
+							byte[] message_data = null;
 
-							tcpSendMutex.ReleaseMutex();
+							if (msg_length > 0)
+							{
+								//Read the message data
+								message_data = new byte[msg_length];
+
+								int data_bytes_read = 0;
+
+								while (data_bytes_read < msg_length)
+								{
+									num_read = tcpClient.GetStream().Read(message_data, data_bytes_read, msg_length - data_bytes_read);
+									if (num_read > 0)
+										data_bytes_read += num_read;
+
+								}
+							}
+
+							handleMessage(id, message_data);
+
+							header_bytes_read = 0;
 						}
-						else
+
+						//Detect if the socket closed
+						if (tcpClient.Client.Poll(0, SelectMode.SelectRead))
 						{
-							//Don't send the update if the file format version is wrong
-							Console.WriteLine("Error: Plugin version is incompatible with client version!");
+							byte[] buff = new byte[1];
+							if (tcpClient.Client.Receive(buff, SocketFlags.Peek) == 0)
+							{
+								// Client disconnected
+								stream_ended = true;
+							}
 						}
 
-					}
-					catch (System.IO.FileNotFoundException)
-					{
-					}
-					catch (System.UnauthorizedAccessException)
-					{
-					}
-					catch (System.IO.DirectoryNotFoundException)
-					{
-					}
-					catch (System.InvalidOperationException)
-					{
 					}
 					catch (System.IO.IOException)
 					{
+						stream_ended = true;
+					}
+					catch (System.ObjectDisposedException)
+					{
+						stream_ended = true;
 					}
 
-					if (out_stream != null)
-					{
-						out_stream.Close(); //Close the file in case the other close statement was reached
-					}
+					Thread.Sleep(0);
 				}
+			}
+			catch (ThreadAbortException)
+			{
+			}
+			catch (Exception e)
+			{
+				threadExceptionMutex.WaitOne();
+				threadException = e;
+				threadExceptionMutex.ReleaseMutex();
+			}
 
-				//Pass queued updates to plugin
-				pluginUpdateInMutex.WaitOne();
+			endSession = true;
+		}
 
-				if (!File.Exists(IN_FILENAME) && pluginUpdateInQueue.Count > 0)
+		static void handlePluginUpdates()
+		{
+			try
+			{
+
+				while (true)
 				{
-
-					FileStream in_stream = null;
-
-					try
+					//Send outgoing plugin updates to server
+					if (File.Exists(OUT_FILENAME))
 					{
-						in_stream = File.Create(IN_FILENAME);
 
-						//Write the file format version
-						in_stream.Write(KLFCommon.intToBytes(KLFCommon.FILE_FORMAT_VERSION), 0, 4);
-
-						//Write the updates to the file
-						while (pluginUpdateInQueue.Count > 0)
+						FileStream out_stream = null;
+						try
 						{
-							byte[] update = pluginUpdateInQueue.Dequeue();
-							in_stream.Write(update, 0, update.Length);
+							out_stream = File.OpenRead(OUT_FILENAME);
+							out_stream.Lock(0, long.MaxValue);
+
+							//Read the update
+							byte[] update_bytes = new byte[out_stream.Length];
+							out_stream.Read(update_bytes, 0, (int)out_stream.Length);
+
+							out_stream.Unlock(0, long.MaxValue);
+
+							out_stream.Close();
+							File.Delete(OUT_FILENAME); //Delete the file now that it's been read
+
+							//Make sure the file format version is correct
+							Int32 file_format_version = KLFCommon.intFromBytes(update_bytes, 0);
+							if (file_format_version == KLFCommon.FILE_FORMAT_VERSION)
+							{
+								//Send the update to the server
+								tcpSendMutex.WaitOne();
+
+								//Remove the file format version bytes before sending
+								sendMessageHeader(KLFCommon.ClientMessageID.PLUGIN_UPDATE, update_bytes.Length - 4);
+								tcpClient.GetStream().Write(update_bytes, 4, update_bytes.Length - 4);
+								tcpClient.GetStream().Flush();
+
+								tcpSendMutex.ReleaseMutex();
+							}
+							else
+							{
+								//Don't send the update if the file format version is wrong
+								Console.WriteLine("Error: Plugin version is incompatible with client version!");
+							}
+
+						}
+						catch (System.IO.FileNotFoundException)
+						{
+						}
+						catch (System.UnauthorizedAccessException)
+						{
+						}
+						catch (System.IO.DirectoryNotFoundException)
+						{
+						}
+						catch (System.InvalidOperationException)
+						{
+						}
+						catch (System.IO.IOException)
+						{
 						}
 
+						if (out_stream != null)
+						{
+							out_stream.Close(); //Close the file in case the other close statement was reached
+						}
 					}
-					catch (Exception)
+
+					//Pass queued updates to plugin
+					pluginUpdateInMutex.WaitOne();
+
+					if (!File.Exists(IN_FILENAME) && pluginUpdateInQueue.Count > 0)
 					{
-						in_stream = null;
+
+						FileStream in_stream = null;
+
+						try
+						{
+							in_stream = File.Create(IN_FILENAME);
+
+							//Write the file format version
+							in_stream.Write(KLFCommon.intToBytes(KLFCommon.FILE_FORMAT_VERSION), 0, 4);
+
+							//Write the updates to the file
+							while (pluginUpdateInQueue.Count > 0)
+							{
+								byte[] update = pluginUpdateInQueue.Dequeue();
+								in_stream.Write(update, 0, update.Length);
+							}
+
+						}
+						catch (System.IO.FileNotFoundException)
+						{
+						}
+						catch (System.UnauthorizedAccessException)
+						{
+						}
+						catch (System.IO.DirectoryNotFoundException)
+						{
+						}
+						catch (System.InvalidOperationException)
+						{
+						}
+						catch (System.IO.IOException)
+						{
+						}
+
+						if (in_stream != null)
+							in_stream.Close();
+
+					}
+					else
+					{
+						//Don't let the update queue get insanely large
+						serverSettingsMutex.WaitOne();
+						int max_queue_size = maxQueuedUpdates;
+						serverSettingsMutex.ReleaseMutex();
+
+						while (pluginUpdateInQueue.Count > max_queue_size)
+						{
+							pluginUpdateInQueue.Dequeue();
+						}
 					}
 
-					if (in_stream != null)
-						in_stream.Close();
+					pluginUpdateInMutex.ReleaseMutex();
 
-				}
-				else
-				{
-					//Don't let the update queue get insanely large
 					serverSettingsMutex.WaitOne();
-					int max_queue_size = maxQueuedUpdates;
+					int sleep_time = updateInterval;
 					serverSettingsMutex.ReleaseMutex();
 
-					while (pluginUpdateInQueue.Count > max_queue_size)
-					{
-						pluginUpdateInQueue.Dequeue();
-					}
+					Thread.Sleep(sleep_time);
 				}
 
-				pluginUpdateInMutex.ReleaseMutex();
-
-				serverSettingsMutex.WaitOne();
-				int sleep_time = updateInterval;
-				serverSettingsMutex.ReleaseMutex();
-
-				Thread.Sleep(sleep_time);
+			}
+			catch (ThreadAbortException)
+			{
+			}
+			catch (Exception e)
+			{
+				threadExceptionMutex.WaitOne();
+				threadException = e;
+				threadExceptionMutex.ReleaseMutex();
 			}
 		}
 
 		static void handleChat()
 		{
 
-			StringBuilder sb = new StringBuilder();
-			ConsoleColor default_color = Console.ForegroundColor;
-
-			while (true)
+			try
 			{
 
-				//Handle outgoing messsages
-				if (Console.KeyAvailable)
+				StringBuilder sb = new StringBuilder();
+				ConsoleColor default_color = Console.ForegroundColor;
+
+				while (true)
 				{
-					ConsoleKeyInfo key = Console.ReadKey();
 
-					switch (key.Key) {
+					//Handle outgoing messsages
+					if (Console.KeyAvailable)
+					{
+						ConsoleKeyInfo key = Console.ReadKey();
 
-						case ConsoleKey.Enter:
+						switch (key.Key)
+						{
 
-							String line = sb.ToString();
+							case ConsoleKey.Enter:
 
-							if (line.Length > 0)
-							{
-								if (line.ElementAt(0) == '/')
+								String line = sb.ToString();
+
+								if (line.Length > 0)
 								{
-									if (line == "/quit")
+									if (line.ElementAt(0) == '/')
+									{
+										if (line == "/quit")
+										{
+											tcpSendMutex.WaitOne();
+											tcpClient.Close(); //Close the tcp client
+											tcpSendMutex.ReleaseMutex();
+
+											endSession = true;
+										}
+										else if (line == "/crash")
+										{
+											Object o = null;
+											o.ToString();
+										}
+
+									}
+									else
 									{
 										tcpSendMutex.WaitOne();
-										tcpClient.Close(); //Close the tcp client
+										sendTextMessage(line);
 										tcpSendMutex.ReleaseMutex();
 									}
-
 								}
-								else
+
+								sb.Clear();
+								Console.WriteLine();
+								break;
+
+							case ConsoleKey.Backspace:
+							case ConsoleKey.Delete:
+								if (sb.Length > 0)
 								{
-									tcpSendMutex.WaitOne();
-									sendTextMessage(line);
-									tcpSendMutex.ReleaseMutex();
+									sb.Remove(sb.Length - 1, 1);
+									Console.Write(' ');
+									if (Console.CursorLeft > 0)
+										Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
 								}
-							}
+								break;
 
-							sb.Clear();
-							Console.WriteLine();
-							break;
-
-						case ConsoleKey.Backspace:
-						case ConsoleKey.Delete:
-							if (sb.Length > 0)
-							{
-								sb.Remove(sb.Length - 1, 1);
-								Console.Write(' ');
-								if (Console.CursorLeft > 0)
+							default:
+								if (key.KeyChar != '\0')
+									sb.Append(key.KeyChar);
+								else if (Console.CursorLeft > 0)
 									Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
-							}
-							break;
+								break;
 
-						default:
-							if (key.KeyChar != '\0')
-								sb.Append(key.KeyChar);
-							else if (Console.CursorLeft > 0)
-								Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
-							break;
-
-					}
-				}
-
-				if (sb.Length == 0)
-				{
-					//Handle incoming messages
-					textMessageQueueMutex.WaitOne();
-
-					try
-					{
-						while (textMessageQueue.Count > 0)
-						{
-							InTextMessage message = textMessageQueue.Dequeue();
-							if (message.fromServer)
-							{
-								Console.ForegroundColor = ConsoleColor.Green;
-								Console.Write("[Server] ");
-								Console.ForegroundColor = default_color;
-							}
-
-							Console.WriteLine(message.message);
 						}
 					}
-					catch (System.IO.IOException)
+
+					if (sb.Length == 0)
 					{
+						//Handle incoming messages
+						textMessageQueueMutex.WaitOne();
+
+						try
+						{
+							while (textMessageQueue.Count > 0)
+							{
+								InTextMessage message = textMessageQueue.Dequeue();
+								if (message.fromServer)
+								{
+									Console.ForegroundColor = ConsoleColor.Green;
+									Console.Write("[Server] ");
+									Console.ForegroundColor = default_color;
+								}
+
+								Console.WriteLine(message.message);
+							}
+						}
+						catch (System.IO.IOException)
+						{
+						}
+
+						textMessageQueueMutex.ReleaseMutex();
 					}
 
-					textMessageQueueMutex.ReleaseMutex();
+					Thread.Sleep(0);
 				}
 
-				Thread.Sleep(0);
+			}
+			catch (ThreadAbortException)
+			{
+			}
+			catch (Exception e)
+			{
+				threadExceptionMutex.WaitOne();
+				threadException = e;
+				threadExceptionMutex.ReleaseMutex();
 			}
 		}
 
