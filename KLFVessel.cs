@@ -11,50 +11,19 @@ namespace KerbalLiveFeed
 
         //Properties
 
-		private String _ownerName;
-		private String _vesselName;
+		public KLFVesselInfo info;
 
-        public String vesselName
-        {
-			set
-			{
-				if (vesselName != value)
-				{
-					_vesselName = value;
-					buildGameObjectName();
-				}
-			}
-			get
-			{
-				return _vesselName;
-			}
-        }
+		public String vesselName
+		{
+			private set;
+			get;
+		}
 
-        public String ownerName
-        {
-			set
-			{
-				if (ownerName != value)
-				{
-					_ownerName = value;
-
-					//Generate a display color from the owner name
-					int val = 5381;
-
-					foreach (char c in _ownerName)
-					{
-						val = ((val << 5) + val) + c;
-					}
-					generateActiveColor(Math.Abs(val));
-
-					buildGameObjectName();
-				}
-			}
-			get
-			{
-				return _ownerName;
-			}
-        }
+		public String ownerName
+		{
+			private set;
+			get;
+		}
 
 		public Guid id
 		{
@@ -98,8 +67,8 @@ namespace KerbalLiveFeed
             {
 				if (mainBody != null)
 				{
-					if (situation == Vessel.Situations.LANDED || situation == Vessel.Situations.SPLASHED
-						|| situation == Vessel.Situations.PRELAUNCH)
+					if (info.situation == Vessel.Situations.LANDED || info.situation == Vessel.Situations.SPLASHED
+						|| info.situation == Vessel.Situations.PRELAUNCH)
 					{
 						//Vessel is fixed in relation to body
 						return mainBody.transform.TransformPoint(localPosition);
@@ -136,24 +105,6 @@ namespace KerbalLiveFeed
             get;
         }
 
-        public Vessel.Situations situation
-        {
-            set;
-            get;
-        }
-
-		public Vessel.State state
-		{
-			set;
-			get;
-		}
-
-		public double timeScale
-		{
-			set;
-			get;
-		}
-
         public CelestialBody mainBody
         {
            private set;
@@ -188,13 +139,13 @@ namespace KerbalLiveFeed
         {
             get
             {
-                switch (situation)
+				switch (info.situation)
                 {
                     case Vessel.Situations.FLYING:
                     case Vessel.Situations.ORBITING:
                     case Vessel.Situations.SUB_ORBITAL:
                     case Vessel.Situations.ESCAPING:
-                        return state == Vessel.State.ACTIVE || orbitRenderer.mouseOver;
+                        return info.state == Vessel.State.ACTIVE || orbitRenderer.mouseOver;
 
                     default:
                         return false;
@@ -218,7 +169,7 @@ namespace KerbalLiveFeed
 		{
 			get
 			{
-				return referenceUT + (UnityEngine.Time.fixedTime - referenceFixedTime) * timeScale;
+				return referenceUT + (UnityEngine.Time.fixedTime - referenceFixedTime) * info.timeScale;
 			}
 		}
 
@@ -226,12 +177,23 @@ namespace KerbalLiveFeed
 
         public KLFVessel(String vessel_name, String owner_name, Guid _id)
         {
-			gameObj = new GameObject("KLF Vessel");
+			info = new KLFVesselInfo();
+
+			vesselName = vessel_name;
+			ownerName = owner_name;
+			id = _id;
+
+			//Build the name of the game object
+			System.Text.StringBuilder sb = new StringBuilder();
+			sb.Append(vesselName);
+			sb.Append(" (");
+			sb.Append(ownerName);
+			sb.Append(')');
+
+			gameObj = new GameObject(sb.ToString());
 			gameObj.layer = 9;
 
-            vesselName = vessel_name;
-            ownerName = owner_name;
-			id = _id;
+			generateActiveColor();
 
             line = gameObj.AddComponent<LineRenderer>();
             orbitRenderer = gameObj.AddComponent<OrbitRenderer>();
@@ -256,13 +218,23 @@ namespace KerbalLiveFeed
             worldDirection = Vector3.zero;
             worldVelocity = Vector3.zero;
 
-            situation = Vessel.Situations.ORBITING;
-
-			timeScale = 1;
         }
 
 		~KLFVessel()
 		{
+		}
+
+		public void generateActiveColor()
+		{
+			//Generate a display color from the owner name
+			int val = 5381;
+
+			foreach (char c in ownerName)
+			{
+				val = ((val << 5) + val) + c;
+			}
+
+			generateActiveColor(Math.Abs(val));
 		}
 
 		public void generateActiveColor(int val)
@@ -374,7 +346,7 @@ namespace KerbalLiveFeed
             //Determine the scale of the line so its thickness is constant from the map camera view
 			float apparent_size = 0.01f;
 			bool pointed = true;
-			switch (state)
+			switch (info.state)
 			{
 				case Vessel.State.ACTIVE:
 					apparent_size = 0.015f;
@@ -411,7 +383,7 @@ namespace KerbalLiveFeed
             line.SetPosition(0, ScaledSpace.LocalToScaledSpace(worldPosition - line_half_dir));
             line.SetPosition(1, ScaledSpace.LocalToScaledSpace(worldPosition + line_half_dir));
 
-			switch (situation)
+			switch (info.situation)
 			{
 				case Vessel.Situations.ESCAPING:
 				case Vessel.Situations.FLYING:
@@ -466,7 +438,7 @@ namespace KerbalLiveFeed
 			else
 			{
 				
-				switch (state)
+				switch (info.state)
 				{
 					case Vessel.State.ACTIVE:
 						color = activeColor;
@@ -487,24 +459,12 @@ namespace KerbalLiveFeed
 			line.SetColors(color, color);
 			orbitRenderer.orbitColor = color * 0.5f;
 
-			if (state == Vessel.State.ACTIVE && shouldShowOrbit)
+			if (info.state == Vessel.State.ACTIVE && shouldShowOrbit)
 				orbitRenderer.drawIcons = OrbitRenderer.DrawIcons.OBJ_PE_AP;
 			else
 				orbitRenderer.drawIcons = OrbitRenderer.DrawIcons.OBJ;
 
         }
-
-		private void buildGameObjectName()
-		{
-			//Build the name of the game object
-			System.Text.StringBuilder sb = new StringBuilder();
-			sb.Append(vesselName);
-			sb.Append(" (");
-			sb.Append(ownerName);
-			sb.Append(')');
-
-			gameObj.name = sb.ToString();
-		}
 
     }
 }

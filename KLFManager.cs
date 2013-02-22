@@ -189,9 +189,83 @@ namespace KerbalLiveFeed
 			}
 
 			update.situation = vessel.situation;
+			update.mass = vessel.GetTotalMass();
 
 			if (vessel == FlightGlobals.ActiveVessel)
+			{
+
 				update.state = Vessel.State.ACTIVE;
+
+				bool is_eva = false;
+
+				//Check if the vessel is an EVA Kerbal
+				if (vessel.isEVA && vessel.parts.Count > 0 && vessel.parts.First().Modules.Count > 0)
+				{
+					foreach (PartModule module in vessel.parts.First().Modules) {
+						if (module is KerbalEVA)
+						{
+							KerbalEVA kerbal = (KerbalEVA)module;
+							update.percentFuel = (byte)Math.Round(kerbal.Fuel / kerbal.FuelCapacity * 100);
+							update.numCrew = byte.MaxValue;
+							is_eva = true;
+							break;
+						}
+							
+					}
+				}
+				
+				if (!is_eva) {
+
+					update.numCrew = (byte)vessel.GetCrewCount();
+
+					Dictionary<string, float> fuel_densities = new Dictionary<string, float>();
+
+					//Determine what kinds of fuel this vessel can use and their densities
+					foreach (Part part in vessel.parts)
+					{
+
+						foreach (ModuleEngines engine in part.Modules.OfType<ModuleEngines>())
+						{
+							foreach (ModuleEngines.Propellant propellant in engine.propellants)
+							{
+								if (propellant.name == "ElectricCharge" || propellant.name == "IntakeAir")
+								{
+									continue;
+								}
+
+								if (!fuel_densities.ContainsKey(propellant.name))
+									fuel_densities.Add(propellant.name, PartResourceLibrary.Instance.GetDefinition(propellant.id).density);
+							}
+						}
+
+					}
+
+					//Determine how much fuel this vessel has and can hold
+					float fuel_capacity = 0.0f;
+					float fuel_amount = 0.0f;
+					foreach (Part part in vessel.parts)
+					{
+						if (part != null && part.Resources != null)
+						{
+							foreach (PartResource resource in part.Resources)
+							{
+								float density = 0.0f;
+								//Check that this vessel can use this type of resource as fuel
+								if (fuel_densities.TryGetValue(resource.resourceName, out density))
+								{
+									fuel_capacity += ((float)resource.maxAmount) * density;
+									fuel_amount += ((float)resource.amount) * density;
+								}
+							}
+						}
+					}
+
+					if (fuel_capacity > 0.0f)
+					{
+						update.percentFuel = (byte)Math.Round(fuel_amount / fuel_capacity * 100);
+					}
+				}
+			}
 			else if (vessel.isCommandable)
 				update.state = Vessel.State.INACTIVE;
 			else
@@ -379,13 +453,9 @@ namespace KerbalLiveFeed
 				Vector3 dir = new Vector3(vessel_update.localDirection[0], vessel_update.localDirection[1], vessel_update.localDirection[2]);
 				Vector3 vel = new Vector3(vessel_update.localVelocity[0], vessel_update.localVelocity[1], vessel_update.localVelocity[2]);
 
-				vessel.vesselName = vessel_update.vesselName;
-
 				vessel.setOrbitalData(update_body, pos, vel, dir);
 
-				vessel.situation = vessel_update.situation;
-				vessel.state = vessel_update.state;
-				vessel.timeScale = vessel_update.timeScale;
+				vessel.info = vessel_update;
 
 			}
 		}
@@ -408,7 +478,7 @@ namespace KerbalLiveFeed
 		{
 			DontDestroyOnLoad(this);
 			CancelInvoke();
-			InvokeRepeating("updateStep", 0.1f, 0.1f);
+			InvokeRepeating("updateStep", 1/60.0f, 1/60.0f);
 		}
 
 		public void OnGUI()
@@ -510,7 +580,7 @@ namespace KerbalLiveFeed
 				foreach (KeyValuePair<String, VesselEntry> pair in vessels)
 				{
 					VesselEntry existing_vessel;
-					if (pair.Value.vessel.mainBody != null && pair.Value.vessel.state == Vessel.State.ACTIVE)
+					if (pair.Value.vessel.mainBody != null && pair.Value.vessel.info.state == Vessel.State.ACTIVE)
 					{
 						if (display_vessels.TryGetValue(pair.Value.vessel.ownerName, out existing_vessel))
 						{
@@ -538,7 +608,7 @@ namespace KerbalLiveFeed
 
 					String state_string = "";
 
-					switch (info_vessel.situation)
+					switch (info_vessel.info.situation)
 					{
 						case Vessel.Situations.DOCKED:
 							state_string = "Docked at ";
@@ -581,25 +651,19 @@ namespace KerbalLiveFeed
 
 					if (KLFInfoDisplay.infoDisplayDetailed)
 					{
-						state_string = "Alt: ";
+						state_string = "Fuel: ";
+						state_string += info_vessel.info.percentFuel;
+						state_string += "% ";
 
-						double alt = info_vessel.orbitRenderer.orbit.altitude;
-						if (alt >= 10000.0)
+						state_string += "Mass: ";
+						state_string += info_vessel.info.mass.ToString("0.0");
+						state_string += "t ";
+
+						if (info_vessel.info.numCrew < byte.MaxValue)
 						{
-							state_string += (int)Math.Round(alt/1000.0);
-							state_string += "km";
+							state_string += "Crew: ";
+							state_string += info_vessel.info.numCrew;
 						}
-						else
-						{
-							state_string += (int)alt;
-							state_string += "m";
-						}
-
-						state_string += " Vel:";
-
-						double vel = info_vessel.orbitRenderer.orbit.GetVel().magnitude;
-						state_string += (int)Math.Round(vel);
-						state_string += "m/s";
 
 						GUILayout.Label(state_string, detailTextStyle);
 					}
