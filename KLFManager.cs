@@ -547,9 +547,20 @@ namespace KerbalLiveFeed
 			InvokeRepeating("updateStep", 1/60.0f, 1/60.0f);
 		}
 
+		public void Update()
+		{
+			//Detect if the user has toggled the ui
+			if (FlightGlobals.ready && FlightGlobals.ActiveVessel != null && Input.GetKeyDown(GameSettings.TOGGLE_UI.primary))
+				KLFInfoDisplay.globalUIEnabled = !KLFInfoDisplay.globalUIEnabled;
+
+			if (Input.GetKeyDown(KeyCode.F7))
+				KLFInfoDisplay.infoDisplayActive = !KLFInfoDisplay.infoDisplayActive;
+
+		}
+
 		public void OnGUI()
 		{
-			if (KLFInfoDisplay.infoDisplayActive && FlightGlobals.ready
+			if (KLFInfoDisplay.globalUIEnabled && KLFInfoDisplay.infoDisplayActive && FlightGlobals.ready
 				&& (FlightGlobals.ActiveVessel != null && FlightGlobals.fetch != null))
 			{
 
@@ -569,18 +580,22 @@ namespace KerbalLiveFeed
 				}
 				else
 				{
-					KLFInfoDisplay.layoutOptions[2] = GUILayout.MinHeight(KLFInfoDisplay.WINDOW_HEIGHT);
-					KLFInfoDisplay.layoutOptions[3] = GUILayout.MaxHeight(KLFInfoDisplay.WINDOW_MAX_HEIGHT);
 
-					if (KLFInfoDisplay.infoDisplayWide)
+					if (KLFInfoDisplay.infoDisplayBig)
 					{
-						KLFInfoDisplay.layoutOptions[4] = GUILayout.MinWidth(KLFInfoDisplay.WINDOW_WIDTH_WIDE);
-						KLFInfoDisplay.layoutOptions[5] = GUILayout.MaxWidth(KLFInfoDisplay.WINDOW_WIDTH_WIDE);
+						KLFInfoDisplay.layoutOptions[4] = GUILayout.MinWidth(KLFInfoDisplay.WINDOW_WIDTH_BIG);
+						KLFInfoDisplay.layoutOptions[5] = GUILayout.MaxWidth(KLFInfoDisplay.WINDOW_WIDTH_BIG);
+
+						KLFInfoDisplay.layoutOptions[2] = GUILayout.MinHeight(KLFInfoDisplay.WINDOW_HEIGHT_BIG);
+						KLFInfoDisplay.layoutOptions[3] = GUILayout.MaxHeight(KLFInfoDisplay.WINDOW_HEIGHT_BIG);
 					}
 					else
 					{
 						KLFInfoDisplay.layoutOptions[4] = GUILayout.MinWidth(KLFInfoDisplay.WINDOW_WIDTH_DEFAULT);
 						KLFInfoDisplay.layoutOptions[5] = GUILayout.MaxWidth(KLFInfoDisplay.WINDOW_WIDTH_DEFAULT);
+
+						KLFInfoDisplay.layoutOptions[2] = GUILayout.MinHeight(KLFInfoDisplay.WINDOW_HEIGHT);
+						KLFInfoDisplay.layoutOptions[3] = GUILayout.MaxHeight(KLFInfoDisplay.WINDOW_HEIGHT);
 					}
 				}
 
@@ -603,6 +618,7 @@ namespace KerbalLiveFeed
 			GUILayout.BeginVertical();
 
 			bool minimized = KLFInfoDisplay.infoDisplayMinimized;
+			bool big = KLFInfoDisplay.infoDisplayBig;
 
 			if (!minimized)
 				GUILayout.BeginHorizontal();
@@ -612,6 +628,7 @@ namespace KerbalLiveFeed
 			if (!minimized)
 			{
 				KLFInfoDisplay.infoDisplayDetailed = GUILayout.Toggle(KLFInfoDisplay.infoDisplayDetailed, "Detail", GUI.skin.button);
+				KLFInfoDisplay.infoDisplayBig = GUILayout.Toggle(KLFInfoDisplay.infoDisplayBig, "Big", GUI.skin.button);
 				GUILayout.EndHorizontal();
 
 				KLFInfoDisplay.infoScrollPos = GUILayout.BeginScrollView(KLFInfoDisplay.infoScrollPos);
@@ -620,14 +637,23 @@ namespace KerbalLiveFeed
 				//Init label styles
 				playerNameStyle = new GUIStyle(GUI.skin.label);
 				playerNameStyle.normal.textColor = Color.white;
-				playerNameStyle.fontStyle = FontStyle.Bold;
 				playerNameStyle.alignment = TextAnchor.MiddleLeft;
 				playerNameStyle.margin = new RectOffset(0, 0, 2, 0);
 				playerNameStyle.padding = new RectOffset(0, 0, 0, 0);
 
 				vesselNameStyle = new GUIStyle(GUI.skin.label);
 				vesselNameStyle.normal.textColor = Color.white;
-				vesselNameStyle.margin = new RectOffset(4, 0, 0, 0);
+				vesselNameStyle.stretchWidth = true;
+				if (big)
+				{
+					vesselNameStyle.margin = new RectOffset(0, 4, 2, 0);
+					vesselNameStyle.alignment = TextAnchor.LowerRight;
+				}
+				else
+				{
+					vesselNameStyle.margin = new RectOffset(4, 0, 0, 0);
+					vesselNameStyle.alignment = TextAnchor.LowerLeft;
+				}
 
 				vesselNameStyle.padding = new RectOffset(0, 0, 0, 0);
 
@@ -671,11 +697,13 @@ namespace KerbalLiveFeed
 				//Write other's vessel's statuses
 				foreach (KeyValuePair<String, VesselStatusInfo> pair in display_vessels)
 				{
-					vesselStatusLabels(pair.Value);
+					vesselStatusLabels(pair.Value, big);
 				}
 
 				GUILayout.EndVertical();
 				GUILayout.EndScrollView();
+
+				GUILayout.Label("Toggle: F7");
 
 			}
 
@@ -685,18 +713,22 @@ namespace KerbalLiveFeed
 
 		}
 
-		private void vesselStatusLabels(VesselStatusInfo info)
+		private void vesselStatusLabels(VesselStatusInfo info, bool big)
 		{
 			playerNameStyle.normal.textColor = info.color * 0.75f + Color.white * 0.25f;
+
+			if (big)
+				GUILayout.BeginHorizontal();
 
 			GUILayout.Label(info.ownerName, playerNameStyle);
 			GUILayout.Label(info.vesselName, vesselNameStyle);
 
+			if (big)
+				GUILayout.EndHorizontal();
+
 			StringBuilder sb = new StringBuilder();
 			bool status_determined = false;
 			bool exploded = false;
-
-			bool rising = info.orbit.timeToAp < info.orbit.period / 2.0;
 
 			if (info.info.mass <= 0.0f)
 			{
@@ -746,10 +778,10 @@ namespace KerbalLiveFeed
 						break;
 
 					case Vessel.Situations.ESCAPING:
-						if (rising)
-							sb.Append("Escaping ");
+						if (info.orbit.timeToPe > 0.0)
+							sb.Append("Encountering ");
 						else
-							sb.Append("Approaching ");
+							sb.Append("Escaping ");
 						break;
 
 					case Vessel.Situations.FLYING:
@@ -773,7 +805,7 @@ namespace KerbalLiveFeed
 						break;
 
 					case Vessel.Situations.SUB_ORBITAL:
-						if (rising)
+						if (info.orbit.timeToAp < info.orbit.period / 2.0)
 							sb.Append("Ascending from ");
 						else
 							sb.Append("Descending to ");
@@ -789,7 +821,7 @@ namespace KerbalLiveFeed
 
 				sb.Append(" - Mass: ");
 				sb.Append(info.info.mass.ToString("0.0"));
-				sb.Append("t\n");
+				sb.Append(' ');
 
 				if (info.info.percentFuel < byte.MaxValue)
 				{

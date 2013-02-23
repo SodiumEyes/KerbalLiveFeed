@@ -28,15 +28,16 @@ namespace KerbalLiveFeed
 
 		public const float WINDOW_WIDTH_MINIMIZED = 60;
 		public const float WINDOW_WIDTH_DEFAULT = 250;
-		public const float WINDOW_WIDTH_WIDE = 275;
-		public const float WINDOW_HEIGHT = 320;
-		public const float WINDOW_MAX_HEIGHT = 720;
+		public const float WINDOW_WIDTH_BIG = 320;
+		public const float WINDOW_HEIGHT = 360;
+		public const float WINDOW_HEIGHT_BIG = 560;
 		public const float WINDOW_HEIGHT_MINIMIZED = 64;
 
+		public static bool globalUIEnabled = true;
 		public static bool infoDisplayActive = true;
 		public static bool infoDisplayMinimized = false;
 		public static bool infoDisplayDetailed = false;
-		public static bool infoDisplayWide = false;
+		public static bool infoDisplayBig = false;
 		public static bool hideOutsideGame = true;
 		public static Rect infoWindowPos = new Rect(20, Screen.height / 2 - WINDOW_HEIGHT / 2, WINDOW_WIDTH_DEFAULT, WINDOW_HEIGHT);
 		public static GUILayoutOption[] layoutOptions;
