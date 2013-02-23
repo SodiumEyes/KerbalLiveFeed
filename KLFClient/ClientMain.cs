@@ -260,6 +260,8 @@ namespace KLFClient
 							throw threadException;
 						}
 						threadExceptionMutex.ReleaseMutex();
+
+						Thread.Sleep(0);
 					}
 
 					//Obtain all mutexes and abort all threads
