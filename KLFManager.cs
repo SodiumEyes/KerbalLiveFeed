@@ -15,6 +15,16 @@ namespace KerbalLiveFeed
 			public float lastUpdateTime;
 		}
 
+		public struct VesselStatusInfo
+		{
+			public string ownerName;
+			public string vesselName;
+			public Color color;
+			public KLFVesselInfo info;
+			public Orbit orbit;
+			public float lastUpdateTime;
+		}
+
 		//Singleton
 
 		public static GameObject GameObjectInstance;
@@ -34,9 +44,13 @@ namespace KerbalLiveFeed
 
 		public Dictionary<String, VesselEntry> vessels = new Dictionary<string, VesselEntry>();
 
+		public VesselStatusInfo playerVesselInfo = new VesselStatusInfo();
+
 		private float lastUsernameReadTime = 0.0f;
 
 		private Queue<KLFVesselUpdate> vesselUpdateQueue = new Queue<KLFVesselUpdate>();
+
+		GUIStyle playerNameStyle, vesselNameStyle, stateTextStyle;
 
 		//Methods
 
@@ -321,6 +335,18 @@ namespace KerbalLiveFeed
 
 			//Write the serialized update to the stream
 			out_stream.Write(update_bytes, 0, update_bytes.Length);
+
+			if (vessel == FlightGlobals.ActiveVessel)
+			{
+				//Update the player vessel info
+				playerVesselInfo.info = update;
+				playerVesselInfo.orbit = vessel.orbit;
+				playerVesselInfo.color = KLFVessel.generateActiveColor(playerName);
+				playerVesselInfo.ownerName = playerName;
+				playerVesselInfo.vesselName = vessel.vesselName;
+				playerVesselInfo.lastUpdateTime = UnityEngine.Time.time;
+			}
+
 		}
 
 		private void readUpdatesFromFile()
@@ -523,7 +549,8 @@ namespace KerbalLiveFeed
 
 		public void OnGUI()
 		{
-			if (KLFInfoDisplay.infoDisplayActive && FlightGlobals.ready && (FlightGlobals.ActiveVessel != null || MapView.MapIsEnabled))
+			if (KLFInfoDisplay.infoDisplayActive && FlightGlobals.ready
+				&& (FlightGlobals.ActiveVessel != null && FlightGlobals.fetch != null))
 			{
 
 				if (KLFInfoDisplay.layoutOptions == null)
@@ -591,138 +618,62 @@ namespace KerbalLiveFeed
 				GUILayout.BeginVertical();
 
 				//Init label styles
-				GUIStyle playerNameStyle = new GUIStyle(GUI.skin.label);
+				playerNameStyle = new GUIStyle(GUI.skin.label);
 				playerNameStyle.normal.textColor = Color.white;
 				playerNameStyle.fontStyle = FontStyle.Bold;
 				playerNameStyle.alignment = TextAnchor.MiddleLeft;
 				playerNameStyle.margin = new RectOffset(0, 0, 2, 0);
 				playerNameStyle.padding = new RectOffset(0, 0, 0, 0);
 
-				GUIStyle vesselNameStyle = new GUIStyle(GUI.skin.label);
+				vesselNameStyle = new GUIStyle(GUI.skin.label);
 				vesselNameStyle.normal.textColor = Color.white;
 				vesselNameStyle.margin = new RectOffset(4, 0, 0, 0);
 
 				vesselNameStyle.padding = new RectOffset(0, 0, 0, 0);
 
-				GUIStyle stateTextStyle = new GUIStyle(GUI.skin.label);
+				stateTextStyle = new GUIStyle(GUI.skin.label);
 				stateTextStyle.normal.textColor = new Color(0.75f, 0.75f, 0.75f);
 				stateTextStyle.margin = new RectOffset(4, 0, 0, 0);
 				stateTextStyle.padding = new RectOffset(0, 0, 0, 0);
 
 				//Create a list of vessels to display, keyed by owner name
-				SortedDictionary<String, VesselEntry> display_vessels = new SortedDictionary<string, VesselEntry>();
+				SortedDictionary<String, VesselStatusInfo> display_vessels = new SortedDictionary<string, VesselStatusInfo>();
 
 				foreach (KeyValuePair<String, VesselEntry> pair in vessels)
 				{
-					VesselEntry existing_vessel;
+					VesselStatusInfo existing_vessel;
 					if (pair.Value.vessel.mainBody != null && pair.Value.vessel.info.state == Vessel.State.ACTIVE)
 					{
+						VesselStatusInfo info = new VesselStatusInfo();
+						info.vesselName = pair.Value.vessel.vesselName;
+						info.ownerName = pair.Value.vessel.ownerName;
+						info.color = pair.Value.vessel.activeColor;
+						info.info = pair.Value.vessel.info;
+						info.orbit = pair.Value.vessel.orbitRenderer.orbit;
+						info.lastUpdateTime = pair.Value.lastUpdateTime;
+
 						if (display_vessels.TryGetValue(pair.Value.vessel.ownerName, out existing_vessel))
 						{
 							//If the same owner has two active vessels, use the one with the most recent update time
 							if (pair.Value.lastUpdateTime > existing_vessel.lastUpdateTime)
-							{
-								display_vessels[pair.Value.vessel.ownerName] = pair.Value;
-							}
+								display_vessels[pair.Value.vessel.ownerName] = info;
 						}
 						else
-							display_vessels.Add(pair.Value.vessel.ownerName, pair.Value);
+							display_vessels.Add(pair.Value.vessel.ownerName, info);
 					}
 
 				}
 
+				//Write your own vessel's status
+				if (UnityEngine.Time.time - playerVesselInfo.lastUpdateTime < TIMEOUT_DELAY)
+					display_vessels.Add(playerVesselInfo.ownerName, playerVesselInfo); 
 
-				foreach (KeyValuePair<String, VesselEntry> pair in display_vessels)
+				//Write other's vessel's statuses
+				foreach (KeyValuePair<String, VesselStatusInfo> pair in display_vessels)
 				{
-					KLFVessel info_vessel = pair.Value.vessel;
-
-					playerNameStyle.normal.textColor = info_vessel.activeColor * 0.75f + Color.white * 0.25f;
-
-					GUILayout.Label(info_vessel.ownerName, playerNameStyle);
-					GUILayout.Label(info_vessel.vesselName, vesselNameStyle);
-
-					StringBuilder sb = new StringBuilder();
-
-					if (info_vessel.info.mass <= 0.0f)
-					{
-						sb.Append("Exploded at ");
-						sb.Append(info_vessel.mainBody.bodyName);
-					}
-					else
-					{
-						switch (info_vessel.info.situation)
-						{
-							case Vessel.Situations.DOCKED:
-								sb.Append("Docked at ");
-								break;
-
-							case Vessel.Situations.ESCAPING:
-								sb.Append("Escaping ");
-								break;
-
-							case Vessel.Situations.FLYING:
-								sb.Append("Flying at ");
-								break;
-
-							case Vessel.Situations.LANDED:
-								sb.Append("Landed at ");
-								break;
-
-							case Vessel.Situations.ORBITING:
-								sb.Append("Orbiting ");
-								break;
-
-							case Vessel.Situations.PRELAUNCH:
-								sb.Append("Prelaunch at ");
-								break;
-
-							case Vessel.Situations.SPLASHED:
-								sb.Append("Splashed at ");
-								break;
-
-							case Vessel.Situations.SUB_ORBITAL:
-								if (info_vessel.orbitRenderer.orbit.timeToAp < info_vessel.orbitRenderer.orbit.period / 2.0)
-									sb.Append("Ascending from ");
-								else
-									sb.Append("Descending to ");
-
-								break;
-						}
-
-						sb.Append(info_vessel.mainBody.bodyName);
-
-						if (KLFInfoDisplay.infoDisplayDetailed)
-						{
-
-							sb.Append(" - Mass: ");
-							sb.Append(info_vessel.info.mass.ToString("0.0"));
-							sb.Append("t\n");
-
-							if (info_vessel.info.percentFuel < byte.MaxValue)
-							{
-								sb.Append("Fuel: ");
-								sb.Append(info_vessel.info.percentFuel);
-								sb.Append("% ");
-							}
-
-							if (info_vessel.info.percentRCS < byte.MaxValue)
-							{
-								sb.Append("RCS: ");
-								sb.Append(info_vessel.info.percentRCS);
-								sb.Append("% ");
-							}
-
-							if (info_vessel.info.numCrew < byte.MaxValue)
-							{
-								sb.Append("Crew: ");
-								sb.Append(info_vessel.info.numCrew);
-							}
-						}
-					}
-
-					GUILayout.Label(sb.ToString(), stateTextStyle);
-
+					vesselStatusLabels(pair.Value);
 				}
+
 				GUILayout.EndVertical();
 				GUILayout.EndScrollView();
 
@@ -732,6 +683,136 @@ namespace KerbalLiveFeed
 
 			GUI.DragWindow();
 
+		}
+
+		private void vesselStatusLabels(VesselStatusInfo info)
+		{
+			playerNameStyle.normal.textColor = info.color * 0.75f + Color.white * 0.25f;
+
+			GUILayout.Label(info.ownerName, playerNameStyle);
+			GUILayout.Label(info.vesselName, vesselNameStyle);
+
+			StringBuilder sb = new StringBuilder();
+			bool status_determined = false;
+			bool exploded = false;
+
+			bool rising = info.orbit.timeToAp < info.orbit.period / 2.0;
+
+			if (info.info.mass <= 0.0f)
+			{
+				sb.Append("Exploded at ");
+				status_determined = true;
+				exploded = true;
+			}
+			else if (info.orbit.referenceBody != null && info.orbit.referenceBody.atmosphere
+				&& info.orbit.altitude < info.orbit.referenceBody.maxAtmosphereAltitude)
+			{
+				//Vessel inside its body's atmosphere
+				switch (info.info.situation)
+				{
+					case Vessel.Situations.LANDED:
+					case Vessel.Situations.SUB_ORBITAL:
+					case Vessel.Situations.PRELAUNCH:
+						break;
+
+					default:
+
+						float pe = (float)info.orbit.PeA;
+
+						if ((float)info.orbit.ApA > info.orbit.referenceBody.maxAtmosphereAltitude)
+						{
+
+							if (info.info.situation == Vessel.Situations.ORBITING
+								|| info.info.situation == Vessel.Situations.ESCAPING)
+							{
+								sb.Append("Aerobraking at ");
+								status_determined = true;
+							}
+
+						}
+
+						break;
+				}
+
+			}
+
+			if (!status_determined)
+			{
+
+				switch (info.info.situation)
+				{
+					case Vessel.Situations.DOCKED:
+						sb.Append("Docking at ");
+						break;
+
+					case Vessel.Situations.ESCAPING:
+						if (rising)
+							sb.Append("Escaping ");
+						else
+							sb.Append("Approaching ");
+						break;
+
+					case Vessel.Situations.FLYING:
+						sb.Append("Flying at ");
+						break;
+
+					case Vessel.Situations.LANDED:
+						sb.Append("Landed at ");
+						break;
+
+					case Vessel.Situations.ORBITING:
+						sb.Append("Orbiting ");
+						break;
+
+					case Vessel.Situations.PRELAUNCH:
+						sb.Append("Prelaunch at ");
+						break;
+
+					case Vessel.Situations.SPLASHED:
+						sb.Append("Splashed at ");
+						break;
+
+					case Vessel.Situations.SUB_ORBITAL:
+						if (rising)
+							sb.Append("Ascending from ");
+						else
+							sb.Append("Descending to ");
+
+						break;
+				}
+			}
+
+			sb.Append(info.orbit.referenceBody.bodyName);
+
+			if (!exploded && KLFInfoDisplay.infoDisplayDetailed)
+			{
+
+				sb.Append(" - Mass: ");
+				sb.Append(info.info.mass.ToString("0.0"));
+				sb.Append("t\n");
+
+				if (info.info.percentFuel < byte.MaxValue)
+				{
+					sb.Append("Fuel: ");
+					sb.Append(info.info.percentFuel);
+					sb.Append("% ");
+				}
+
+				if (info.info.percentRCS < byte.MaxValue)
+				{
+					sb.Append("RCS: ");
+					sb.Append(info.info.percentRCS);
+					sb.Append("% ");
+				}
+
+				if (info.info.numCrew < byte.MaxValue)
+				{
+					sb.Append("Crew: ");
+					sb.Append(info.info.numCrew);
+				}
+			}
+
+			GUILayout.Label(sb.ToString(), stateTextStyle);
 		}
         
 	}
