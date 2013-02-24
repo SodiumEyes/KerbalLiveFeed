@@ -19,46 +19,44 @@ namespace KLFServer
 			Console.WriteLine("Created by Alfred Lam");
 			Console.WriteLine();
 
-			Server server = new Server();
-			server.readConfigFile();
+			ServerSettings settings = new ServerSettings();
+			settings.readConfigFile();
 
 			while (true)
 			{
 				Console.WriteLine();
 
-				ConsoleColor default_color = Console.ForegroundColor;
-
 				Console.ForegroundColor = ConsoleColor.Green;
 				Console.Write("Port: ");
 
-				Console.ForegroundColor = default_color;
-				Console.WriteLine(server.port);
+				Console.ResetColor();
+				Console.WriteLine(settings.port);
 
 				Console.ForegroundColor = ConsoleColor.Green;
 				Console.Write("Max Clients: ");
 
-				Console.ForegroundColor = default_color;
-				Console.WriteLine(server.maxClients);
+				Console.ResetColor();
+				Console.WriteLine(settings.maxClients);
 
 				Console.ForegroundColor = ConsoleColor.Green;
 				Console.Write("Join Message: ");
 
-				Console.ForegroundColor = default_color;
-				Console.WriteLine(server.joinMessage);
+				Console.ResetColor();
+				Console.WriteLine(settings.joinMessage);
 
 				Console.ForegroundColor = ConsoleColor.Green;
 				Console.Write("Update Interval: ");
 
-				Console.ForegroundColor = default_color;
-				Console.WriteLine(server.updateInterval);
+				Console.ResetColor();
+				Console.WriteLine(settings.updateInterval);
 
 				Console.ForegroundColor = ConsoleColor.Green;
 				Console.Write("Auto-Restart: ");
 
-				Console.ForegroundColor = default_color;
-				Console.WriteLine(server.autoRestart);
+				Console.ResetColor();
+				Console.WriteLine(settings.autoRestart);
 
-				Console.ForegroundColor = default_color;
+				Console.ResetColor();
 				Console.WriteLine();
 				Console.WriteLine("Enter P to change port, M to change max clients, J to change join message");
 				Console.WriteLine("Enter U to change update interval, Enter A to toggle auto-restart");
@@ -77,8 +75,8 @@ namespace KLFServer
 					int new_port;
 					if (int.TryParse(Console.ReadLine(), out new_port) && new_port >= IPEndPoint.MinPort && new_port <= IPEndPoint.MaxPort)
 					{
-						server.port = new_port;
-						server.writeConfigFile();
+						settings.port = new_port;
+						settings.writeConfigFile();
 					}
 					else
 						Console.WriteLine("Invalid port");
@@ -90,8 +88,8 @@ namespace KLFServer
 					int new_value;
 					if (int.TryParse(Console.ReadLine(), out new_value) && new_value >= 0)
 					{
-						server.maxClients = new_value;
-						server.writeConfigFile();
+						settings.maxClients = new_value;
+						settings.writeConfigFile();
 					}
 					else
 						Console.WriteLine("Invalid number of clients");
@@ -99,35 +97,35 @@ namespace KLFServer
 				else if (in_string == "j")
 				{
 					Console.Write("Enter the join message: ");
-					server.joinMessage = Console.ReadLine();
-					server.writeConfigFile();
+					settings.joinMessage = Console.ReadLine();
+					settings.writeConfigFile();
 				}
 				else if (in_string == "u")
 				{
 					Console.Write("Enter the update interval: ");
 					int new_value;
-					if (int.TryParse(Console.ReadLine(), out new_value) && new_value >= Server.MIN_UPDATE_INTERVAL && new_value <= Server.MAX_UPDATE_INTERVAL)
+					if (int.TryParse(Console.ReadLine(), out new_value) && new_value >= ServerSettings.MIN_UPDATE_INTERVAL
+						&& new_value <= ServerSettings.MAX_UPDATE_INTERVAL)
 					{
-						server.updateInterval = new_value;
-						server.writeConfigFile();
+						settings.updateInterval = new_value;
+						settings.writeConfigFile();
 					}
 					else
 						Console.WriteLine("Invalid update interval");
 				}
 				else if (in_string == "a")
 				{
-					server.autoRestart = !server.autoRestart;
-					server.writeConfigFile();
+					settings.autoRestart = !settings.autoRestart;
+					settings.writeConfigFile();
 				}
 				else if (in_string == "h")
 				{
-					if (server.autoRestart)
+					while (hostServer(settings))
 					{
-						while (!server.quit)
-							hostServer(server);
 					}
-					else
-						hostServer(server);
+
+					Console.WriteLine("Press any key to quit");
+					Console.ReadKey();
 
 					break;
 				}
@@ -136,8 +134,11 @@ namespace KLFServer
 
 		}
 
-		static void hostServer(Server server)
+		static bool hostServer(ServerSettings settings)
 		{
+
+			Server server = new Server(settings);
+
 			try
 			{
 				server.hostingLoop();
@@ -151,22 +152,19 @@ namespace KLFServer
 
 				Console.WriteLine();
 
-				ConsoleColor default_color = Console.ForegroundColor;
 				Console.ForegroundColor = ConsoleColor.Red;
 				Server.stampedConsoleWriteLine("Unexpected expection encountered! Crash report written to KLFServerlog.txt");
 				Console.WriteLine(e.ToString());
-
-				Console.ForegroundColor = default_color;
-
 				Console.WriteLine();
+				Console.ResetColor();
 			}
 
-			if (!server.autoRestart)
-			{
-				server.clearState();
-				Console.WriteLine("Press any key to quit");
-				Console.ReadKey();
-			}
+			server.clearState();
+
+			if (!settings.autoRestart || server.quit)
+				return false;
+
+			return true;
 		}
 	
 	}

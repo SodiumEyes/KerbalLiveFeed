@@ -71,27 +71,25 @@ namespace KLFClient
 			{
 				Console.WriteLine();
 
-				ConsoleColor default_color = Console.ForegroundColor;
-
 				Console.ForegroundColor = ConsoleColor.Green;
 				Console.Write("Username: ");
 
-				Console.ForegroundColor = default_color;
+				Console.ResetColor();
 				Console.WriteLine(username);
 
 				Console.ForegroundColor = ConsoleColor.Green;
 				Console.Write("Server IP Address: ");
 
-				Console.ForegroundColor = default_color;
+				Console.ResetColor();
 				Console.Write(ip.ToString());
 
 				Console.ForegroundColor = ConsoleColor.Green;
 				Console.Write(" Port: ");
 
-				Console.ForegroundColor = default_color;
+				Console.ResetColor();
 				Console.WriteLine(port);
 
-				Console.ForegroundColor = default_color;
+				Console.ResetColor();
 				Console.WriteLine();
 				Console.WriteLine("Enter N to change name, IP to change IP, P to change port");
 				Console.WriteLine("C to connect, Q to quit");
@@ -157,7 +155,7 @@ namespace KLFClient
 						Console.WriteLine("Unexpected expection encountered! Crash report written to KLFClientlog.txt");
 						Console.WriteLine();
 
-						Console.ForegroundColor = default_color;
+						Console.ResetColor();
 					}
 				}
 
@@ -256,8 +254,9 @@ namespace KLFClient
 						threadExceptionMutex.WaitOne();
 						if (threadException != null)
 						{
+							Exception e = threadException;
 							threadExceptionMutex.ReleaseMutex();
-							throw threadException;
+							throw e;
 						}
 						threadExceptionMutex.ReleaseMutex();
 
@@ -282,11 +281,10 @@ namespace KLFClient
 					threadExceptionMutex.ReleaseMutex();
 
 					//Close the connection
-					ConsoleColor default_color = Console.ForegroundColor;
 					Console.ForegroundColor = ConsoleColor.Red;
 					Console.WriteLine();
 					Console.WriteLine("Lost connection with server.");
-					Console.ForegroundColor = default_color;
+					Console.ResetColor();
 					tcpClient.Close();
 
 					//Delete the client data file
@@ -639,7 +637,6 @@ namespace KLFClient
 			{
 
 				StringBuilder sb = new StringBuilder();
-				ConsoleColor default_color = Console.ForegroundColor;
 
 				while (true)
 				{
@@ -722,7 +719,7 @@ namespace KLFClient
 								{
 									Console.ForegroundColor = ConsoleColor.Green;
 									Console.Write("[Server] ");
-									Console.ForegroundColor = default_color;
+									Console.ResetColor();
 								}
 
 								Console.WriteLine(message.message);

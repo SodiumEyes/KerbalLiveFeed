@@ -14,23 +14,10 @@ namespace KLFServer
 	class Server
 	{
 
-		public const String SERVER_CONFIG_FILENAME = "KLFServerConfig.txt";
-		public const String PORT_LABEL = "port";
-		public const String MAX_CLIENTS_LABEL = "maxClients";
-		public const String JOIN_MESSAGE_LABEL = "joinMessage";
-		public const String UPDATE_INTERVAL_LABEL = "updateInterval";
-		public const String AUTO_RESTART_LABEL = "autoRestart";
-
 		public const bool SEND_UPDATES_TO_SENDER = false;
 
-		public const int MIN_UPDATE_INTERVAL = 20;
-		public const int MAX_UPDATE_INTERVAL = 5000;
-
-		public int port = 2075;
-		public int maxClients = 32;
-		public int updateInterval = 500;
 		public int numClients;
-		public bool autoRestart = false;
+		
 		public bool quit = false;
 
 		public Exception threadException;
@@ -42,7 +29,12 @@ namespace KLFServer
 
 		public ServerClient[] clients;
 
-		public String joinMessage = String.Empty;
+		public ServerSettings settings;
+
+		public Server(ServerSettings settings)
+		{
+			this.settings = settings;
+		}
 
 		public Stopwatch stopwatch = new Stopwatch();
 
@@ -61,9 +53,9 @@ namespace KLFServer
 			//Start hosting server
 			stopwatch.Start();
 
-			stampedConsoleWriteLine("Hosting server on port " + port + "...");
+			stampedConsoleWriteLine("Hosting server on port " + settings.port + "...");
 
-			clients = new ServerClient[maxClients];
+			clients = new ServerClient[settings.maxClients];
 			for (int i = 0; i < clients.Length; i++)
 			{
 				clients[i] = new ServerClient();
@@ -79,7 +71,7 @@ namespace KLFServer
 			threadException = null;
 			threadExceptionMutex = new Mutex();
 
-			tcpListener = new TcpListener(IPAddress.Any, port);
+			tcpListener = new TcpListener(IPAddress.Any, settings.port);
 			listenThread.Start();
 
 			//Try to forward the port using UPnP
@@ -88,10 +80,10 @@ namespace KLFServer
 			{
 				if (UPnP.NAT.Discover())
 				{
-					stampedConsoleWriteLine("NAT Firewall discovered! Users won't be able to connect unless port "+port+" is forwarded.");
+					stampedConsoleWriteLine("NAT Firewall discovered! Users won't be able to connect unless port "+settings.port+" is forwarded.");
 					stampedConsoleWriteLine("External IP: " + UPnP.NAT.GetExternalIP().ToString());
-					UPnP.NAT.ForwardPort(port, ProtocolType.Tcp, "KLF (TCP)");
-					stampedConsoleWriteLine("Forwarded port "+port+" with UPnP");
+					UPnP.NAT.ForwardPort(settings.port, ProtocolType.Tcp, "KLF (TCP)");
+					stampedConsoleWriteLine("Forwarded port " + settings.port + " with UPnP");
 					upnp_enabled = true;
 				}
 			}
@@ -110,7 +102,9 @@ namespace KLFServer
 				threadExceptionMutex.WaitOne();
 				if (threadException != null)
 				{
-					throw threadException;
+					Exception e = threadException;
+					threadExceptionMutex.ReleaseMutex();
+					throw e;
 				}
 				threadExceptionMutex.ReleaseMutex();
 
@@ -143,7 +137,7 @@ namespace KLFServer
 				//Delete port forwarding rule
 				try
 				{
-					UPnP.NAT.DeleteForwardingRule(port, ProtocolType.Tcp);
+					UPnP.NAT.DeleteForwardingRule(settings.port, ProtocolType.Tcp);
 				}
 				catch (Exception)
 				{
@@ -230,7 +224,10 @@ namespace KLFServer
 
 					try
 					{
-						client = tcpListener.AcceptTcpClient(); //Accept a TCP client
+						if (tcpListener.Pending())
+						{
+							client = tcpListener.AcceptTcpClient(); //Accept a TCP client
+						}
 					}
 					catch (System.Net.Sockets.SocketException e)
 					{
@@ -258,8 +255,8 @@ namespace KLFServer
 								sendHandshakeMessage(client);
 
 								//Send the join message to the client
-								if (joinMessage.Length > 0)
-									sendServerMessage(client, joinMessage);
+								if (settings.joinMessage.Length > 0)
+									sendServerMessage(client, settings.joinMessage);
 
 							}
 
@@ -283,7 +280,7 @@ namespace KLFServer
 						client = null;
 					}
 
-					if (client == null)
+					if (client == null && error_message.Length > 0)
 					{
 						//There was an error accepting the client
 						stampedConsoleWriteLine("Error accepting client: ");
@@ -366,7 +363,6 @@ namespace KLFServer
 				{
 					if ((i != client_index) && clientIsReady(i))
 					{
-
 						clients[i].mutex.WaitOne();
 						sendServerMessage(clients[i].tcpClient, message);
 						clients[i].mutex.ReleaseMutex();
@@ -559,27 +555,35 @@ namespace KLFServer
 		public static void stampedConsoleWriteLine(String message)
 		{
 			ConsoleColor default_color = Console.ForegroundColor;
-			Console.ForegroundColor = ConsoleColor.DarkGray;
+			Console.ForegroundColor = ConsoleColor.DarkGreen;
 
-			Console.Write('[');
-			Console.Write(DateTime.Now.ToString("HH:mm:ss"));
-			Console.Write("] ");
+			try
+			{
+				Console.Write('[');
+				Console.Write(DateTime.Now.ToString("HH:mm:ss"));
+				Console.Write("] ");
 
-			Console.ForegroundColor = default_color;
-			Console.WriteLine(message);
+				Console.ForegroundColor = default_color;
+				Console.WriteLine(message);
+			}
+			catch (IOException)
+			{
+				Console.ForegroundColor = default_color;
+			}
 		}
 
 		public void clearState()
 		{
-			if (tcpListener != null)
+
+			if (listenThread != null && listenThread.ThreadState == System.Threading.ThreadState.Running)
 			{
-				try
-				{
-					tcpListener.Stop();
-				}
-				catch (System.Net.Sockets.SocketException)
-				{
-				}
+				listenThread.Abort();
+				listenThread.Join();
+			}
+
+			if (commandThread != null && commandThread.ThreadState == System.Threading.ThreadState.Running)
+			{
+				commandThread.Abort();
 			}
 
 			if (clients != null)
@@ -590,15 +594,23 @@ namespace KLFServer
 						clients[i].tcpClient.Close();
 
 					if (clients[i].messageThread != null && clients[i].messageThread.ThreadState == System.Threading.ThreadState.Running)
+					{
 						clients[i].messageThread.Abort();
+					}
 				}
 			}
 
-			if (listenThread != null && listenThread.ThreadState == System.Threading.ThreadState.Running)
-				listenThread.Abort();
-
-			if (commandThread != null && commandThread.ThreadState == System.Threading.ThreadState.Running)
-				commandThread.Abort();
+			if (tcpListener != null)
+			{
+				try
+				{
+					tcpListener.Stop();
+				}
+				catch (System.Net.Sockets.SocketException)
+				{
+				}
+			}
+			
 		}
 
 		//Messages
@@ -753,8 +765,8 @@ namespace KLFServer
 
 				//Encode message
 				sendMessageHeader(client, KLFCommon.ServerMessageID.SERVER_SETTINGS, 8);
-				client.GetStream().Write(KLFCommon.intToBytes(updateInterval), 0, 4);
-				client.GetStream().Write(KLFCommon.intToBytes(numClients*2), 0, 4);
+				client.GetStream().Write(KLFCommon.intToBytes(settings.updateInterval), 0, 4);
+				client.GetStream().Write(KLFCommon.intToBytes((numClients-1) * 2), 0, 4);
 
 				client.GetStream().Flush();
 
@@ -767,94 +779,5 @@ namespace KLFServer
 			}
 		}
 
-		//Config
-
-		public void readConfigFile()
-		{
-			try
-			{
-				TextReader reader = File.OpenText(SERVER_CONFIG_FILENAME);
-
-				String line = reader.ReadLine();
-
-				while (line != null)
-				{
-					String label = line; //Store the last line read as the label
-					line = reader.ReadLine(); //Read the value from the next line
-
-					if (line != null)
-					{
-						//Update the value with the given label
-						if (label == PORT_LABEL)
-						{
-							int new_port;
-							if (int.TryParse(line, out new_port) && new_port >= IPEndPoint.MinPort && new_port <= IPEndPoint.MaxPort)
-								port = new_port;
-						}
-						else if (label == MAX_CLIENTS_LABEL)
-						{
-							int new_max;
-							if (int.TryParse(line, out new_max) && new_max > 0)
-								maxClients = new_max;
-						}
-						else if (label == JOIN_MESSAGE_LABEL)
-						{
-							joinMessage = line;
-						}
-						else if (label == UPDATE_INTERVAL_LABEL)
-						{
-							int new_val;
-							if (int.TryParse(line, out new_val) && new_val >= MIN_UPDATE_INTERVAL && new_val <= MAX_UPDATE_INTERVAL)
-								updateInterval = new_val;
-						}
-						else if (label == AUTO_RESTART_LABEL)
-						{
-							bool new_val;
-							if (bool.TryParse(line, out new_val))
-								autoRestart = new_val;
-						}
-
-					}
-
-					line = reader.ReadLine();
-				}
-
-				reader.Close();
-			}
-			catch (FileNotFoundException)
-			{
-			}
-			catch (UnauthorizedAccessException)
-			{
-			}
-
-		}
-
-		public void writeConfigFile()
-		{
-			TextWriter writer = File.CreateText(SERVER_CONFIG_FILENAME);
-
-			//port
-			writer.WriteLine(PORT_LABEL);
-			writer.WriteLine(port);
-
-			//max clients
-			writer.WriteLine(MAX_CLIENTS_LABEL);
-			writer.WriteLine(maxClients);
-
-			//join message
-			writer.WriteLine(JOIN_MESSAGE_LABEL);
-			writer.WriteLine(joinMessage);
-
-			//update interval
-			writer.WriteLine(UPDATE_INTERVAL_LABEL);
-			writer.WriteLine(updateInterval);
-
-			//auto-restart
-			writer.WriteLine(AUTO_RESTART_LABEL);
-			writer.WriteLine(autoRestart);
-
-			writer.Close();
-		}
 	}
 }
