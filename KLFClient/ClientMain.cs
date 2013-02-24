@@ -51,6 +51,7 @@ namespace KLFClient
 		public static Mutex textMessageQueueMutex;
 		public static Mutex serverSettingsMutex;
 
+		public static String threadExceptionStackTrace;
 		public static Exception threadException;
 		public static Mutex threadExceptionMutex;
 
@@ -144,7 +145,12 @@ namespace KLFClient
 					{
 						//Write an error log
 						TextWriter writer = File.CreateText("KLFClientlog.txt");
-						writer.Write(e.ToString());
+						writer.WriteLine(e.ToString());
+						if (threadExceptionStackTrace != null && threadExceptionStackTrace.Length > 0)
+						{
+							writer.Write("Stacktrace: ");
+							writer.WriteLine(threadExceptionStackTrace);
+						}
 						writer.Close();
 
 						if (tcpClient != null)
@@ -256,6 +262,7 @@ namespace KLFClient
 						{
 							Exception e = threadException;
 							threadExceptionMutex.ReleaseMutex();
+							threadExceptionStackTrace = e.StackTrace;
 							throw e;
 						}
 						threadExceptionMutex.ReleaseMutex();

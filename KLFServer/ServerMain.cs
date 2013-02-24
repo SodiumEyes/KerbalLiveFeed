@@ -147,7 +147,14 @@ namespace KLFServer
 			{
 				//Write an error log
 				TextWriter writer = File.CreateText("KLFServerlog.txt");
-				writer.Write(e.ToString());
+
+				writer.WriteLine(e.ToString());
+				if (server.threadExceptionStackTrace != null && server.threadExceptionStackTrace.Length > 0)
+				{
+					writer.Write("Stacktrace: ");
+					writer.WriteLine(server.threadExceptionStackTrace);
+				}
+
 				writer.Close();
 
 				Console.WriteLine();
@@ -155,6 +162,12 @@ namespace KLFServer
 				Console.ForegroundColor = ConsoleColor.Red;
 				Server.stampedConsoleWriteLine("Unexpected expection encountered! Crash report written to KLFServerlog.txt");
 				Console.WriteLine(e.ToString());
+				if (server.threadExceptionStackTrace != null && server.threadExceptionStackTrace.Length > 0)
+				{
+					Console.Write("Stacktrace: ");
+					Console.WriteLine(server.threadExceptionStackTrace);
+				}
+
 				Console.WriteLine();
 				Console.ResetColor();
 			}

@@ -20,6 +20,7 @@ namespace KLFServer
 		
 		public bool quit = false;
 
+		public String threadExceptionStackTrace;
 		public Exception threadException;
 		public Mutex threadExceptionMutex;
 
@@ -104,6 +105,7 @@ namespace KLFServer
 				{
 					Exception e = threadException;
 					threadExceptionMutex.ReleaseMutex();
+					threadExceptionStackTrace = e.StackTrace;
 					throw e;
 				}
 				threadExceptionMutex.ReleaseMutex();

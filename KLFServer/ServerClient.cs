@@ -57,82 +57,86 @@ namespace KLFServer
 					bool message_received = false;
 					KLFCommon.ClientMessageID id = KLFCommon.ClientMessageID.HANDSHAKE;
 					byte[] message_data = null;
+					bool should_read = false;
 
 					mutex.WaitOne();
 
-					bool should_read = false;
-
 					//Close the timeout if connection is invalid or the handshake has not been received in the alloted time
 					if (tcpClient == null || !tcpClient.Connected || (!receivedHandshake && handshakeTimeoutTime <= parent.currentMillisecond))
-					{
-						should_read = false;
 						stream_ended = true;
-					}
 					else
-					{
-						should_read = receivedHandshake || tcpClient.GetStream().DataAvailable;
-					}
+						should_read = tcpClient.GetStream().DataAvailable;
 
 					mutex.ReleaseMutex();
 
+					if (stream_ended)
+						break;
+
+					//Detect if the socket closed
+					try
+					{
+						if (tcpClient.Client.Poll(0, SelectMode.SelectRead))
+						{
+							byte[] buff = new byte[1];
+							if (tcpClient.Client.Receive(buff, SocketFlags.Peek) == 0)
+								stream_ended = true; //Client disconnected
+						}
+					}
+					catch (System.Net.Sockets.SocketException)
+					{
+						stream_ended = true;
+					}
+					catch (System.ObjectDisposedException)
+					{
+						stream_ended = true;
+					}
+
+					if (stream_ended)
+						break;
+
+					//Try to read a message
 					if (should_read)
 					{
 
 						try
 						{
+							//Read the message header
+							int num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
+							header_bytes_read += num_read;
 
-							//Detect if the socket closed
-							if (tcpClient.Client.Poll(0, SelectMode.SelectRead))
+							if (header_bytes_read == KLFCommon.MSG_HEADER_LENGTH)
 							{
-								byte[] buff = new byte[1];
-								if (tcpClient.Client.Receive(buff, SocketFlags.Peek) == 0)
+								id = (KLFCommon.ClientMessageID)KLFCommon.intFromBytes(message_header, 0);
+								int msg_length = KLFCommon.intFromBytes(message_header, 4);
+
+								if (msg_length > 0)
 								{
-									//Client disconnected
-									stream_ended = true;
-								}
-							}
+									//Read the message data
+									message_data = new byte[msg_length];
 
-							if (!stream_ended)
-							{
+									int data_bytes_read = 0;
 
-								//Read the message header
-								int num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
-								header_bytes_read += num_read;
-
-								if (header_bytes_read == KLFCommon.MSG_HEADER_LENGTH)
-								{
-									id = (KLFCommon.ClientMessageID)KLFCommon.intFromBytes(message_header, 0);
-									int msg_length = KLFCommon.intFromBytes(message_header, 4);
-
-									if (msg_length > 0)
+									while (data_bytes_read < msg_length)
 									{
-										//Read the message data
-										message_data = new byte[msg_length];
-
-										int data_bytes_read = 0;
-
-										while (data_bytes_read < msg_length)
-										{
-											num_read = tcpClient.GetStream().Read(message_data, data_bytes_read, msg_length - data_bytes_read);
-											if (num_read > 0)
-												data_bytes_read += num_read;
-										}
+										num_read = tcpClient.GetStream().Read(message_data, data_bytes_read, msg_length - data_bytes_read);
+										if (num_read > 0)
+											data_bytes_read += num_read;
 									}
-
-									header_bytes_read = 0;
-									message_received = true;
 								}
 
+								header_bytes_read = 0;
+								message_received = true;
 							}
-
 						}
 						catch (InvalidOperationException)
 						{
 							stream_ended = true; //TCP socket has closed
+							break;
 						}
 						catch (System.IO.IOException)
 						{
 							stream_ended = true; //TCP socket has closed
+							break;
 						}
 
 					}
@@ -148,8 +152,8 @@ namespace KLFServer
 				mutex.ReleaseMutex();
 
 				parent.clientDisconnect(clientIndex);
-
 				messageThread.Abort();
+
 			}
 			catch (ThreadAbortException)
 			{
