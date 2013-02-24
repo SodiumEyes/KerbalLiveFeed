@@ -65,6 +65,9 @@ namespace KerbalLiveFeed
         {
             get
             {
+				if (!orbitValid)
+					return Vector3.zero;
+
 				if (mainBody != null)
 				{
 					if (info.situation == Vessel.Situations.LANDED || info.situation == Vessel.Situations.SPLASHED
@@ -135,10 +138,19 @@ namespace KerbalLiveFeed
 			get;
 		}
 
+		public bool orbitValid
+		{
+			private set;
+			get;
+		}
+
         public bool shouldShowOrbit
         {
             get
             {
+				if (!orbitValid)
+					return false;
+
 				switch (info.situation)
                 {
                     case Vessel.Situations.FLYING:
@@ -313,14 +325,51 @@ namespace KerbalLiveFeed
                 localDirection = local_dir;
                 localVelocity = local_vel;
 
-                //Calculate world-space properties
-                worldDirection = mainBody.transform.TransformDirection(localDirection);
-                worldVelocity = mainBody.transform.TransformDirection(localVelocity);
+				orbitValid = true;
 
-                //Update game object transform
+				//Check for invalid values in the physics data
+				if ((localPosition.x == 0.0f && localPosition.y == 0.0f && localPosition.z == 0.0f)
+					|| (localVelocity.x == 0.0f && localVelocity.y == 0.0f && localVelocity.z == 0.0f)
+					|| localPosition.magnitude > mainBody.sphereOfInfluence)
+					orbitValid = false;
+
+				for (int i = 0; i < 3; i++)
+				{
+					if (float.IsNaN(localPosition[i]) || float.IsInfinity(localPosition[i]))
+					{
+						orbitValid = false;
+						break;
+					}
+
+					if (float.IsNaN(localDirection[i]) || float.IsInfinity(localDirection[i]))
+					{
+						orbitValid = false;
+						break;
+					}
+
+					if (float.IsNaN(localVelocity[i]) || float.IsInfinity(localVelocity[i]))
+					{
+						orbitValid = false;
+						break;
+					}
+				}
+
+				if (!orbitValid)
+				{
+					//Spoof some values so the game doesn't freak out
+					localPosition = new Vector3(1000.0f, 1000.0f, 1000.0f);
+					translationFromBody = localPosition;
+					localDirection = new Vector3(1.0f, 0.0f, 0.0f);
+					localVelocity = new Vector3(1000.0f, 0.0f, 0.0f);
+				}
+
+				//Calculate world-space properties
+				worldDirection = mainBody.transform.TransformDirection(localDirection);
+				worldVelocity = mainBody.transform.TransformDirection(localVelocity);
+
+				//Update game object transform
 				updateOrbitProperties();
-
-                updatePosition();
+				updatePosition();
 
             }
 
@@ -328,6 +377,8 @@ namespace KerbalLiveFeed
 
         public void updatePosition()
         {
+			if (!orbitValid)
+				return;
 
             gameObj.transform.localPosition = worldPosition;
 
@@ -413,7 +464,7 @@ namespace KerbalLiveFeed
 
         public void updateRenderProperties()
         {
-            line.enabled = gameObj != null && MapView.MapIsEnabled;
+            line.enabled = orbitValid && gameObj != null && MapView.MapIsEnabled;
 
 			if (gameObj != null && shouldShowOrbit)
 				orbitRenderer.drawMode = OrbitRenderer.DrawMode.REDRAW_AND_RECALCULATE;

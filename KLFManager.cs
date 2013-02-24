@@ -675,7 +675,12 @@ namespace KerbalLiveFeed
 						info.ownerName = pair.Value.vessel.ownerName;
 						info.color = pair.Value.vessel.activeColor;
 						info.info = pair.Value.vessel.info;
-						info.orbit = pair.Value.vessel.orbitRenderer.orbit;
+
+						if (pair.Value.vessel.orbitValid)
+							info.orbit = pair.Value.vessel.orbitRenderer.orbit;
+						else
+							info.orbit = null;
+
 						info.lastUpdateTime = pair.Value.lastUpdateTime;
 
 						if (display_vessels.TryGetValue(pair.Value.vessel.ownerName, out existing_vessel))
@@ -736,7 +741,7 @@ namespace KerbalLiveFeed
 				status_determined = true;
 				exploded = true;
 			}
-			else if (info.orbit.referenceBody != null && info.orbit.referenceBody.atmosphere
+			else if (info.orbit != null && info.orbit.referenceBody != null && info.orbit.referenceBody.atmosphere
 				&& info.orbit.altitude < info.orbit.referenceBody.maxAtmosphereAltitude)
 			{
 				//Vessel inside its body's atmosphere
@@ -778,7 +783,7 @@ namespace KerbalLiveFeed
 						break;
 
 					case Vessel.Situations.ESCAPING:
-						if (info.orbit.timeToPe > 0.0)
+						if (info.orbit != null && info.orbit.timeToPe > 0.0)
 							sb.Append("Encountering ");
 						else
 							sb.Append("Escaping ");
@@ -805,16 +810,21 @@ namespace KerbalLiveFeed
 						break;
 
 					case Vessel.Situations.SUB_ORBITAL:
-						if (info.orbit.timeToAp < info.orbit.period / 2.0)
-							sb.Append("Ascending from ");
+						if (info.orbit != null)
+						{
+							if (info.orbit.timeToAp < info.orbit.period / 2.0)
+								sb.Append("Ascending from ");
+							else
+								sb.Append("Descending to ");
+						}
 						else
-							sb.Append("Descending to ");
+							sb.Append("Sub-Orbital at ");
 
 						break;
 				}
 			}
 
-			sb.Append(info.orbit.referenceBody.bodyName);
+			sb.Append(info.info.bodyName);
 
 			if (!exploded && KLFInfoDisplay.infoDisplayDetailed)
 			{
