@@ -43,6 +43,7 @@ namespace KLFClient
 		public const int MAX_USERNAME_LENGTH = 32;
 		public const int MAX_TEXT_MESSAGE_QUEUE = 128;
 		public const long KEEPALIVE_DELAY = 2000;
+		public const int SLEEP_TIME = 15;
 
 		public const String PLUGIN_DIRECTORY = "PluginData/kerballivefeed/";
 
@@ -304,7 +305,7 @@ namespace KLFClient
 							sendMessageHeader(KLFCommon.ClientMessageID.KEEPALIVE, 0);
 						tcpSendMutex.ReleaseMutex();
 
-						Thread.Sleep(0);
+						Thread.Sleep(SLEEP_TIME);
 					}
 
 					//Obtain all mutexes and abort all threads
@@ -447,14 +448,11 @@ namespace KLFClient
 
 				case KLFCommon.ServerMessageID.SCREENSHOT_SHARE:
 
-					if (data != null)
+					if (data != null && data.Length > 0 && data.Length < KLFCommon.MAX_SCREENSHOT_BYTES)
 					{
-						if (data.Length > 0 && data.Length < KLFCommon.MAX_SCREENSHOT_BYTES)
-						{
-							screenshotInMutex.WaitOne();
-							queuedScreenshot = data;
-							screenshotInMutex.ReleaseMutex();
-						}
+						screenshotInMutex.WaitOne();
+						queuedScreenshot = data;
+						screenshotInMutex.ReleaseMutex();
 					}
 					break;
 			}
@@ -529,7 +527,7 @@ namespace KLFClient
 						stream_ended = true;
 					}
 
-					Thread.Sleep(0);
+					Thread.Sleep(SLEEP_TIME);
 				}
 			}
 			catch (ThreadAbortException)
@@ -594,7 +592,7 @@ namespace KLFClient
 
 					writeQueuedScreenshot();
 
-					Thread.Sleep(0);
+					Thread.Sleep(SLEEP_TIME);
 				}
 
 			}
@@ -836,9 +834,10 @@ namespace KLFClient
 						screenshotInMutex.ReleaseMutex();
 
 						tcpSendMutex.WaitOne();
-						sendScreenshotWatchPlayer(watchPlayerName);
+						sendScreenshotWatchPlayerMessage(watchPlayerName);
 						tcpSendMutex.ReleaseMutex();
 					}
+
 				}
 				catch (System.IO.FileNotFoundException)
 				{
@@ -960,7 +959,7 @@ namespace KLFClient
 						textMessageQueueMutex.ReleaseMutex();
 					}
 
-					Thread.Sleep(0);
+					Thread.Sleep(SLEEP_TIME);
 				}
 
 			}
@@ -1124,7 +1123,7 @@ namespace KLFClient
 			}
 		}
 
-		private static void sendScreenshotWatchPlayer(String name)
+		private static void sendScreenshotWatchPlayerMessage(String name)
 		{
 			try
 			{

@@ -16,6 +16,7 @@ namespace KLFServer
 
 		public const bool SEND_UPDATES_TO_SENDER = false;
 		public const long CLIENT_TIMEOUT_DELAY = 8000;
+		public const int SLEEP_TIME = 15;
 
 		public int numClients;
 		
@@ -84,9 +85,12 @@ namespace KLFServer
 				{
 					stampedConsoleWriteLine("NAT Firewall discovered! Users won't be able to connect unless port "+settings.port+" is forwarded.");
 					stampedConsoleWriteLine("External IP: " + UPnP.NAT.GetExternalIP().ToString());
-					UPnP.NAT.ForwardPort(settings.port, ProtocolType.Tcp, "KLF (TCP)");
-					stampedConsoleWriteLine("Forwarded port " + settings.port + " with UPnP");
-					upnp_enabled = true;
+					if (settings.useUpnp)
+					{
+						UPnP.NAT.ForwardPort(settings.port, ProtocolType.Tcp, "KLF (TCP)");
+						stampedConsoleWriteLine("Forwarded port " + settings.port + " with UPnP");
+						upnp_enabled = true;
+					}
 				}
 			}
 			catch (Exception)
@@ -124,15 +128,23 @@ namespace KLFServer
 
 						if (stopwatch.ElapsedMilliseconds - time > CLIENT_TIMEOUT_DELAY)
 						{
+							//Disconnect the client
 							clients[i].mutex.WaitOne();
 							disconnectClient(i, "Timeout");
 							clients[i].mutex.ReleaseMutex();
 						}
 					}
+					else if (!clients[i].canBeReplaced)
+					{
+						//Client is disconnected but slot has not been cleaned up
+						clients[i].mutex.WaitOne();
+						disconnectClient(i, "Connection lost");
+						clients[i].mutex.ReleaseMutex();
+					}
 
 				}
 
-				Thread.Sleep(0);
+				Thread.Sleep(SLEEP_TIME);
 			}
 
 			//End threads
@@ -322,6 +334,8 @@ namespace KLFServer
 						stampedConsoleWriteLine(error_message);
 					}
 
+					Thread.Sleep(SLEEP_TIME);
+
 				}
 			}
 			catch (ThreadAbortException)
@@ -377,6 +391,9 @@ namespace KLFServer
 
 		public void clientDisconnected(int client_index)
 		{
+			if (clients[client_index].canBeReplaced)
+				return;
+
 			numClients--;
 			clients[client_index].canBeReplaced = true;
 			clients[client_index].screenshot = null;
@@ -591,10 +608,15 @@ namespace KLFServer
 
 				case KLFCommon.ClientMessageID.SCREEN_WATCH_PLAYER:
 
+					String watch_name = String.Empty;
+
 					if (data != null)
+						watch_name = encoder.GetString(data);
+
+					if (watch_name != clients[client_index].watchPlayerName)
 					{
 						//Set the watch player name
-						clients[client_index].watchPlayerName = encoder.GetString(data);
+						clients[client_index].watchPlayerName = watch_name;
 
 						//Try to find the player the client is watching and send the current screenshot
 						if (clients[client_index].watchPlayerName.Length > 0)
@@ -730,6 +752,7 @@ namespace KLFServer
 		{
 			sendHandshakeRefusalMessage(clients[index].tcpClient, message);
 			clients[index].tcpClient.Close();
+			clientDisconnected(index);
 		}
 
 		//Messages

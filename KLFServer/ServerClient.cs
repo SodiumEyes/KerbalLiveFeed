@@ -152,7 +152,7 @@ namespace KLFServer
 						parent.handleMessage(clientIndex, id, message_data); //Have the parent server handle the message
 					}
 
-					Thread.Sleep(0);
+					Thread.Sleep(Server.SLEEP_TIME);
 				}
 
 				mutex.WaitOne();
