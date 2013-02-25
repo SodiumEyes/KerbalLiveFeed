@@ -34,6 +34,9 @@ namespace KerbalLiveFeed
 		public const String OUT_FILENAME = "out.txt";
 		public const String IN_FILENAME = "in.txt";
 		public const String CLIENT_DATA_FILENAME = "clientdata.txt";
+		public const String PLUGIN_DATA_FILENAME = "plugindata.txt";
+		public const String SCREENSHOT_OUT_FILENAME = "screenout.png";
+		public const String SCREENSHOT_IN_FILENAME = "screenin.png";
 
 		public const float INACTIVE_VESSEL_RANGE = 400000000.0f;
 		public const int MAX_INACTIVE_VESSELS = 4;
@@ -52,6 +55,15 @@ namespace KerbalLiveFeed
 
 		GUIStyle playerNameStyle, vesselNameStyle, stateTextStyle;
 
+		public bool shouldDrawGUI
+		{
+			get
+			{
+				return KLFInfoDisplay.globalUIEnabled && KLFInfoDisplay.infoDisplayActive && FlightGlobals.ready
+					&& (FlightGlobals.ActiveVessel != null && FlightGlobals.fetch != null);
+			}
+		}
+
 		//Methods
 
 		public void updateStep()
@@ -64,6 +76,8 @@ namespace KerbalLiveFeed
 
 			writeVesselsToFile();
 			readUpdatesFromFile();
+			readScreenshotFromFile();
+			writePluginData();
 
 			//Update the positions of all the vessels
 
@@ -98,7 +112,7 @@ namespace KerbalLiveFeed
 		private void writeVesselsToFile()
 		{
 
-			if (FlightGlobals.ready && !KSP.IO.File.Exists<KLFManager>(OUT_FILENAME) && FlightGlobals.ActiveVessel != null)
+			if (FlightGlobals.ready && FlightGlobals.ActiveVessel != null && !KSP.IO.File.Exists<KLFManager>(OUT_FILENAME))
 			{
 
 				try
@@ -358,7 +372,8 @@ namespace KerbalLiveFeed
 				try
 				{
 					//I would have used a FileStream here, but KSP.IO.File.Open is broken?
-					in_bytes = KSP.IO.File.ReadAllBytes<KLFManager>(IN_FILENAME); //Read the updates from the file
+					if (FlightGlobals.ActiveVessel != null)
+						in_bytes = KSP.IO.File.ReadAllBytes<KLFManager>(IN_FILENAME); //Read the updates from the file
 
 					//Delete the update file now that it's been read
 					KSP.IO.File.Delete<KLFManager>(IN_FILENAME);
@@ -413,6 +428,127 @@ namespace KerbalLiveFeed
 
 				}
 
+			}
+		}
+
+		private void readScreenshotFromFile()
+		{
+			if (FlightGlobals.ready && KSP.IO.File.Exists<KLFManager>(SCREENSHOT_IN_FILENAME))
+			{
+				byte[] in_bytes = null;
+
+				try
+				{
+					if (FlightGlobals.ActiveVessel != null)
+						in_bytes = KSP.IO.File.ReadAllBytes<KLFManager>(SCREENSHOT_IN_FILENAME); //Read the screenshot
+
+					//Delete the screenshot now that it's been read
+					KSP.IO.File.Delete<KLFManager>(SCREENSHOT_IN_FILENAME);
+
+				}
+				catch (KSP.IO.IOException)
+				{
+					in_bytes = null;
+				}
+
+				if (in_bytes != null)
+				{
+					if (in_bytes.Length <= KLFScreenshotDisplay.MAX_IMG_BYTES)
+					{
+						if (KLFScreenshotDisplay.texture == null)
+							KLFScreenshotDisplay.texture = new Texture2D(4, 4);
+
+						if (KLFScreenshotDisplay.texture.LoadImage(in_bytes))
+						{
+							KLFScreenshotDisplay.texture.Apply();
+							if (KLFScreenshotDisplay.texture.width > KLFScreenshotDisplay.MAX_IMG_WIDTH
+								&& KLFScreenshotDisplay.texture.height > KLFScreenshotDisplay.MAX_IMG_HEIGHT)
+							{
+								KLFScreenshotDisplay.texture = null;
+							}
+						}
+						else
+							KLFScreenshotDisplay.texture = null;
+					}
+				}
+			}
+		}
+
+		private void writePluginData()
+		{
+			if (FlightGlobals.ready && FlightGlobals.ActiveVessel != null && !KSP.IO.File.Exists<KLFManager>(PLUGIN_DATA_FILENAME))
+			{
+				try
+				{
+
+					KSP.IO.FileStream out_stream = KSP.IO.File.Create<KLFManager>(PLUGIN_DATA_FILENAME);
+					out_stream.Lock(0, long.MaxValue);
+
+					//Screenshot watch player
+					if (shouldDrawGUI && KLFScreenshotDisplay.windowEnabled)
+					{
+						ASCIIEncoding encoder = new ASCIIEncoding();
+						byte[] bytes = encoder.GetBytes(KLFScreenshotDisplay.watchPlayerName);
+						out_stream.Write(bytes, 0, bytes.Length);
+					}
+
+					out_stream.Unlock(0, long.MaxValue);
+					out_stream.Flush();
+					out_stream.Dispose();
+
+				}
+				catch (KSP.IO.IOException)
+				{
+				}
+			}
+		}
+
+		private void shareScreenshot()
+		{
+			Texture2D full_screen_tex = new Texture2D(Screen.width, Screen.height, TextureFormat.RGB24, false);
+			full_screen_tex.ReadPixels(new Rect(0, 0, Screen.width, Screen.height), 0, 0);
+			full_screen_tex.Apply();
+
+			float aspect = (float)Screen.width / (float)Screen.height;
+			float ideal_aspect = KLFScreenshotDisplay.MAX_IMG_WIDTH / KLFScreenshotDisplay.MAX_IMG_HEIGHT;
+
+			int w = 0;
+			int h = 0;
+
+			if (aspect > ideal_aspect)
+			{
+				//Image is too wide
+				w = (int)KLFScreenshotDisplay.MAX_IMG_WIDTH;
+				h = (int)(KLFScreenshotDisplay.MAX_IMG_WIDTH / aspect);
+			}
+			else
+			{
+				//Image is too tall
+				w = (int)(KLFScreenshotDisplay.MAX_IMG_HEIGHT * aspect);
+				h = (int)KLFScreenshotDisplay.MAX_IMG_HEIGHT;
+			}
+
+			Texture2D resized_tex = new Texture2D(w, h);
+
+			for (int x = 0; x < w; x++)
+			{
+				float u = (float)x / (float)w;
+				for (int y = 0; y < h; y++)
+				{
+					float v = (float)y / (float)h;
+					resized_tex.SetPixel(x, y, full_screen_tex.GetPixelBilinear(u, v));
+				}
+			}
+
+			resized_tex.Apply();
+
+			byte[] bytes = resized_tex.EncodeToPNG();
+			try
+			{
+				KSP.IO.File.WriteAllBytes<KLFManager>(bytes, SCREENSHOT_OUT_FILENAME);
+			}
+			catch (KSP.IO.IOException)
+			{
 			}
 		}
 
@@ -556,12 +692,14 @@ namespace KerbalLiveFeed
 			if (Input.GetKeyDown(KeyCode.F7))
 				KLFInfoDisplay.infoDisplayActive = !KLFInfoDisplay.infoDisplayActive;
 
+			if (Input.GetKeyDown(KeyCode.F8))
+				shareScreenshot();
+
 		}
 
 		public void OnGUI()
 		{
-			if (KLFInfoDisplay.globalUIEnabled && KLFInfoDisplay.infoDisplayActive && FlightGlobals.ready
-				&& (FlightGlobals.ActiveVessel != null && FlightGlobals.fetch != null))
+			if (shouldDrawGUI)
 			{
 
 				if (KLFInfoDisplay.layoutOptions == null)
@@ -603,16 +741,27 @@ namespace KerbalLiveFeed
 				KLFInfoDisplay.infoWindowPos = GUILayout.Window(
 					999999,
 					KLFInfoDisplay.infoWindowPos,
-					WindowGUI,
+					infoDisplayWindow,
 					KLFInfoDisplay.infoDisplayMinimized ? "KLF" : "Kerbal LiveFeed v"+KLFCommon.PROGRAM_VERSION,
 					KLFInfoDisplay.layoutOptions
 					);
+
+				if (KLFScreenshotDisplay.windowEnabled)
+				{
+					KLFScreenshotDisplay.windowPos = GUILayout.Window(
+						999998,
+						KLFScreenshotDisplay.windowPos,
+						screenshotWindow,
+						"Kerbal LiveFeed Viewer"
+						);
+				}
+
 			}
 		}
 
 		//GUI
 
-		private void WindowGUI(int windowID)
+		private void infoDisplayWindow(int windowID)
 		{
 
 			GUILayout.BeginVertical();
@@ -708,6 +857,12 @@ namespace KerbalLiveFeed
 				GUILayout.EndVertical();
 				GUILayout.EndScrollView();
 
+				GUILayout.BeginHorizontal();
+				KLFScreenshotDisplay.windowEnabled = GUILayout.Toggle(KLFScreenshotDisplay.windowEnabled, "Screenshots", GUI.skin.button);
+				if (GUILayout.Button("Share Screen (F8)"))
+					shareScreenshot();
+				GUILayout.EndHorizontal();
+
 				GUILayout.Label("Toggle: F7");
 
 			}
@@ -716,6 +871,49 @@ namespace KerbalLiveFeed
 
 			GUI.DragWindow();
 
+		}
+
+		private void screenshotWindow(int windowID)
+		{
+			GUILayout.BeginHorizontal();
+			GUILayout.BeginVertical();
+
+			if (KLFScreenshotDisplay.texture != null)
+				GUILayout.Box(KLFScreenshotDisplay.texture);
+			else
+			{
+				GUILayoutOption[] options = new GUILayoutOption[2];
+				options[0] = GUILayout.MinWidth(KLFScreenshotDisplay.MAX_IMG_WIDTH);
+				options[1] = GUILayout.MinHeight(KLFScreenshotDisplay.MAX_IMG_HEIGHT);
+				GUILayout.Box(GUIContent.none, options);
+			}
+
+			GUILayout.EndVertical();
+
+			//User list
+			KLFScreenshotDisplay.scrollPos = GUILayout.BeginScrollView(KLFScreenshotDisplay.scrollPos);
+			GUILayout.BeginVertical();
+
+			//Compile a list of the player names
+			HashSet<string> playernames = new HashSet<string>();
+			foreach (KeyValuePair<String, VesselEntry> pair in vessels)
+			{
+				playernames.Add(pair.Value.vessel.ownerName);
+			}
+
+			foreach (string name in playernames)
+			{
+				bool player_selected = GUILayout.Toggle(KLFScreenshotDisplay.watchPlayerName == name, name, GUI.skin.button);
+				if (player_selected && KLFScreenshotDisplay.watchPlayerName != name)
+					KLFScreenshotDisplay.watchPlayerName = name;
+			}
+
+			GUILayout.EndVertical();
+			GUILayout.EndScrollView();
+
+			GUILayout.EndHorizontal();
+
+			GUI.DragWindow();
 		}
 
 		private void vesselStatusLabels(VesselStatusInfo info, bool big)

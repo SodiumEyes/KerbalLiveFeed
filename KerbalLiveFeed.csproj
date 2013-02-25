@@ -52,6 +52,7 @@
     <Compile Include="KLFManager.cs">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="KLFScreenshotDisplay.cs" />
     <Compile Include="KLFVesselUpdate.cs" />
     <Compile Include="KLFVessel.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

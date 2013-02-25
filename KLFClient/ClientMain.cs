@@ -6,6 +6,7 @@ using System.Text;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using System.Diagnostics;
 
 using System.IO;
 
@@ -28,13 +29,17 @@ namespace KLFClient
 		public static IPAddress ip = IPAddress.Loopback;
 		public static int port = 2075;
 		public static int updateInterval = 500;
+		public static int screenshotInterval = 1000;
 		public static int maxQueuedUpdates = 32;
 
 		public const String OUT_FILENAME = "PluginData/kerballivefeed/out.txt";
 		public const String IN_FILENAME = "PluginData/kerballivefeed/in.txt";
 		public const String CLIENT_DATA_FILENAME = "PluginData/kerballivefeed/clientdata.txt";
+		public const String PLUGIN_DATA_FILENAME = "PluginData/kerballivefeed/plugindata.txt";
+		public const String SCREENSHOT_OUT_FILENAME = "PluginData/kerballivefeed/screenout.png";
+		public const String SCREENSHOT_IN_FILENAME = "PluginData/kerballivefeed/screenin.png";
 		public const String CLIENT_CONFIG_FILENAME = "KLFClientConfig.txt";
-
+		
 		public const int MAX_USERNAME_LENGTH = 32;
 		public const int MAX_TEXT_MESSAGE_QUEUE = 128;
 
@@ -46,18 +51,26 @@ namespace KLFClient
 		public static Queue<byte[]> pluginUpdateInQueue;
 		public static Queue<InTextMessage> textMessageQueue;
 
+		public static long lastScreenshotShareTime;
+		public static byte[] queuedScreenshot;
+		public static String watchPlayerName;
+
 		public static Mutex tcpSendMutex;
 		public static Mutex pluginUpdateInMutex;
 		public static Mutex textMessageQueueMutex;
 		public static Mutex serverSettingsMutex;
+		public static Mutex screenshotInMutex;
 
 		public static String threadExceptionStackTrace;
 		public static Exception threadException;
 		public static Mutex threadExceptionMutex;
 
 		public static Thread pluginUpdateThread;
+		public static Thread screenshotUpdateThread;
 		public static Thread chatThread;
 		public static Thread incomingMessageThread;
+
+		public static Stopwatch stopwatch;
 
 		static void Main(string[] args)
 		{
@@ -65,6 +78,9 @@ namespace KLFClient
 			Console.WriteLine("KLF Client version " + KLFCommon.PROGRAM_VERSION);
 			Console.WriteLine("Created by Alfred Lam");
 			Console.WriteLine();
+
+			stopwatch = new Stopwatch();
+			stopwatch.Start();
 
 			readConfigFile();
 
@@ -193,12 +209,21 @@ namespace KLFClient
 					serverSettingsMutex = new Mutex();
 					textMessageQueueMutex = new Mutex();
 					threadExceptionMutex = new Mutex();
+					screenshotInMutex = new Mutex();
 
 					threadException = null;
+
+					watchPlayerName = String.Empty;
+					queuedScreenshot = null;
+					lastScreenshotShareTime = 0;
 
 					//Create a thread to handle plugin updates
 					pluginUpdateThread = new Thread(new ThreadStart(handlePluginUpdates));
 					pluginUpdateThread.Start();
+
+					//Create a thread to handle screenshots
+					screenshotUpdateThread = new Thread(new ThreadStart(handleScreenshots));
+					screenshotUpdateThread.Start();
 
 					//Create a thread to handle chat
 					chatThread = new Thread(new ThreadStart(handleChat));
@@ -276,16 +301,19 @@ namespace KLFClient
 					pluginUpdateInMutex.WaitOne();
 					textMessageQueueMutex.WaitOne();
 					threadExceptionMutex.WaitOne();
+					screenshotInMutex.WaitOne();
 
 					pluginUpdateThread.Abort();
 					chatThread.Abort();
 					incomingMessageThread.Abort();
+					screenshotUpdateThread.Abort();
 
 					tcpSendMutex.ReleaseMutex();
 					serverSettingsMutex.ReleaseMutex();
 					pluginUpdateInMutex.ReleaseMutex();
 					textMessageQueueMutex.ReleaseMutex();
 					threadExceptionMutex.ReleaseMutex();
+					screenshotInMutex.ReleaseMutex();
 
 					//Close the connection
 					Console.ForegroundColor = ConsoleColor.Red;
@@ -400,8 +428,22 @@ namespace KLFClient
 					serverSettingsMutex.WaitOne();
 					updateInterval = KLFCommon.intFromBytes(data, 0);
 					maxQueuedUpdates = KLFCommon.intFromBytes(data, 4);
+					screenshotInterval = KLFCommon.intFromBytes(data, 8);
 					serverSettingsMutex.ReleaseMutex();
 
+					break;
+
+				case KLFCommon.ServerMessageID.SCREENSHOT_SHARE:
+
+					if (data != null)
+					{
+						if (data.Length > 0 && data.Length < KLFCommon.MAX_SCREENSHOT_BYTES)
+						{
+							screenshotInMutex.WaitOne();
+							queuedScreenshot = data;
+							screenshotInMutex.ReleaseMutex();
+						}
+					}
 					break;
 			}
 		}
@@ -498,125 +540,11 @@ namespace KLFClient
 
 				while (true)
 				{
-					//Send outgoing plugin updates to server
-					if (File.Exists(OUT_FILENAME))
-					{
+					readPluginUpdates();
 
-						FileStream out_stream = null;
-						try
-						{
-							out_stream = File.OpenRead(OUT_FILENAME);
-							out_stream.Lock(0, long.MaxValue);
+					writeQueuedUpdates();
 
-							//Read the update
-							byte[] update_bytes = new byte[out_stream.Length];
-							out_stream.Read(update_bytes, 0, (int)out_stream.Length);
-
-							out_stream.Unlock(0, long.MaxValue);
-
-							out_stream.Close();
-							File.Delete(OUT_FILENAME); //Delete the file now that it's been read
-
-							//Make sure the file format version is correct
-							Int32 file_format_version = KLFCommon.intFromBytes(update_bytes, 0);
-							if (file_format_version == KLFCommon.FILE_FORMAT_VERSION)
-							{
-								//Send the update to the server
-								tcpSendMutex.WaitOne();
-
-								//Remove the file format version bytes before sending
-								sendMessageHeader(KLFCommon.ClientMessageID.PLUGIN_UPDATE, update_bytes.Length - 4);
-								tcpClient.GetStream().Write(update_bytes, 4, update_bytes.Length - 4);
-								tcpClient.GetStream().Flush();
-
-								tcpSendMutex.ReleaseMutex();
-							}
-							else
-							{
-								//Don't send the update if the file format version is wrong
-								Console.WriteLine("Error: Plugin version is incompatible with client version!");
-							}
-
-						}
-						catch (System.IO.FileNotFoundException)
-						{
-						}
-						catch (System.UnauthorizedAccessException)
-						{
-						}
-						catch (System.IO.DirectoryNotFoundException)
-						{
-						}
-						catch (System.InvalidOperationException)
-						{
-						}
-						catch (System.IO.IOException)
-						{
-						}
-
-						if (out_stream != null)
-						{
-							out_stream.Close(); //Close the file in case the other close statement was reached
-						}
-					}
-
-					//Pass queued updates to plugin
-					pluginUpdateInMutex.WaitOne();
-
-					if (!File.Exists(IN_FILENAME) && pluginUpdateInQueue.Count > 0)
-					{
-
-						FileStream in_stream = null;
-
-						try
-						{
-							in_stream = File.Create(IN_FILENAME);
-
-							//Write the file format version
-							in_stream.Write(KLFCommon.intToBytes(KLFCommon.FILE_FORMAT_VERSION), 0, 4);
-
-							//Write the updates to the file
-							while (pluginUpdateInQueue.Count > 0)
-							{
-								byte[] update = pluginUpdateInQueue.Dequeue();
-								in_stream.Write(update, 0, update.Length);
-							}
-
-						}
-						catch (System.IO.FileNotFoundException)
-						{
-						}
-						catch (System.UnauthorizedAccessException)
-						{
-						}
-						catch (System.IO.DirectoryNotFoundException)
-						{
-						}
-						catch (System.InvalidOperationException)
-						{
-						}
-						catch (System.IO.IOException)
-						{
-						}
-
-						if (in_stream != null)
-							in_stream.Close();
-
-					}
-					else
-					{
-						//Don't let the update queue get insanely large
-						serverSettingsMutex.WaitOne();
-						int max_queue_size = maxQueuedUpdates;
-						serverSettingsMutex.ReleaseMutex();
-
-						while (pluginUpdateInQueue.Count > max_queue_size)
-						{
-							pluginUpdateInQueue.Dequeue();
-						}
-					}
-
-					pluginUpdateInMutex.ReleaseMutex();
+					readPluginData();
 
 					serverSettingsMutex.WaitOne();
 					int sleep_time = updateInterval;
@@ -634,6 +562,282 @@ namespace KLFClient
 				threadExceptionMutex.WaitOne();
 				threadException = e;
 				threadExceptionMutex.ReleaseMutex();
+			}
+		}
+
+		static void handleScreenshots()
+		{
+
+			try
+			{
+
+				while (true)
+				{
+					if (stopwatch.ElapsedMilliseconds - lastScreenshotShareTime > screenshotInterval)
+					{
+						readSharedScreenshot();
+						lastScreenshotShareTime = stopwatch.ElapsedMilliseconds;
+					}
+
+					writeQueuedScreenshot();
+
+					Thread.Sleep(0);
+				}
+
+			}
+			catch (ThreadAbortException)
+			{
+			}
+			catch (Exception e)
+			{
+				threadExceptionMutex.WaitOne();
+				threadException = e;
+				threadExceptionMutex.ReleaseMutex();
+			}
+		}
+
+		static void readPluginUpdates()
+		{
+			//Send outgoing plugin updates to server
+			if (File.Exists(OUT_FILENAME))
+			{
+
+				FileStream out_stream = null;
+				try
+				{
+					out_stream = File.OpenRead(OUT_FILENAME);
+					out_stream.Lock(0, long.MaxValue);
+
+					//Read the update
+					byte[] update_bytes = new byte[out_stream.Length];
+					out_stream.Read(update_bytes, 0, (int)out_stream.Length);
+
+					out_stream.Unlock(0, long.MaxValue);
+
+					out_stream.Close();
+					File.Delete(OUT_FILENAME); //Delete the file now that it's been read
+
+					//Make sure the file format version is correct
+					Int32 file_format_version = KLFCommon.intFromBytes(update_bytes, 0);
+					if (file_format_version == KLFCommon.FILE_FORMAT_VERSION)
+					{
+						//Send the update to the server
+						tcpSendMutex.WaitOne();
+
+						//Remove the file format version bytes before sending
+						sendMessageHeader(KLFCommon.ClientMessageID.PLUGIN_UPDATE, update_bytes.Length - 4);
+						tcpClient.GetStream().Write(update_bytes, 4, update_bytes.Length - 4);
+						tcpClient.GetStream().Flush();
+
+						tcpSendMutex.ReleaseMutex();
+					}
+					else
+					{
+						//Don't send the update if the file format version is wrong
+						Console.WriteLine("Error: Plugin version is incompatible with client version!");
+					}
+
+				}
+				catch (System.IO.FileNotFoundException)
+				{
+				}
+				catch (System.UnauthorizedAccessException)
+				{
+				}
+				catch (System.IO.DirectoryNotFoundException)
+				{
+				}
+				catch (System.InvalidOperationException)
+				{
+				}
+				catch (System.IO.IOException)
+				{
+				}
+
+				if (out_stream != null)
+				{
+					out_stream.Close(); //Close the file in case the other close statement was reached
+				}
+			}
+		}
+
+		static void writeQueuedUpdates()
+		{
+			//Pass queued updates to plugin
+			pluginUpdateInMutex.WaitOne();
+
+			if (!File.Exists(IN_FILENAME) && pluginUpdateInQueue.Count > 0)
+			{
+
+				FileStream in_stream = null;
+
+				try
+				{
+					in_stream = File.Create(IN_FILENAME);
+
+					//Write the file format version
+					in_stream.Write(KLFCommon.intToBytes(KLFCommon.FILE_FORMAT_VERSION), 0, 4);
+
+					//Write the updates to the file
+					while (pluginUpdateInQueue.Count > 0)
+					{
+						byte[] update = pluginUpdateInQueue.Dequeue();
+						in_stream.Write(update, 0, update.Length);
+					}
+
+				}
+				catch (System.IO.FileNotFoundException)
+				{
+				}
+				catch (System.UnauthorizedAccessException)
+				{
+				}
+				catch (System.IO.DirectoryNotFoundException)
+				{
+				}
+				catch (System.InvalidOperationException)
+				{
+				}
+				catch (System.IO.IOException)
+				{
+				}
+
+				if (in_stream != null)
+					in_stream.Close();
+
+			}
+			else
+			{
+				//Don't let the update queue get insanely large
+				serverSettingsMutex.WaitOne();
+				int max_queue_size = maxQueuedUpdates;
+				serverSettingsMutex.ReleaseMutex();
+
+				while (pluginUpdateInQueue.Count > max_queue_size)
+				{
+					pluginUpdateInQueue.Dequeue();
+				}
+			}
+
+			pluginUpdateInMutex.ReleaseMutex();
+		}
+
+		static void readSharedScreenshot()
+		{
+			//Send outgoing plugin updates to server
+			if (File.Exists(SCREENSHOT_OUT_FILENAME))
+			{
+
+				try
+				{
+					byte[] bytes = File.ReadAllBytes(SCREENSHOT_OUT_FILENAME);
+
+					if (bytes != null && bytes.Length > 0 && bytes.Length <= KLFCommon.MAX_SCREENSHOT_BYTES)
+					{
+						tcpSendMutex.WaitOne();
+						sendShareScreenshotMesssage(bytes);
+						tcpSendMutex.ReleaseMutex();
+					}
+
+					File.Delete(SCREENSHOT_OUT_FILENAME);
+				}
+				catch (System.IO.FileNotFoundException)
+				{
+				}
+				catch (System.UnauthorizedAccessException)
+				{
+				}
+				catch (System.IO.DirectoryNotFoundException)
+				{
+				}
+				catch (System.InvalidOperationException)
+				{
+				}
+				catch (System.IO.IOException)
+				{
+				}
+
+			}
+		}
+
+		static void writeQueuedScreenshot()
+		{
+			if (queuedScreenshot != null && queuedScreenshot.Length > 0 && !File.Exists(SCREENSHOT_IN_FILENAME))
+			{
+				screenshotInMutex.WaitOne();
+
+				try
+				{
+					File.WriteAllBytes(SCREENSHOT_IN_FILENAME, queuedScreenshot);
+					queuedScreenshot = null;
+				}
+				catch (System.IO.FileNotFoundException)
+				{
+				}
+				catch (System.UnauthorizedAccessException)
+				{
+				}
+				catch (System.IO.DirectoryNotFoundException)
+				{
+				}
+				catch (System.InvalidOperationException)
+				{
+				}
+				catch (System.IO.IOException)
+				{
+				}
+
+				screenshotInMutex.ReleaseMutex();
+			}
+		}
+
+		static void readPluginData()
+		{
+			if (File.Exists(PLUGIN_DATA_FILENAME))
+			{
+				try
+				{
+					String new_watch_player_name = String.Empty;
+
+					byte[] bytes = File.ReadAllBytes(PLUGIN_DATA_FILENAME);
+
+					File.Delete(PLUGIN_DATA_FILENAME);
+
+					if (bytes != null && bytes.Length > 0)
+					{
+						//Read the watch player name
+						ASCIIEncoding encoder = new ASCIIEncoding();
+						new_watch_player_name = encoder.GetString(bytes);
+					}
+
+					if (watchPlayerName != new_watch_player_name)
+					{
+						watchPlayerName = new_watch_player_name;
+
+						screenshotInMutex.WaitOne();
+						queuedScreenshot = null;
+						screenshotInMutex.ReleaseMutex();
+
+						tcpSendMutex.WaitOne();
+						sendScreenshotWatchPlayer(watchPlayerName);
+						tcpSendMutex.ReleaseMutex();
+					}
+				}
+				catch (System.IO.FileNotFoundException)
+				{
+				}
+				catch (System.UnauthorizedAccessException)
+				{
+				}
+				catch (System.IO.DirectoryNotFoundException)
+				{
+				}
+				catch (System.InvalidOperationException)
+				{
+				}
+				catch (System.IO.IOException)
+				{
+				}
 			}
 		}
 
@@ -874,6 +1078,45 @@ namespace KLFClient
 				sendMessageHeader(KLFCommon.ClientMessageID.TEXT_MESSAGE, message_bytes.Length);
 
 				tcpClient.GetStream().Write(message_bytes, 0, message_bytes.Length);
+
+				tcpClient.GetStream().Flush();
+
+			}
+			catch (System.InvalidOperationException)
+			{
+			}
+		}
+
+		private static void sendShareScreenshotMesssage(byte[] data)
+		{
+			try
+			{
+
+				//Encode message
+				sendMessageHeader(KLFCommon.ClientMessageID.SCREENSHOT_SHARE, data.Length);
+
+				tcpClient.GetStream().Write(data, 0, data.Length);
+
+				tcpClient.GetStream().Flush();
+
+			}
+			catch (System.InvalidOperationException)
+			{
+			}
+		}
+
+		private static void sendScreenshotWatchPlayer(String name)
+		{
+			try
+			{
+
+				//Encode message
+				ASCIIEncoding encoder = new ASCIIEncoding();
+				byte[] bytes = encoder.GetBytes(name);
+
+				sendMessageHeader(KLFCommon.ClientMessageID.SCREEN_WATCH_PLAYER, bytes.Length);
+
+				tcpClient.GetStream().Write(bytes, 0, bytes.Length);
 
 				tcpClient.GetStream().Flush();
 

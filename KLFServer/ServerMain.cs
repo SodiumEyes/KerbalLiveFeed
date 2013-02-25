@@ -51,6 +51,12 @@ namespace KLFServer
 				Console.WriteLine(settings.updateInterval);
 
 				Console.ForegroundColor = ConsoleColor.Green;
+				Console.Write("Screenshot Interval: ");
+
+				Console.ResetColor();
+				Console.WriteLine(settings.screenshotInterval);
+
+				Console.ForegroundColor = ConsoleColor.Green;
 				Console.Write("Auto-Restart: ");
 
 				Console.ResetColor();
@@ -58,9 +64,9 @@ namespace KLFServer
 
 				Console.ResetColor();
 				Console.WriteLine();
-				Console.WriteLine("Enter P to change port, M to change max clients, J to change join message");
-				Console.WriteLine("Enter U to change update interval, Enter A to toggle auto-restart");
-				Console.WriteLine("Enter H to begin hosting, Q to quit");
+				Console.WriteLine("P: change port, M: change max clients, J: change join message");
+				Console.WriteLine("U: chage update interval, S: change screenshot interval, A: toggle auto-restart");
+				Console.WriteLine("H: begin hosting, Q: quit");
 
 				String in_string = Console.ReadLine().ToLower();
 
@@ -104,10 +110,21 @@ namespace KLFServer
 				{
 					Console.Write("Enter the update interval: ");
 					int new_value;
-					if (int.TryParse(Console.ReadLine(), out new_value) && new_value >= ServerSettings.MIN_UPDATE_INTERVAL
-						&& new_value <= ServerSettings.MAX_UPDATE_INTERVAL)
+					if (int.TryParse(Console.ReadLine(), out new_value) && ServerSettings.validUpdateInterval(new_value))
 					{
 						settings.updateInterval = new_value;
+						settings.writeConfigFile();
+					}
+					else
+						Console.WriteLine("Invalid update interval");
+				}
+				else if (in_string == "s")
+				{
+					Console.Write("Enter the screenshot interval: ");
+					int new_value;
+					if (int.TryParse(Console.ReadLine(), out new_value) && ServerSettings.validScreenshotInterval(new_value))
+					{
+						settings.screenshotInterval = new_value;
 						settings.writeConfigFile();
 					}
 					else

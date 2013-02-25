@@ -92,8 +92,9 @@ namespace KLFServer
 			{
 			}
 
-			stampedConsoleWriteLine("Commands:");
-			stampedConsoleWriteLine("/quit - quit");
+			Console.WriteLine("Commands:");
+			Console.WriteLine("/quit - quit");
+			Console.WriteLine("/kick <username>");
 
 			commandThread.Start();
 
@@ -178,6 +179,19 @@ namespace KLFServer
 								Object o = null; //You asked for it!
 								o.ToString();
 							}
+							else if (input.Substring(0, 6) == "/kick " && input.Length > 6)
+							{
+								String kick_name = input.Substring(6, input.Length - 6).ToLower();
+								for (int i = 0; i < clients.Length; i++)
+								{
+									if (clientIsReady(i) && clients[i].username.ToLower() == kick_name)
+									{
+										clients[i].mutex.WaitOne();
+										disconnectClient(i, "You were kicked from the server.");
+										clients[i].mutex.ReleaseMutex();
+									}
+								}
+							}
 						}
 						else
 						{
@@ -241,8 +255,6 @@ namespace KLFServer
 
 					if (client != null && client.Connected)
 					{
-						//stampedConsoleWriteLine("Client ip: " + ((IPEndPoint)client.Client.RemoteEndPoint).ToString());
-
 						//Try to add the client
 						int client_index = addClient(client);
 						if (client_index >= 0)
@@ -323,6 +335,8 @@ namespace KLFServer
 					//Add the client
 					client.tcpClient = tcp_client;
 					client.username = "new user";
+					client.screenshot = null;
+					client.watchPlayerName = String.Empty;
 					client.canBeReplaced = false;
 
 					client.startMessageThread();
@@ -343,11 +357,12 @@ namespace KLFServer
 		{
 			numClients--;
 			clients[client_index].canBeReplaced = true;
+			clients[client_index].screenshot = null;
+			clients[client_index].watchPlayerName = String.Empty;
 
 			//Only send the disconnect message if the client performed handshake successfully
 			if (clients[client_index].receivedHandshake)
 			{
-
 				stampedConsoleWriteLine("Client #" + client_index + " " + clients[client_index].username + " has disconnected.");
 
 				StringBuilder sb = new StringBuilder();
@@ -370,7 +385,6 @@ namespace KLFServer
 						clients[i].mutex.ReleaseMutex();
 					}
 				}
-
 			}
 			else
 			{
@@ -402,6 +416,28 @@ namespace KLFServer
 						int offset = 4 + username_length;
 
 						String version = encoder.GetString(data, offset, data.Length - offset);
+
+						String username_lower = username.ToLower();
+
+						bool accepted = true;
+
+						//Ensure no other players have the same username
+						for (int i = 0; i < clients.Length; i++)
+						{
+							if (i != client_index && clientIsReady(i) && clients[i].username.ToLower() == username_lower)
+							{
+								//Disconnect the player
+								clients[client_index].mutex.WaitOne();
+								disconnectClient(client_index, "Your username is already in use.");
+								clients[client_index].mutex.ReleaseMutex();
+								stampedConsoleWriteLine("Rejected client due to duplicate username: " + username);
+								accepted = false;
+								break;
+							}
+						}
+
+						if (!accepted)
+							break;
 
 						//Send the active user count to the client
 						if (numClients == 2)
@@ -474,9 +510,7 @@ namespace KLFServer
 							{
 
 								clients[i].mutex.WaitOne();
-
 								sendPluginUpdate(clients[i].tcpClient, data);
-
 								clients[i].mutex.ReleaseMutex();
 							}
 						}
@@ -527,16 +561,71 @@ namespace KLFServer
 						stampedConsoleWriteLine(full_message);
 
 						//Send the update to all other clients
-						for (int i = 0; i < clients.Length; i++)
+						sendTextMessageToAll(full_message, client_index);
+
+					}
+
+					break;
+
+				case KLFCommon.ClientMessageID.SCREEN_WATCH_PLAYER:
+
+					if (data != null)
+					{
+						//Set the watch player name
+						clients[client_index].watchPlayerName = encoder.GetString(data);
+
+						//Try to find the player the client is watching and send the current screenshot
+						if (clients[client_index].watchPlayerName.Length > 0)
 						{
-							if ((i != client_index) && clientIsReady(i))
+							for (int i = 0; i < clients.Length; i++)
 							{
-								clients[i].mutex.WaitOne();
-								sendTextMessage(clients[i].tcpClient, full_message);
-								clients[i].mutex.ReleaseMutex();
+								if (i != client_index && clientIsReady(i) && clients[i].username == clients[client_index].watchPlayerName)
+								{
+									clients[i].mutex.WaitOne();
+									clients[client_index].mutex.WaitOne();
+
+									sendCurrentScreenshot(clients[client_index].tcpClient, i);
+
+									clients[client_index].mutex.ReleaseMutex();
+									clients[i].mutex.ReleaseMutex();
+									break;
+								}
 							}
 						}
+					}
 
+					break;
+
+				case KLFCommon.ClientMessageID.SCREENSHOT_SHARE:
+
+					if (data != null && data.Length <= KLFCommon.MAX_SCREENSHOT_BYTES)
+					{
+						//Set the screenshot for the player
+						clients[client_index].mutex.WaitOne();
+						clients[client_index].screenshot = data;
+						clients[client_index].mutex.ReleaseMutex();
+
+						StringBuilder sb = new StringBuilder();
+						sb.Append(clients[client_index].username);
+						sb.Append(" has shared a screenshot.");
+
+						sendTextMessageToAll(sb.ToString());
+						stampedConsoleWriteLine(sb.ToString());
+
+						//Send the screenshot to every client watching the player
+						if (clients[client_index].watchPlayerName.Length > 0)
+						{
+							for (int i = 0; i < clients.Length; i++)
+							{
+								if (i != client_index && clientIsReady(i) && clients[i].watchPlayerName == clients[client_index].username)
+								{
+									clients[i].mutex.WaitOne();
+									sendCurrentScreenshot(clients[i].tcpClient, client_index);
+									clients[i].mutex.ReleaseMutex();
+									break;
+								}
+							}
+						}
 					}
 
 					break;
@@ -613,6 +702,12 @@ namespace KLFServer
 				}
 			}
 			
+		}
+
+		public void disconnectClient(int index, String message)
+		{
+			sendHandshakeRefusalMessage(clients[index].tcpClient, message);
+			clients[index].tcpClient.Close();
 		}
 
 		//Messages
@@ -700,6 +795,19 @@ namespace KLFServer
 			}
 		}
 
+		private void sendTextMessageToAll(String message, int exclude_index = -1)
+		{
+			for (int i = 0; i < clients.Length; i++)
+			{
+				if ((i != exclude_index) && clientIsReady(i))
+				{
+					clients[i].mutex.WaitOne();
+					sendTextMessage(clients[i].tcpClient, message);
+					clients[i].mutex.ReleaseMutex();
+				}
+			}
+		}
+
 		private void sendTextMessage(TcpClient client, String message)
 		{
 
@@ -746,6 +854,32 @@ namespace KLFServer
 			}
 		}
 
+		private void sendCurrentScreenshot(TcpClient client, int watch_index)
+		{
+			try
+			{
+
+				if (clientIsReady(watch_index) && clients[watch_index].screenshot != null
+					&& clients[watch_index].screenshot.Length > 0)
+				{
+
+					//Encode message
+					sendMessageHeader(client, KLFCommon.ServerMessageID.SCREENSHOT_SHARE, clients[watch_index].screenshot.Length);
+
+					client.GetStream().Write(clients[watch_index].screenshot, 0, clients[watch_index].screenshot.Length);
+
+					client.GetStream().Flush();
+				}
+
+			}
+			catch (System.IO.IOException)
+			{
+			}
+			catch (System.ObjectDisposedException)
+			{
+			}
+		}
+
 		private void sendServerSettings()
 		{
 			for (int i = 0; i < clients.Length; i++)
@@ -766,9 +900,10 @@ namespace KLFServer
 			{
 
 				//Encode message
-				sendMessageHeader(client, KLFCommon.ServerMessageID.SERVER_SETTINGS, 8);
+				sendMessageHeader(client, KLFCommon.ServerMessageID.SERVER_SETTINGS, 12);
 				client.GetStream().Write(KLFCommon.intToBytes(settings.updateInterval), 0, 4);
 				client.GetStream().Write(KLFCommon.intToBytes((numClients-1) * 2), 0, 4);
+				client.GetStream().Write(KLFCommon.intToBytes(settings.screenshotInterval), 0, 4);
 
 				client.GetStream().Flush();
 

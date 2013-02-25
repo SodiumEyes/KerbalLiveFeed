@@ -6,10 +6,14 @@ using System.Text;
 public class KLFCommon
 {
 
-	public const String PROGRAM_VERSION = "0.1.3";
+	public const String PROGRAM_VERSION = "0.2.0";
 	public const Int32 FILE_FORMAT_VERSION = 3;
-	public const Int32 NET_PROTOCOL_VERSION = 3;
+	public const Int32 NET_PROTOCOL_VERSION = 4;
 	public const int MSG_HEADER_LENGTH = 8;
+
+	public const float MAX_SCREENSHOT_WIDTH = 480;
+	public const float MAX_SCREENSHOT_HEIGHT = 270;
+	public const float MAX_SCREENSHOT_BYTES = MAX_SCREENSHOT_WIDTH * MAX_SCREENSHOT_HEIGHT * 3;
 
 	public static byte[] intToBytes(Int32 val)
 	{
@@ -37,7 +41,9 @@ public class KLFCommon
 	{
 		HANDSHAKE /*Username Length : Username : Version*/,
 		PLUGIN_UPDATE /*data*/,
-		TEXT_MESSAGE /*Message text*/
+		TEXT_MESSAGE /*Message text*/,
+		SCREEN_WATCH_PLAYER /*Player name*/,
+		SCREENSHOT_SHARE /*Screenshot bytes*/
 	}
 
 	public enum ServerMessageID
@@ -47,7 +53,8 @@ public class KLFCommon
 		SERVER_MESSAGE /*Message text*/,
 		TEXT_MESSAGE /*Message text*/,
 		PLUGIN_UPDATE /*data*/,
-		SERVER_SETTINGS /*UpdateInterval : MaxQueueSize*/
+		SERVER_SETTINGS /*UpdateInterval : MaxQueueSize*/,
+		SCREENSHOT_SHARE /*Screenshot bytes*/
 	}
 }
 

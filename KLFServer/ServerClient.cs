@@ -13,12 +13,13 @@ namespace KLFServer
 	{
 		public int clientIndex;
 		public String username;
+		public String watchPlayerName;
+		public byte[] screenshot;
 
 		public TcpClient tcpClient;
 		public Thread messageThread;
 
 		public Server parent;
-
 		public Mutex mutex;
 
 		public long handshakeTimeoutTime;
