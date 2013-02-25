@@ -42,6 +42,7 @@ namespace KLFClient
 		
 		public const int MAX_USERNAME_LENGTH = 32;
 		public const int MAX_TEXT_MESSAGE_QUEUE = 128;
+		public const long KEEPALIVE_DELAY = 2000;
 
 		public const String PLUGIN_DIRECTORY = "PluginData/kerballivefeed/";
 
@@ -54,6 +55,8 @@ namespace KLFClient
 		public static long lastScreenshotShareTime;
 		public static byte[] queuedScreenshot;
 		public static String watchPlayerName;
+
+		public static long lastMessageSendTime;
 
 		public static Mutex tcpSendMutex;
 		public static Mutex pluginUpdateInMutex;
@@ -217,6 +220,8 @@ namespace KLFClient
 					queuedScreenshot = null;
 					lastScreenshotShareTime = 0;
 
+					lastMessageSendTime = 0;
+
 					//Create a thread to handle plugin updates
 					pluginUpdateThread = new Thread(new ThreadStart(handlePluginUpdates));
 					pluginUpdateThread.Start();
@@ -282,6 +287,7 @@ namespace KLFClient
 
 					while (!endSession)
 					{
+						//Check for exceptions thrown by threads
 						threadExceptionMutex.WaitOne();
 						if (threadException != null)
 						{
@@ -291,6 +297,12 @@ namespace KLFClient
 							throw e;
 						}
 						threadExceptionMutex.ReleaseMutex();
+
+						//Send a keep-alive message to prevent timeout
+						tcpSendMutex.WaitOne();
+						if (stopwatch.ElapsedMilliseconds - lastMessageSendTime >= KEEPALIVE_DELAY)
+							sendMessageHeader(KLFCommon.ClientMessageID.KEEPALIVE, 0);
+						tcpSendMutex.ReleaseMutex();
 
 						Thread.Sleep(0);
 					}
@@ -1038,6 +1050,8 @@ namespace KLFClient
 		{
 			tcpClient.GetStream().Write(KLFCommon.intToBytes((int)id), 0, 4);
 			tcpClient.GetStream().Write(KLFCommon.intToBytes(msg_length), 0, 4);
+
+			lastMessageSendTime = stopwatch.ElapsedMilliseconds;
 		}
 
 		private static void sendHandshakeMessage()

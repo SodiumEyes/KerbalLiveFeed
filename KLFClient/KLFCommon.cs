@@ -43,7 +43,8 @@ public class KLFCommon
 		PLUGIN_UPDATE /*data*/,
 		TEXT_MESSAGE /*Message text*/,
 		SCREEN_WATCH_PLAYER /*Player name*/,
-		SCREENSHOT_SHARE /*Screenshot bytes*/
+		SCREENSHOT_SHARE /*Screenshot bytes*/,
+		KEEPALIVE
 	}
 
 	public enum ServerMessageID
@@ -53,7 +54,7 @@ public class KLFCommon
 		SERVER_MESSAGE /*Message text*/,
 		TEXT_MESSAGE /*Message text*/,
 		PLUGIN_UPDATE /*data*/,
-		SERVER_SETTINGS /*UpdateInterval : MaxQueueSize*/,
+		SERVER_SETTINGS /*UpdateInterval : MaxQueueSize : Screenshot Interval*/,
 		SCREENSHOT_SHARE /*Screenshot bytes*/
 	}
 }

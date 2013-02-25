@@ -43,7 +43,8 @@ public class KLFCommon
 		PLUGIN_UPDATE /*data*/,
 		TEXT_MESSAGE /*Message text*/,
 		SCREEN_WATCH_PLAYER /*Player name*/,
-		SCREENSHOT_SHARE /*Screenshot bytes*/
+		SCREENSHOT_SHARE /*Screenshot bytes*/,
+		KEEPALIVE
 	}
 
 	public enum ServerMessageID

@@ -15,6 +15,7 @@ namespace KLFServer
 	{
 
 		public const bool SEND_UPDATES_TO_SENDER = false;
+		public const long CLIENT_TIMEOUT_DELAY = 8000;
 
 		public int numClients;
 		
@@ -98,9 +99,9 @@ namespace KLFServer
 
 			commandThread.Start();
 
-			//Check for exceptions that occur in threads
 			while (!quit)
 			{
+				//Check for exceptions that occur in threads
 				threadExceptionMutex.WaitOne();
 				if (threadException != null)
 				{
@@ -110,6 +111,26 @@ namespace KLFServer
 					throw e;
 				}
 				threadExceptionMutex.ReleaseMutex();
+
+				//Check for clients that have not sent messages for too long
+				for (int i = 0; i < clients.Length; i++)
+				{
+					if (clientIsValid(i))
+					{
+						long time = 0;
+						clients[i].mutex.WaitOne();
+						time = clients[i].lastMessageTime;
+						clients[i].mutex.ReleaseMutex();
+
+						if (stopwatch.ElapsedMilliseconds - time > CLIENT_TIMEOUT_DELAY)
+						{
+							clients[i].mutex.WaitOne();
+							disconnectClient(i, "Timeout");
+							clients[i].mutex.ReleaseMutex();
+						}
+					}
+
+				}
 
 				Thread.Sleep(0);
 			}
@@ -338,6 +359,7 @@ namespace KLFServer
 					client.screenshot = null;
 					client.watchPlayerName = String.Empty;
 					client.canBeReplaced = false;
+					client.lastMessageTime = stopwatch.ElapsedMilliseconds;
 
 					client.startMessageThread();
 					numClients++;
@@ -353,7 +375,7 @@ namespace KLFServer
 			return -1;
 		}
 
-		public void clientDisconnect(int client_index)
+		public void clientDisconnected(int client_index)
 		{
 			numClients--;
 			clients[client_index].canBeReplaced = true;

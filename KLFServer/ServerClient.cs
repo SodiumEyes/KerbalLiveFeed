@@ -25,6 +25,7 @@ namespace KLFServer
 		public long handshakeTimeoutTime;
 		public bool receivedHandshake;
 		public bool canBeReplaced;
+		public long lastMessageTime;
 
 		public const long HANDSHAKE_TIMEOUT_MS = 4000;
 
@@ -143,7 +144,13 @@ namespace KLFServer
 					}
 
 					if (message_received && parent != null)
+					{
+						mutex.WaitOne();
+						lastMessageTime = parent.stopwatch.ElapsedMilliseconds;
+						mutex.ReleaseMutex();
+
 						parent.handleMessage(clientIndex, id, message_data); //Have the parent server handle the message
+					}
 
 					Thread.Sleep(0);
 				}
@@ -152,7 +159,7 @@ namespace KLFServer
 				tcpClient.Close();
 				mutex.ReleaseMutex();
 
-				parent.clientDisconnect(clientIndex);
+				parent.clientDisconnected(clientIndex);
 				messageThread.Abort();
 
 			}
