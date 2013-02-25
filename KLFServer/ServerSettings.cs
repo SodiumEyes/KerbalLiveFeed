@@ -21,7 +21,7 @@ namespace KLFServer
 		public int port = 2075;
 		public int maxClients = 32;
 		public int updateInterval = 500;
-		public int screenshotInterval = 1000;
+		public int screenshotInterval = 3000;
 		public bool autoRestart = false;
 		public String joinMessage = String.Empty;
 

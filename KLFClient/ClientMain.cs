@@ -585,10 +585,11 @@ namespace KLFClient
 
 				while (true)
 				{
+					//Throttle the rate at which you can share screenshots
 					if (stopwatch.ElapsedMilliseconds - lastScreenshotShareTime > screenshotInterval)
 					{
-						readSharedScreenshot();
-						lastScreenshotShareTime = stopwatch.ElapsedMilliseconds;
+						if (readSharedScreenshot())
+							lastScreenshotShareTime = stopwatch.ElapsedMilliseconds;
 					}
 
 					writeQueuedScreenshot();
@@ -734,7 +735,7 @@ namespace KLFClient
 			pluginUpdateInMutex.ReleaseMutex();
 		}
 
-		static void readSharedScreenshot()
+		static bool readSharedScreenshot()
 		{
 			//Send outgoing plugin updates to server
 			if (File.Exists(SCREENSHOT_OUT_FILENAME))
@@ -752,6 +753,8 @@ namespace KLFClient
 					}
 
 					File.Delete(SCREENSHOT_OUT_FILENAME);
+
+					return true;
 				}
 				catch (System.IO.FileNotFoundException)
 				{
@@ -770,6 +773,8 @@ namespace KLFClient
 				}
 
 			}
+
+			return false;
 		}
 
 		static void writeQueuedScreenshot()
