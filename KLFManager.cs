@@ -742,7 +742,7 @@ namespace KerbalLiveFeed
 					999999,
 					KLFInfoDisplay.infoWindowPos,
 					infoDisplayWindow,
-					KLFInfoDisplay.infoDisplayMinimized ? "KLF" : "Kerbal LiveFeed v"+KLFCommon.PROGRAM_VERSION,
+					KLFInfoDisplay.infoDisplayMinimized ? "KLF" : "Kerbal LiveFeed v"+KLFCommon.PROGRAM_VERSION+" (F7)",
 					KLFInfoDisplay.layoutOptions
 					);
 
@@ -858,13 +858,10 @@ namespace KerbalLiveFeed
 				GUILayout.EndScrollView();
 
 				GUILayout.BeginHorizontal();
-				KLFScreenshotDisplay.windowEnabled = GUILayout.Toggle(KLFScreenshotDisplay.windowEnabled, "Screenshots", GUI.skin.button);
+				KLFScreenshotDisplay.windowEnabled = GUILayout.Toggle(KLFScreenshotDisplay.windowEnabled, "Viewer", GUI.skin.button);
 				if (GUILayout.Button("Share Screen (F8)"))
 					shareScreenshot();
 				GUILayout.EndHorizontal();
-
-				GUILayout.Label("Toggle: F7");
-
 			}
 
 			GUILayout.EndVertical();

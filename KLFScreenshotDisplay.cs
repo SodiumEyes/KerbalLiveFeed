@@ -15,7 +15,7 @@ namespace KerbalLiveFeed
 		public const float MAX_IMG_BYTES = KLFCommon.MAX_SCREENSHOT_BYTES;
 
 		public const float WINDOW_WIDTH = MAX_IMG_WIDTH + 180;
-		public const float WINDOW_HEIGHT = MAX_IMG_HEIGHT + 60;
+		public const float WINDOW_HEIGHT = MAX_IMG_HEIGHT + 30;
 
 		public static bool windowEnabled = false;
 		public static String watchPlayerName = String.Empty;

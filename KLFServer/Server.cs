@@ -608,6 +608,9 @@ namespace KLFServer
 
 				case KLFCommon.ClientMessageID.SCREEN_WATCH_PLAYER:
 
+					if (!clientIsReady(client_index))
+						break;
+
 					String watch_name = String.Empty;
 
 					if (data != null)
@@ -642,7 +645,7 @@ namespace KLFServer
 
 				case KLFCommon.ClientMessageID.SCREENSHOT_SHARE:
 
-					if (data != null && data.Length <= KLFCommon.MAX_SCREENSHOT_BYTES)
+					if (data != null && data.Length <= KLFCommon.MAX_SCREENSHOT_BYTES && clientIsReady(client_index))
 					{
 						//Set the screenshot for the player
 						clients[client_index].mutex.WaitOne();
@@ -657,17 +660,14 @@ namespace KLFServer
 						stampedConsoleWriteLine(sb.ToString());
 
 						//Send the screenshot to every client watching the player
-						if (clients[client_index].watchPlayerName.Length > 0)
+						for (int i = 0; i < clients.Length; i++)
 						{
-							for (int i = 0; i < clients.Length; i++)
+							if (i != client_index && clientIsReady(i) && clients[i].watchPlayerName == clients[client_index].username)
 							{
-								if (i != client_index && clientIsReady(i) && clients[i].watchPlayerName == clients[client_index].username)
-								{
-									clients[i].mutex.WaitOne();
-									sendCurrentScreenshot(clients[i].tcpClient, client_index);
-									clients[i].mutex.ReleaseMutex();
-									break;
-								}
+								clients[i].mutex.WaitOne();
+								sendCurrentScreenshot(clients[i].tcpClient, client_index);
+								clients[i].mutex.ReleaseMutex();
+								break;
 							}
 						}
 					}
