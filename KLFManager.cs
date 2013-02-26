@@ -40,14 +40,18 @@ namespace KerbalLiveFeed
 
 		public const float INACTIVE_VESSEL_RANGE = 400000000.0f;
 		public const int MAX_INACTIVE_VESSELS = 4;
+		public const int STATUS_ARRAY_SIZE = 2;
+
+		public const int MAX_VESSEL_NAME_LENGTH = 32;
 
 		public const float TIMEOUT_DELAY = 6.0f;
 
-		public String playerName = "player";
+		public String playerName = String.Empty;
 
 		public Dictionary<String, VesselEntry> vessels = new Dictionary<string, VesselEntry>();
+		public Dictionary<String, VesselStatusInfo> otherPlayerStatus = new Dictionary<string, VesselStatusInfo>();
 
-		public VesselStatusInfo playerVesselInfo = new VesselStatusInfo();
+		public VesselStatusInfo playerStatus = new VesselStatusInfo();
 
 		private float lastUsernameReadTime = 0.0f;
 
@@ -59,8 +63,15 @@ namespace KerbalLiveFeed
 		{
 			get
 			{
-				return KLFInfoDisplay.globalUIEnabled && KLFInfoDisplay.infoDisplayActive && FlightGlobals.ready
-					&& (FlightGlobals.ActiveVessel != null && FlightGlobals.fetch != null);
+				return KLFInfoDisplay.globalUIEnabled && KLFInfoDisplay.infoDisplayActive;
+			}
+		}
+
+		public static bool isInFlight
+		{
+			get
+			{
+				return FlightGlobals.ready && FlightGlobals.ActiveVessel != null;
 			}
 		}
 
@@ -74,7 +85,7 @@ namespace KerbalLiveFeed
 				handleVesselUpdate(vesselUpdateQueue.Dequeue());
 			}
 
-			writeVesselsToFile();
+			writePluginUpdate();
 			readUpdatesFromFile();
 			readScreenshotFromFile();
 			writePluginData();
@@ -87,7 +98,7 @@ namespace KerbalLiveFeed
 
 				VesselEntry entry = pair.Value;
 
-				if ((UnityEngine.Time.fixedTime-entry.lastUpdateTime) <= TIMEOUT_DELAY
+				if ((UnityEngine.Time.time-entry.lastUpdateTime) <= TIMEOUT_DELAY
 					&& entry.vessel != null && entry.vessel.gameObj != null)
 				{
 					entry.vessel.updateRenderProperties();
@@ -104,32 +115,78 @@ namespace KerbalLiveFeed
 
 			//Delete what needs deletin'
 			foreach (String key in delete_list)
-			{
 				vessels.Remove(key);
+
+			delete_list.Clear();
+
+			//Delete outdated player status entries
+			foreach (KeyValuePair<String, VesselStatusInfo> pair in otherPlayerStatus)
+			{
+				if ((UnityEngine.Time.time - pair.Value.lastUpdateTime) > TIMEOUT_DELAY)
+					delete_list.Add(pair.Key);
+			}
+
+			foreach (String key in delete_list)
+				otherPlayerStatus.Remove(key);
+		}
+
+		private void writePluginUpdate()
+		{
+			if ((UnityEngine.Time.fixedTime - lastUsernameReadTime) > 10.0f
+						&& KSP.IO.File.Exists<KLFManager>(CLIENT_DATA_FILENAME))
+			{
+				//Read the username from the client data file
+				byte[] bytes = KSP.IO.File.ReadAllBytes<KLFManager>(CLIENT_DATA_FILENAME);
+
+				ASCIIEncoding encoder = new ASCIIEncoding();
+				playerName = encoder.GetString(bytes, 0, bytes.Length);
+
+				//Keep track of when the name was last read so we don't read it every time
+				lastUsernameReadTime = UnityEngine.Time.fixedTime;
+			}
+
+			if (playerName == null || playerName.Length == 0)
+				return;
+
+			if (isInFlight)
+				writeVesselsToFile();
+			else if (!KSP.IO.File.Exists<KLFManager>(OUT_FILENAME))
+			{
+				//Write non-flight status
+				KSP.IO.FileStream out_stream = KSP.IO.File.Create<KLFManager>(OUT_FILENAME);
+				out_stream.Lock(0, long.MaxValue); //Lock that file so the client won't read it until we're done
+
+				//Write the file format version
+				writeIntToStream(out_stream, KLFCommon.FILE_FORMAT_VERSION);
+
+				String[] status_array = new String[STATUS_ARRAY_SIZE];
+				status_array[0] = playerName;
+				status_array[1] = "At Space Center";
+
+				//Serialize the update
+				byte[] update_bytes = KSP.IO.IOUtils.SerializeToBinary(status_array);
+
+				//Write the length of the serialized to the stream
+				writeIntToStream(out_stream, update_bytes.Length);
+
+				//Write the serialized update to the stream
+				out_stream.Write(update_bytes, 0, update_bytes.Length);
+
+				out_stream.Unlock(0, long.MaxValue);
+				out_stream.Dispose();
+
+				playerStatus = statusArrayToInfo(status_array);
 			}
 		}
 
 		private void writeVesselsToFile()
 		{
 
-			if (FlightGlobals.ready && FlightGlobals.ActiveVessel != null && !KSP.IO.File.Exists<KLFManager>(OUT_FILENAME))
+			if (isInFlight && !KSP.IO.File.Exists<KLFManager>(OUT_FILENAME))
 			{
 
 				try
 				{
-
-					if ((UnityEngine.Time.fixedTime - lastUsernameReadTime) > 10.0f
-						&& KSP.IO.File.Exists<KLFManager>(CLIENT_DATA_FILENAME))
-					{
-						//Read the username from the client data file
-						byte[] bytes = KSP.IO.File.ReadAllBytes<KLFManager>(CLIENT_DATA_FILENAME);
-
-						ASCIIEncoding encoder = new ASCIIEncoding();
-						playerName = encoder.GetString(bytes, 0, bytes.Length);
-
-						//Keep track of when the name was last read so we don't read it every time
-						lastUsernameReadTime = UnityEngine.Time.fixedTime;
-					}
 					
 					//Debug.Log("*** Writing vessels to file!");
 
@@ -201,7 +258,11 @@ namespace KerbalLiveFeed
 			//Create a KLFVesselUpdate from the vessel data
 			KLFVesselUpdate update = new KLFVesselUpdate();
 
-			update.vesselName = vessel.vesselName;
+			if (vessel.vesselName.Length <= MAX_VESSEL_NAME_LENGTH)
+				update.vesselName = vessel.vesselName;
+			else
+				update.vesselName = vessel.vesselName.Substring(0, MAX_VESSEL_NAME_LENGTH);
+
 			update.ownerName = playerName;
 			update.id = vessel.id;
 
@@ -353,27 +414,26 @@ namespace KerbalLiveFeed
 			if (vessel == FlightGlobals.ActiveVessel)
 			{
 				//Update the player vessel info
-				playerVesselInfo.info = update;
-				playerVesselInfo.orbit = vessel.orbit;
-				playerVesselInfo.color = KLFVessel.generateActiveColor(playerName);
-				playerVesselInfo.ownerName = playerName;
-				playerVesselInfo.vesselName = vessel.vesselName;
-				playerVesselInfo.lastUpdateTime = UnityEngine.Time.time;
+				playerStatus.info = update;
+				playerStatus.orbit = vessel.orbit;
+				playerStatus.color = KLFVessel.generateActiveColor(playerName);
+				playerStatus.ownerName = playerName;
+				playerStatus.vesselName = vessel.vesselName;
+				playerStatus.lastUpdateTime = UnityEngine.Time.time;
 			}
 
 		}
 
 		private void readUpdatesFromFile()
 		{
-			if (FlightGlobals.ready && KSP.IO.File.Exists<KLFManager>(IN_FILENAME))
+			if (KSP.IO.File.Exists<KLFManager>(IN_FILENAME))
 			{
 				byte[] in_bytes = null;
 
 				try
 				{
 					//I would have used a FileStream here, but KSP.IO.File.Open is broken?
-					if (FlightGlobals.ActiveVessel != null)
-						in_bytes = KSP.IO.File.ReadAllBytes<KLFManager>(IN_FILENAME); //Read the updates from the file
+					in_bytes = KSP.IO.File.ReadAllBytes<KLFManager>(IN_FILENAME); //Read the updates from the file
 
 					//Delete the update file now that it's been read
 					KSP.IO.File.Delete<KLFManager>(IN_FILENAME);
@@ -433,14 +493,13 @@ namespace KerbalLiveFeed
 
 		private void readScreenshotFromFile()
 		{
-			if (FlightGlobals.ready && KSP.IO.File.Exists<KLFManager>(SCREENSHOT_IN_FILENAME))
+			if (KSP.IO.File.Exists<KLFManager>(SCREENSHOT_IN_FILENAME))
 			{
 				byte[] in_bytes = null;
 
 				try
 				{
-					if (FlightGlobals.ActiveVessel != null)
-						in_bytes = KSP.IO.File.ReadAllBytes<KLFManager>(SCREENSHOT_IN_FILENAME); //Read the screenshot
+					in_bytes = KSP.IO.File.ReadAllBytes<KLFManager>(SCREENSHOT_IN_FILENAME); //Read the screenshot
 
 					//Delete the screenshot now that it's been read
 					KSP.IO.File.Delete<KLFManager>(SCREENSHOT_IN_FILENAME);
@@ -476,7 +535,7 @@ namespace KerbalLiveFeed
 
 		private void writePluginData()
 		{
-			if (FlightGlobals.ready && FlightGlobals.ActiveVessel != null && !KSP.IO.File.Exists<KLFManager>(PLUGIN_DATA_FILENAME))
+			if (!KSP.IO.File.Exists<KLFManager>(PLUGIN_DATA_FILENAME))
 			{
 				try
 				{
@@ -501,6 +560,25 @@ namespace KerbalLiveFeed
 				{
 				}
 			}
+		}
+
+		private VesselStatusInfo statusArrayToInfo(String[] status_array)
+		{
+			if (status_array != null && status_array.Length == STATUS_ARRAY_SIZE)
+			{
+				//Read status array
+				VesselStatusInfo status = new VesselStatusInfo();
+				status.info = null;
+				status.ownerName = status_array[0];
+				status.vesselName = status_array[1];
+				status.orbit = null;
+				status.lastUpdateTime = UnityEngine.Time.time;
+				status.color = KLFVessel.generateActiveColor(status.ownerName);
+
+				return status;
+			}
+			else
+				return new VesselStatusInfo();
 		}
 
 		private void shareScreenshot()
@@ -559,13 +637,46 @@ namespace KerbalLiveFeed
 			{
 				handleVesselUpdate((KLFVesselUpdate)obj);
 			}
+			else if (obj is String[])
+			{
+				String[] status_array = (String[])obj;
+				VesselStatusInfo status = statusArrayToInfo(status_array);
+
+				if (status.ownerName != null && status.ownerName.Length > 0)
+				{
+					if (otherPlayerStatus.ContainsKey(status.ownerName))
+						otherPlayerStatus[status.ownerName] = status;
+					else
+						otherPlayerStatus.Add(status.ownerName, status);
+				}
+			}
 		}
 
 		private void handleVesselUpdate(KLFVesselUpdate vessel_update)
 		{
 
-			if (FlightGlobals.ActiveVessel == null)
+			if (!isInFlight)
+			{
+				//While not in-flight don't create KLF vessel, just store the active vessel status info
+				if (vessel_update.state == Vessel.State.ACTIVE) {
+
+					VesselStatusInfo status = new VesselStatusInfo();
+					status.info = vessel_update;
+					status.ownerName = vessel_update.ownerName;
+					status.vesselName = vessel_update.vesselName;
+					status.orbit = null;
+					status.lastUpdateTime = UnityEngine.Time.time;
+					status.color = KLFVessel.generateActiveColor(status.ownerName);
+
+					if (otherPlayerStatus.ContainsKey(status.ownerName))
+						otherPlayerStatus[status.ownerName] = status;
+					else
+						otherPlayerStatus.Add(status.ownerName, status);
+				}
+				
+
 				return; //Don't handle updates while not flying a ship
+			}
 			
 			//Build the key for the vessel
 			System.Text.StringBuilder sb = new System.Text.StringBuilder();
@@ -597,7 +708,7 @@ namespace KerbalLiveFeed
 					//Update the entry's timestamp
 					VesselEntry new_entry = new VesselEntry();
 					new_entry.vessel = entry.vessel;
-					new_entry.lastUpdateTime = UnityEngine.Time.fixedTime;
+					new_entry.lastUpdateTime = UnityEngine.Time.time;
 
 					vessels[vessel_key] = new_entry;
 				}
@@ -608,7 +719,7 @@ namespace KerbalLiveFeed
 				vessel = new KLFVessel(vessel_update.vesselName, vessel_update.ownerName, vessel_update.id);
 				entry = new VesselEntry();
 				entry.vessel = vessel;
-				entry.lastUpdateTime = UnityEngine.Time.fixedTime;
+				entry.lastUpdateTime = UnityEngine.Time.time;
 
 				if (vessels.ContainsKey(vessel_key))
 					vessels[vessel_key] = entry;
@@ -660,6 +771,26 @@ namespace KerbalLiveFeed
 				vessel.info = vessel_update;
 
 			}
+
+			if (vessel_update.state == Vessel.State.ACTIVE)
+			{
+				//Update the player status info
+				VesselStatusInfo status = new VesselStatusInfo();
+				status.info = vessel_update;
+				status.ownerName = vessel_update.ownerName;
+				status.vesselName = vessel_update.vesselName;
+
+				if (vessel.orbitValid)
+					status.orbit = vessel.orbitRenderer.orbit;
+
+				status.lastUpdateTime = UnityEngine.Time.time;
+				status.color = KLFVessel.generateActiveColor(status.ownerName);
+
+				if (otherPlayerStatus.ContainsKey(status.ownerName))
+					otherPlayerStatus[status.ownerName] = status;
+				else
+					otherPlayerStatus.Add(status.ownerName, status);
+			}
 		}
 
 		private void writeIntToStream(KSP.IO.FileStream stream, Int32 val)
@@ -686,7 +817,7 @@ namespace KerbalLiveFeed
 		public void Update()
 		{
 			//Detect if the user has toggled the ui
-			if (FlightGlobals.ready && FlightGlobals.ActiveVessel != null && Input.GetKeyDown(GameSettings.TOGGLE_UI.primary))
+			if (isInFlight && Input.GetKeyDown(GameSettings.TOGGLE_UI.primary))
 				KLFInfoDisplay.globalUIEnabled = !KLFInfoDisplay.globalUIEnabled;
 
 			if (Input.GetKeyDown(KeyCode.F7))
@@ -814,45 +945,16 @@ namespace KerbalLiveFeed
 				//Create a list of vessels to display, keyed by owner name
 				SortedDictionary<String, VesselStatusInfo> display_vessels = new SortedDictionary<string, VesselStatusInfo>();
 
-				foreach (KeyValuePair<String, VesselEntry> pair in vessels)
-				{
-					VesselStatusInfo existing_vessel;
-					if (pair.Value.vessel.mainBody != null && pair.Value.vessel.info.state == Vessel.State.ACTIVE)
-					{
-						VesselStatusInfo info = new VesselStatusInfo();
-						info.vesselName = pair.Value.vessel.vesselName;
-						info.ownerName = pair.Value.vessel.ownerName;
-						info.color = pair.Value.vessel.activeColor;
-						info.info = pair.Value.vessel.info;
-
-						if (pair.Value.vessel.orbitValid)
-							info.orbit = pair.Value.vessel.orbitRenderer.orbit;
-						else
-							info.orbit = null;
-
-						info.lastUpdateTime = pair.Value.lastUpdateTime;
-
-						if (display_vessels.TryGetValue(pair.Value.vessel.ownerName, out existing_vessel))
-						{
-							//If the same owner has two active vessels, use the one with the most recent update time
-							if (pair.Value.lastUpdateTime > existing_vessel.lastUpdateTime)
-								display_vessels[pair.Value.vessel.ownerName] = info;
-						}
-						else
-							display_vessels.Add(pair.Value.vessel.ownerName, info);
-					}
-
-				}
+				foreach (KeyValuePair<String, VesselStatusInfo> pair in otherPlayerStatus)
+					display_vessels.Add(pair.Key, pair.Value);
 
 				//Write your own vessel's status
-				if (UnityEngine.Time.time - playerVesselInfo.lastUpdateTime < TIMEOUT_DELAY)
-					display_vessels.Add(playerVesselInfo.ownerName, playerVesselInfo); 
+				if (UnityEngine.Time.time - playerStatus.lastUpdateTime < TIMEOUT_DELAY)
+					display_vessels.Add(playerStatus.ownerName, playerStatus); 
 
 				//Write other's vessel's statuses
 				foreach (KeyValuePair<String, VesselStatusInfo> pair in display_vessels)
-				{
 					vesselStatusLabels(pair.Value, big);
-				}
 
 				GUILayout.EndVertical();
 				GUILayout.EndScrollView();
@@ -891,15 +993,10 @@ namespace KerbalLiveFeed
 			KLFScreenshotDisplay.scrollPos = GUILayout.BeginScrollView(KLFScreenshotDisplay.scrollPos);
 			GUILayout.BeginVertical();
 
-			//Compile a list of the player names
-			HashSet<string> playernames = new HashSet<string>();
-			foreach (KeyValuePair<String, VesselEntry> pair in vessels)
+			foreach (KeyValuePair<String, VesselStatusInfo> pair in otherPlayerStatus)
 			{
-				playernames.Add(pair.Value.vessel.ownerName);
-			}
+				String name = pair.Key;
 
-			foreach (string name in playernames)
-			{
 				bool player_selected = GUILayout.Toggle(KLFScreenshotDisplay.watchPlayerName == name, name, GUI.skin.button);
 				if (player_selected && KLFScreenshotDisplay.watchPlayerName != name)
 					KLFScreenshotDisplay.watchPlayerName = name;
@@ -925,6 +1022,9 @@ namespace KerbalLiveFeed
 
 			if (big)
 				GUILayout.EndHorizontal();
+
+			if (info.info == null)
+				return;
 
 			StringBuilder sb = new StringBuilder();
 			bool status_determined = false;

@@ -35,7 +35,7 @@ namespace KerbalLiveFeed
 
 		public static bool globalUIEnabled = true;
 		public static bool infoDisplayActive = true;
-		public static bool infoDisplayMinimized = false;
+		public static bool infoDisplayMinimized = true;
 		public static bool infoDisplayDetailed = false;
 		public static bool infoDisplayBig = false;
 		public static bool hideOutsideGame = true;

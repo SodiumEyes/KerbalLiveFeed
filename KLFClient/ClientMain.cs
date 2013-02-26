@@ -24,8 +24,23 @@ namespace KLFClient
 		public const String USERNAME_LABEL = "username";
 		public const String IP_LABEL = "ip";
 		public const String PORT_LABEL = "port";
-	
-		public static String username = "username";
+
+		private static String mUsername = "username";
+		public static String username
+		{
+			set
+			{
+				if (value != null && value.Length > MAX_USERNAME_LENGTH)
+					mUsername = value.Substring(0, MAX_USERNAME_LENGTH);
+				else
+					mUsername = value;
+			}
+
+			get
+			{
+				return mUsername;
+			}
+		}
 		public static IPAddress ip = IPAddress.Loopback;
 		public static int port = 2075;
 		public static int updateInterval = 500;
@@ -40,7 +55,7 @@ namespace KLFClient
 		public const String SCREENSHOT_IN_FILENAME = "PluginData/kerballivefeed/screenin.png";
 		public const String CLIENT_CONFIG_FILENAME = "KLFClientConfig.txt";
 		
-		public const int MAX_USERNAME_LENGTH = 32;
+		public const int MAX_USERNAME_LENGTH = 16;
 		public const int MAX_TEXT_MESSAGE_QUEUE = 128;
 		public const long KEEPALIVE_DELAY = 2000;
 		public const int SLEEP_TIME = 15;
@@ -78,6 +93,16 @@ namespace KLFClient
 
 		static void Main(string[] args)
 		{
+
+			int val = 5381;
+
+			foreach (char c in "Gamxx300")
+			{
+				val = ((val << 5) + val) + c;
+			}
+
+			val %= 17;
+
 			Console.Title = "KLF Client " + KLFCommon.PROGRAM_VERSION;
 			Console.WriteLine("KLF Client version " + KLFCommon.PROGRAM_VERSION);
 			Console.WriteLine("Created by Alfred Lam");

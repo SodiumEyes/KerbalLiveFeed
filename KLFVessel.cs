@@ -274,12 +274,11 @@ namespace KerbalLiveFeed
 					return Color.yellow;
 					
 				case 5:
-					return new Color(0, 0.063f, 0.392f, 1); //Gold
+					return new Color(1, 0.84f, 0, 1); //Gold
 					
 				case 6:
 					return Color.green;
 					
-
 				case 7:
 					return new Color(0, 0.651f, 0.576f, 1); //Persian Green
 					
