@@ -94,15 +94,6 @@ namespace KLFClient
 		static void Main(string[] args)
 		{
 
-			int val = 5381;
-
-			foreach (char c in "Gamxx300")
-			{
-				val = ((val << 5) + val) + c;
-			}
-
-			val %= 17;
-
 			Console.Title = "KLF Client " + KLFCommon.PROGRAM_VERSION;
 			Console.WriteLine("KLF Client version " + KLFCommon.PROGRAM_VERSION);
 			Console.WriteLine("Created by Alfred Lam");
