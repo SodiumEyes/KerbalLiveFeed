@@ -16,6 +16,7 @@ namespace KLFServer
 		public const String JOIN_MESSAGE_LABEL = "joinMessage";
 		public const String UPDATE_INTERVAL_LABEL = "updateInterval";
 		public const String SCREENTSHOT_INTERVAL_LABEL = "screenshotInterval";
+		public const String SAVE_SCREENSHOTS = "saveScreenshots";
 		public const String AUTO_RESTART_LABEL = "autoRestart";
 		public const String UPNP_LABEL = "upnp";
 
@@ -25,6 +26,7 @@ namespace KLFServer
 		public int screenshotInterval = 3000;
 		public bool autoRestart = false;
 		public bool useUpnp = false;
+		public bool saveScreenshots = false;
 		public String joinMessage = String.Empty;
 
 		public const int MIN_UPDATE_INTERVAL = 20;
@@ -95,6 +97,12 @@ namespace KLFServer
 							if (bool.TryParse(line, out new_val))
 								autoRestart = new_val;
 						}
+						else if (label == SAVE_SCREENSHOTS)
+						{
+							bool new_val;
+							if (bool.TryParse(line, out new_val))
+								saveScreenshots = new_val;
+						}
 						else if (label == UPNP_LABEL)
 						{
 							bool new_val;
@@ -149,6 +157,10 @@ namespace KLFServer
 			//upnp
 			writer.WriteLine(UPNP_LABEL);
 			writer.WriteLine(useUpnp);
+
+			//save screenshots
+			writer.WriteLine(SAVE_SCREENSHOTS);
+			writer.WriteLine(saveScreenshots);
 
 			writer.Close();
 		}

@@ -57,6 +57,12 @@ namespace KLFServer
 				Console.WriteLine(settings.screenshotInterval);
 
 				Console.ForegroundColor = ConsoleColor.Green;
+				Console.Write("Save Screenshots: ");
+
+				Console.ResetColor();
+				Console.WriteLine(settings.saveScreenshots);
+
+				Console.ForegroundColor = ConsoleColor.Green;
 				Console.Write("Auto-Restart: ");
 
 				Console.ResetColor();
@@ -65,8 +71,8 @@ namespace KLFServer
 				Console.ResetColor();
 				Console.WriteLine();
 				Console.WriteLine("P: change port, M: change max clients, J: change join message");
-				Console.WriteLine("U: chage update interval, S: change screenshot interval, A: toggle auto-restart");
-				Console.WriteLine("H: begin hosting, Q: quit");
+				Console.WriteLine("U: update interval, SI: screenshot interval, SV: save screenshots");
+				Console.WriteLine("A: toggle auto-restart, H: begin hosting, Q: quit");
 
 				String in_string = Console.ReadLine().ToLower();
 
@@ -118,7 +124,7 @@ namespace KLFServer
 					else
 						Console.WriteLine("Invalid update interval");
 				}
-				else if (in_string == "s")
+				else if (in_string == "si")
 				{
 					Console.Write("Enter the screenshot interval: ");
 					int new_value;
@@ -129,6 +135,11 @@ namespace KLFServer
 					}
 					else
 						Console.WriteLine("Invalid update interval");
+				}
+				else if (in_string == "sv")
+				{
+					settings.saveScreenshots = !settings.saveScreenshots;
+					settings.writeConfigFile();
 				}
 				else if (in_string == "a")
 				{

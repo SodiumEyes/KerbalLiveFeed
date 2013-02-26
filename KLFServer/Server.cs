@@ -17,6 +17,9 @@ namespace KLFServer
 		public const bool SEND_UPDATES_TO_SENDER = false;
 		public const long CLIENT_TIMEOUT_DELAY = 8000;
 		public const int SLEEP_TIME = 15;
+		public const int MAX_SCREENSHOT_COUNT = 10000;
+
+		public const String SCREENSHOT_DIR = "klfScreenshots";
 
 		public int numClients;
 		
@@ -670,6 +673,9 @@ namespace KLFServer
 								break;
 							}
 						}
+
+						if (settings.saveScreenshots)
+							saveScreenshot(data, clients[client_index].username);
 					}
 
 					break;
@@ -753,6 +759,45 @@ namespace KLFServer
 			sendHandshakeRefusalMessage(clients[index].tcpClient, message);
 			clients[index].tcpClient.Close();
 			clientDisconnected(index);
+		}
+
+		public void saveScreenshot(byte[] bytes, String player)
+		{
+			if (!Directory.Exists(SCREENSHOT_DIR))
+			{
+				//Create the screenshot directory
+				try
+				{
+					if (!Directory.CreateDirectory(SCREENSHOT_DIR).Exists)
+						return;
+				}
+				catch (Exception)
+				{
+					return;
+				}
+			}
+
+			//Build the filename
+			StringBuilder sb = new StringBuilder();
+			sb.Append(SCREENSHOT_DIR);
+			sb.Append('/');
+			sb.Append(player);
+			sb.Append(' ');
+			sb.Append(System.DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss"));
+			sb.Append(".png");
+
+			//Write the screenshot to file
+			String filename = sb.ToString();
+			if (!File.Exists(filename))
+			{
+				try
+				{
+					File.WriteAllBytes(filename, bytes);
+				}
+				catch (Exception)
+				{
+				}
+			}
 		}
 
 		//Messages

@@ -583,10 +583,8 @@ namespace KerbalLiveFeed
 
 		private void shareScreenshot()
 		{
-			Texture2D full_screen_tex = new Texture2D(Screen.width, Screen.height, TextureFormat.RGB24, false);
-			full_screen_tex.ReadPixels(new Rect(0, 0, Screen.width, Screen.height), 0, 0);
-			full_screen_tex.Apply();
 
+			//Determine the dimensions of the screenshot
 			float aspect = (float)Screen.width / (float)Screen.height;
 			float ideal_aspect = KLFScreenshotDisplay.MAX_IMG_WIDTH / KLFScreenshotDisplay.MAX_IMG_HEIGHT;
 
@@ -595,30 +593,46 @@ namespace KerbalLiveFeed
 
 			if (aspect > ideal_aspect)
 			{
-				//Image is too wide
+				//Screen is wider than ideal aspect ratio
 				w = (int)KLFScreenshotDisplay.MAX_IMG_WIDTH;
 				h = (int)(KLFScreenshotDisplay.MAX_IMG_WIDTH / aspect);
 			}
 			else
 			{
-				//Image is too tall
+				//Screen is taller than ideal aspect ratio
 				w = (int)(KLFScreenshotDisplay.MAX_IMG_HEIGHT * aspect);
 				h = (int)KLFScreenshotDisplay.MAX_IMG_HEIGHT;
 			}
 
-			Texture2D resized_tex = new Texture2D(w, h);
+			//Read the screen pixels into a texture
+			Texture2D full_screen_tex = new Texture2D(Screen.width, Screen.height, TextureFormat.RGB24, false);
+			full_screen_tex.filterMode = FilterMode.Bilinear;
+			full_screen_tex.ReadPixels(new Rect(0, 0, Screen.width, Screen.height), 0, 0, false);
+			full_screen_tex.Apply();
 
-			for (int x = 0; x < w; x++)
+			RenderTexture render_tex = new RenderTexture(w, h, 24);
+			render_tex.useMipMap = false;
+
+			if (Screen.width > w * 2 || Screen.height > h * 2)
 			{
-				float u = (float)x / (float)w;
-				for (int y = 0; y < h; y++)
-				{
-					float v = (float)y / (float)h;
-					resized_tex.SetPixel(x, y, full_screen_tex.GetPixelBilinear(u, v));
-				}
-			}
+				//Blit the full texture to a double-sized texture to improve final quality
+				RenderTexture resize_tex = new RenderTexture(w * 2, h * 2, 24);
+				Graphics.Blit(full_screen_tex, resize_tex);
 
+				//Blit the double-sized texture to normal-sized texture
+				Graphics.Blit(resize_tex, render_tex);
+			}
+			else
+				Graphics.Blit(full_screen_tex, render_tex); //Blit the screen texture to a render texture
+
+			RenderTexture.active = render_tex;
+			
+			//Read the pixels from the render texture into a Texture2D
+			Texture2D resized_tex = new Texture2D(w, h, TextureFormat.RGB24, false);
+			resized_tex.ReadPixels(new Rect(0, 0, w, h), 0, 0);
 			resized_tex.Apply();
+
+			RenderTexture.active = null;
 
 			byte[] bytes = resized_tex.EncodeToPNG();
 			try
