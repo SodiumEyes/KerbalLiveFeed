@@ -41,7 +41,7 @@ namespace KLFClient
 				return mUsername;
 			}
 		}
-		public static IPAddress ip = IPAddress.Loopback;
+		public static String hostname = "localhost";
 		public static int port = 2075;
 		public static int updateInterval = 500;
 		public static int screenshotInterval = 1000;
@@ -115,10 +115,10 @@ namespace KLFClient
 				Console.WriteLine(username);
 
 				Console.ForegroundColor = ConsoleColor.Green;
-				Console.Write("Server IP Address: ");
+				Console.Write("Server Address: ");
 
 				Console.ResetColor();
-				Console.Write(ip.ToString());
+				Console.Write(hostname);
 
 				Console.ForegroundColor = ConsoleColor.Green;
 				Console.Write(" Port: ");
@@ -148,16 +148,12 @@ namespace KLFClient
 				}
 				else if (in_string == "ip")
 				{
-					Console.Write("Enter the IP Address: ");
+					Console.Write("Enter the IP Address/Host Name: ");
 
-					IPAddress new_ip;
-					if (IPAddress.TryParse(Console.ReadLine(), out new_ip))
 					{
-						ip = new_ip;
+						hostname = Console.ReadLine();
 						writeConfigFile();
 					}
-					else
-						Console.WriteLine("Invalid IP Address");
 				}
 				else if (in_string == "p") {
 					Console.Write("Enter the Port: ");
@@ -208,7 +204,29 @@ namespace KLFClient
 		static void connectionLoop()
 		{
 			tcpClient = new TcpClient();
-			IPEndPoint endpoint = new IPEndPoint(ip, port);
+
+			IPHostEntry host_entry = new IPHostEntry();
+			try
+			{
+				host_entry = Dns.GetHostEntry(hostname);
+				if (host_entry.AddressList.Length == 0)
+				{
+					Console.WriteLine("Invalid server address.");
+					return;
+				}
+			}
+			catch (SocketException)
+			{
+				Console.WriteLine("Invalid server address.");
+				return;
+			}
+			catch (ArgumentException)
+			{
+				Console.WriteLine("Invalid server address.");
+				return;
+			}
+
+			IPEndPoint endpoint = new IPEndPoint(host_entry.AddressList.First(), port);
 
 			Console.WriteLine("Connecting to server...");
 
@@ -1020,11 +1038,7 @@ namespace KLFClient
 						if (label == USERNAME_LABEL)
 							username = line;
 						else if (label == IP_LABEL)
-						{
-							IPAddress new_ip;
-							if (IPAddress.TryParse(line, out new_ip))
-								ip = new_ip;
-						}
+							hostname = line;
 						else if (label == PORT_LABEL)
 						{
 							int new_port;
@@ -1055,7 +1069,7 @@ namespace KLFClient
 
 			//ip
 			writer.WriteLine(IP_LABEL);
-			writer.WriteLine(ip);
+			writer.WriteLine(hostname);
 
 			//port
 			writer.WriteLine(PORT_LABEL);

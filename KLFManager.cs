@@ -63,7 +63,20 @@ namespace KerbalLiveFeed
 		{
 			get
 			{
-				return KLFInfoDisplay.globalUIEnabled && KLFInfoDisplay.infoDisplayActive;
+				switch (HighLogic.LoadedScene)
+				{
+					case GameScenes.SPACECENTER:
+					case GameScenes.EDITOR:
+					case GameScenes.FLIGHT:
+					case GameScenes.SPH:
+					case GameScenes.TRACKSTATION:
+					case GameScenes.QUICKFLIGHT:
+						return KLFInfoDisplay.globalUIEnabled && KLFInfoDisplay.infoDisplayActive;
+
+					default:
+						return false;
+				}
+				
 			}
 		}
 
@@ -161,7 +174,25 @@ namespace KerbalLiveFeed
 
 				String[] status_array = new String[STATUS_ARRAY_SIZE];
 				status_array[0] = playerName;
-				status_array[1] = "At Space Center";
+				switch (HighLogic.LoadedScene)
+				{
+					case GameScenes.SPACECENTER:
+						status_array[1] = "At Space Center";
+						break;
+					case GameScenes.EDITOR:
+						status_array[1] = "In Vehicle Assembly Building";
+						break;
+					case GameScenes.SPH:
+						status_array[1] = "In Space Plane Hangar";
+						break;
+					case GameScenes.TRACKSTATION:
+						status_array[1] = "At Tracking Station";
+						break;
+					default:
+						status_array[1] = String.Empty;
+						break;
+				}
+				
 
 				//Serialize the update
 				byte[] update_bytes = KSP.IO.IOUtils.SerializeToBinary(status_array);
@@ -1032,7 +1063,8 @@ namespace KerbalLiveFeed
 				GUILayout.BeginHorizontal();
 
 			GUILayout.Label(info.ownerName, playerNameStyle);
-			GUILayout.Label(info.vesselName, vesselNameStyle);
+			if (info.vesselName.Length > 0)
+				GUILayout.Label(info.vesselName, vesselNameStyle);
 
 			if (big)
 				GUILayout.EndHorizontal();
