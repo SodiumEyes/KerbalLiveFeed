@@ -625,7 +625,8 @@ namespace KLFServer
 						clients[client_index].watchPlayerName = watch_name;
 
 						//Try to find the player the client is watching and send the current screenshot
-						if (clients[client_index].watchPlayerName.Length > 0)
+						if (clients[client_index].watchPlayerName.Length > 0
+							&& clients[client_index].watchPlayerName != clients[client_index].username)
 						{
 							for (int i = 0; i < clients.Length; i++)
 							{
@@ -756,7 +757,8 @@ namespace KLFServer
 
 		public void disconnectClient(int index, String message)
 		{
-			sendHandshakeRefusalMessage(clients[index].tcpClient, message);
+			if (clients[index].tcpClient.Connected)
+				sendHandshakeRefusalMessage(clients[index].tcpClient, message);
 			clients[index].tcpClient.Close();
 			clientDisconnected(index);
 		}
@@ -841,6 +843,9 @@ namespace KLFServer
 			catch (System.ObjectDisposedException)
 			{
 			}
+			catch (System.InvalidOperationException)
+			{
+			}
 		}
 
 		private void sendHandshakeRefusalMessage(TcpClient client, String message)
@@ -863,6 +868,9 @@ namespace KLFServer
 			{
 			}
 			catch (System.ObjectDisposedException)
+			{
+			}
+			catch (System.InvalidOperationException)
 			{
 			}
 		}
@@ -888,6 +896,9 @@ namespace KLFServer
 			{
 			}
 			catch (System.ObjectDisposedException)
+			{
+			}
+			catch (System.InvalidOperationException)
 			{
 			}
 		}
@@ -928,6 +939,9 @@ namespace KLFServer
 			catch (System.ObjectDisposedException)
 			{
 			}
+			catch (System.InvalidOperationException)
+			{
+			}
 		}
 
 		private void sendPluginUpdate(TcpClient client, byte[] data)
@@ -947,6 +961,9 @@ namespace KLFServer
 			{
 			}
 			catch (System.ObjectDisposedException)
+			{
+			}
+			catch (System.InvalidOperationException)
 			{
 			}
 		}
@@ -973,6 +990,9 @@ namespace KLFServer
 			{
 			}
 			catch (System.ObjectDisposedException)
+			{
+			}
+			catch (System.InvalidOperationException)
 			{
 			}
 		}
@@ -1009,6 +1029,9 @@ namespace KLFServer
 			{
 			}
 			catch (System.ObjectDisposedException)
+			{
+			}
+			catch (System.InvalidOperationException)
 			{
 			}
 		}

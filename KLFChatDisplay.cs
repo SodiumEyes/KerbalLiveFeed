@@ -14,7 +14,7 @@ namespace KerbalLiveFeed
 		public const float WINDOW_HEIGHT = 360;
 		public const int MAX_CHAT_OUT_QUEUE = 4;
 		public const int MAX_CHAT_LINES = 16;
-		public const int MAX_CHAT_LINE_LENGTH = 47;
+		public const int MAX_CHAT_LINE_LENGTH = 128;
 		public static GUILayoutOption[] layoutOptions;
 
 		public static bool windowEnabled = false;

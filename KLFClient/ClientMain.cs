@@ -75,7 +75,8 @@ namespace KLFClient
 		public static Queue<String> pluginChatInQueue;
 		public static long lastChatInWriteTime;
 		public static long lastScreenshotShareTime;
-		public static byte[] queuedScreenshot;
+		public static byte[] queuedInScreenshot;
+		public static byte[] lastSharedScreenshot;
 		public static String watchPlayerName;
 
 		public static long lastMessageSendTime;
@@ -265,7 +266,8 @@ namespace KLFClient
 					threadException = null;
 
 					watchPlayerName = String.Empty;
-					queuedScreenshot = null;
+					queuedInScreenshot = null;
+					lastSharedScreenshot = null;
 					lastScreenshotShareTime = 0;
 					lastChatInWriteTime = 0;
 					lastMessageSendTime = 0;
@@ -483,10 +485,11 @@ namespace KLFClient
 
 				case KLFCommon.ServerMessageID.SCREENSHOT_SHARE:
 
-					if (data != null && data.Length > 0 && data.Length < KLFCommon.MAX_SCREENSHOT_BYTES)
+					if (data != null && data.Length > 0 && data.Length < KLFCommon.MAX_SCREENSHOT_BYTES
+						&& watchPlayerName.Length > 0 && watchPlayerName != username)
 					{
 						screenshotInMutex.WaitOne();
-						queuedScreenshot = data;
+						queuedInScreenshot = data;
 						screenshotInMutex.ReleaseMutex();
 					}
 					break;
@@ -508,6 +511,18 @@ namespace KLFClient
 
 					try
 					{
+
+						//Detect if the socket closed
+						if (tcpClient.Client.Poll(0, SelectMode.SelectRead))
+						{
+							byte[] buff = new byte[1];
+							if (tcpClient.Client.Receive(buff, SocketFlags.Peek) == 0)
+							{
+								// Client disconnected
+								stream_ended = true;
+								break;
+							}
+						}
 
 						//Read the message header
 						int num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
@@ -541,23 +556,20 @@ namespace KLFClient
 							header_bytes_read = 0;
 						}
 
-						//Detect if the socket closed
-						if (tcpClient.Client.Poll(0, SelectMode.SelectRead))
-						{
-							byte[] buff = new byte[1];
-							if (tcpClient.Client.Receive(buff, SocketFlags.Peek) == 0)
-							{
-								// Client disconnected
-								stream_ended = true;
-							}
-						}
-
 					}
 					catch (System.IO.IOException)
 					{
 						stream_ended = true;
 					}
+					catch (SocketException)
+					{
+						stream_ended = true;
+					}
 					catch (System.ObjectDisposedException)
+					{
+						stream_ended = true;
+					}
+					catch (System.Security.SecurityException)
 					{
 						stream_ended = true;
 					}
@@ -783,6 +795,14 @@ namespace KLFClient
 						tcpSendMutex.WaitOne();
 						sendShareScreenshotMesssage(bytes);
 						tcpSendMutex.ReleaseMutex();
+
+						lastSharedScreenshot = bytes;
+						if (watchPlayerName == username)
+						{
+							screenshotInMutex.WaitOne();
+							queuedInScreenshot = lastSharedScreenshot;
+							screenshotInMutex.ReleaseMutex();
+						}
 					}
 
 					File.Delete(SCREENSHOT_OUT_FILENAME);
@@ -812,14 +832,14 @@ namespace KLFClient
 
 		static void writeQueuedScreenshot()
 		{
-			if (queuedScreenshot != null && queuedScreenshot.Length > 0 && !File.Exists(SCREENSHOT_IN_FILENAME))
+			if (queuedInScreenshot != null && queuedInScreenshot.Length > 0 && !File.Exists(SCREENSHOT_IN_FILENAME))
 			{
 				screenshotInMutex.WaitOne();
 
 				try
 				{
-					File.WriteAllBytes(SCREENSHOT_IN_FILENAME, queuedScreenshot);
-					queuedScreenshot = null;
+					File.WriteAllBytes(SCREENSHOT_IN_FILENAME, queuedInScreenshot);
+					queuedInScreenshot = null;
 				}
 				catch (System.IO.FileNotFoundException)
 				{
@@ -865,7 +885,10 @@ namespace KLFClient
 						watchPlayerName = new_watch_player_name;
 
 						screenshotInMutex.WaitOne();
-						queuedScreenshot = null;
+						if (watchPlayerName != username)
+							queuedInScreenshot = null;
+						else
+							queuedInScreenshot = lastSharedScreenshot; //Show the player their last shared screenshot
 						screenshotInMutex.ReleaseMutex();
 
 						tcpSendMutex.WaitOne();

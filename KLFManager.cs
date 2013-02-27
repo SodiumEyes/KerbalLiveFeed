@@ -51,9 +51,7 @@ namespace KerbalLiveFeed
 		public String playerName = String.Empty;
 
 		public Dictionary<String, VesselEntry> vessels = new Dictionary<string, VesselEntry>();
-		public Dictionary<String, VesselStatusInfo> otherPlayerStatus = new Dictionary<string, VesselStatusInfo>();
-
-		public VesselStatusInfo playerStatus = new VesselStatusInfo();
+		public Dictionary<String, VesselStatusInfo> playerStatus = new Dictionary<string, VesselStatusInfo>();
 
 		private float lastUsernameReadTime = 0.0f;
 
@@ -138,14 +136,14 @@ namespace KerbalLiveFeed
 			delete_list.Clear();
 
 			//Delete outdated player status entries
-			foreach (KeyValuePair<String, VesselStatusInfo> pair in otherPlayerStatus)
+			foreach (KeyValuePair<String, VesselStatusInfo> pair in playerStatus)
 			{
 				if ((UnityEngine.Time.time - pair.Value.lastUpdateTime) > TIMEOUT_DELAY)
 					delete_list.Add(pair.Key);
 			}
 
 			foreach (String key in delete_list)
-				otherPlayerStatus.Remove(key);
+				playerStatus.Remove(key);
 		}
 
 		private void writePluginUpdate()
@@ -211,7 +209,11 @@ namespace KerbalLiveFeed
 				out_stream.Unlock(0, long.MaxValue);
 				out_stream.Dispose();
 
-				playerStatus = statusArrayToInfo(status_array);
+				VesselStatusInfo my_status = statusArrayToInfo(status_array);
+				if (playerStatus.ContainsKey(playerName))
+					playerStatus[playerName] = my_status;
+				else
+					playerStatus.Add(playerName, my_status);
 			}
 		}
 
@@ -447,15 +449,21 @@ namespace KerbalLiveFeed
 			//Write the serialized update to the stream
 			out_stream.Write(update_bytes, 0, update_bytes.Length);
 
-			if (vessel == FlightGlobals.ActiveVessel)
+			if (vessel == FlightGlobals.ActiveVessel && playerName.Length > 0)
 			{
 				//Update the player vessel info
-				playerStatus.info = update;
-				playerStatus.orbit = vessel.orbit;
-				playerStatus.color = KLFVessel.generateActiveColor(playerName);
-				playerStatus.ownerName = playerName;
-				playerStatus.vesselName = vessel.vesselName;
-				playerStatus.lastUpdateTime = UnityEngine.Time.time;
+				VesselStatusInfo my_status = new VesselStatusInfo();
+				my_status.info = update;
+				my_status.orbit = vessel.orbit;
+				my_status.color = KLFVessel.generateActiveColor(playerName);
+				my_status.ownerName = playerName;
+				my_status.vesselName = vessel.vesselName;
+				my_status.lastUpdateTime = UnityEngine.Time.time;
+
+				if (playerStatus.ContainsKey(playerName))
+					playerStatus[playerName] = my_status;
+				else
+					playerStatus.Add(playerName, my_status);
 			}
 
 		}
@@ -756,10 +764,10 @@ namespace KerbalLiveFeed
 
 				if (status.ownerName != null && status.ownerName.Length > 0)
 				{
-					if (otherPlayerStatus.ContainsKey(status.ownerName))
-						otherPlayerStatus[status.ownerName] = status;
+					if (playerStatus.ContainsKey(status.ownerName))
+						playerStatus[status.ownerName] = status;
 					else
-						otherPlayerStatus.Add(status.ownerName, status);
+						playerStatus.Add(status.ownerName, status);
 				}
 			}
 		}
@@ -780,10 +788,10 @@ namespace KerbalLiveFeed
 					status.lastUpdateTime = UnityEngine.Time.time;
 					status.color = KLFVessel.generateActiveColor(status.ownerName);
 
-					if (otherPlayerStatus.ContainsKey(status.ownerName))
-						otherPlayerStatus[status.ownerName] = status;
+					if (playerStatus.ContainsKey(status.ownerName))
+						playerStatus[status.ownerName] = status;
 					else
-						otherPlayerStatus.Add(status.ownerName, status);
+						playerStatus.Add(status.ownerName, status);
 				}
 				
 
@@ -898,10 +906,10 @@ namespace KerbalLiveFeed
 				status.lastUpdateTime = UnityEngine.Time.time;
 				status.color = KLFVessel.generateActiveColor(status.ownerName);
 
-				if (otherPlayerStatus.ContainsKey(status.ownerName))
-					otherPlayerStatus[status.ownerName] = status;
+				if (playerStatus.ContainsKey(status.ownerName))
+					playerStatus[status.ownerName] = status;
 				else
-					otherPlayerStatus.Add(status.ownerName, status);
+					playerStatus.Add(status.ownerName, status);
 			}
 		}
 
@@ -1103,18 +1111,8 @@ namespace KerbalLiveFeed
 				stateTextStyle.margin = new RectOffset(4, 0, 0, 0);
 				stateTextStyle.padding = new RectOffset(0, 0, 0, 0);
 
-				//Create a list of vessels to display, keyed by owner name
-				SortedDictionary<String, VesselStatusInfo> display_vessels = new SortedDictionary<string, VesselStatusInfo>();
-
-				foreach (KeyValuePair<String, VesselStatusInfo> pair in otherPlayerStatus)
-					display_vessels.Add(pair.Key, pair.Value);
-
-				//Write your own vessel's status
-				if (UnityEngine.Time.time - playerStatus.lastUpdateTime < TIMEOUT_DELAY)
-					display_vessels.Add(playerStatus.ownerName, playerStatus); 
-
-				//Write other's vessel's statuses
-				foreach (KeyValuePair<String, VesselStatusInfo> pair in display_vessels)
+				//Write vessel's statuses
+				foreach (KeyValuePair<String, VesselStatusInfo> pair in playerStatus)
 					vesselStatusLabels(pair.Value, big);
 
 				GUILayout.EndVertical();
@@ -1155,14 +1153,8 @@ namespace KerbalLiveFeed
 			KLFScreenshotDisplay.scrollPos = GUILayout.BeginScrollView(KLFScreenshotDisplay.scrollPos);
 			GUILayout.BeginVertical();
 
-			foreach (KeyValuePair<String, VesselStatusInfo> pair in otherPlayerStatus)
-			{
-				String name = pair.Key;
-
-				bool player_selected = GUILayout.Toggle(KLFScreenshotDisplay.watchPlayerName == name, name, GUI.skin.button);
-				if (player_selected && KLFScreenshotDisplay.watchPlayerName != name)
-					KLFScreenshotDisplay.watchPlayerName = name;
-			}
+			foreach (KeyValuePair<String, VesselStatusInfo> pair in playerStatus)
+				screenshotWatchButton(pair.Key);
 
 			GUILayout.EndVertical();
 			GUILayout.EndScrollView();
@@ -1182,6 +1174,10 @@ namespace KerbalLiveFeed
 			chatLineStyle.padding = new RectOffset(0, 0, 0, 0);
 			chatLineStyle.alignment = TextAnchor.LowerLeft;
 			chatLineStyle.wordWrap = true;
+			chatLineStyle.stretchWidth = false;
+
+			GUILayoutOption[] options = new GUILayoutOption[1];
+			options[0] = GUILayout.MaxWidth(KLFChatDisplay.WINDOW_WIDTH-16);
 
 			GUIStyle chat_entry_style = new GUIStyle(GUI.skin.textField);
 			chat_entry_style.stretchWidth = true;
@@ -1203,7 +1199,8 @@ namespace KerbalLiveFeed
 			KLFChatDisplay.chatEntryString = GUILayout.TextField(
 				KLFChatDisplay.chatEntryString,
 				KLFChatDisplay.MAX_CHAT_LINE_LENGTH,
-				chat_entry_style);
+				chat_entry_style,
+				options);
 
 			if (KLFChatDisplay.chatEntryString.Contains('\n') || GUILayout.Button("Send"))
 			{
@@ -1357,6 +1354,13 @@ namespace KerbalLiveFeed
 			}
 
 			GUILayout.Label(sb.ToString(), stateTextStyle);
+		}
+
+		private void screenshotWatchButton(String name)
+		{
+			bool player_selected = GUILayout.Toggle(KLFScreenshotDisplay.watchPlayerName == name, name, GUI.skin.button);
+			if (player_selected && KLFScreenshotDisplay.watchPlayerName != name)
+				KLFScreenshotDisplay.watchPlayerName = name;
 		}
         
 	}
