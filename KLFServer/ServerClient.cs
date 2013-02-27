@@ -47,29 +47,42 @@ namespace KLFServer
 
 				//Set the handshake timeout timer
 				mutex.WaitOne();
-				handshakeTimeoutTime = parent.currentMillisecond + HANDSHAKE_TIMEOUT_MS;
-				receivedHandshake = false;
-				mutex.ReleaseMutex();
+				try
+				{
+					handshakeTimeoutTime = parent.currentMillisecond + HANDSHAKE_TIMEOUT_MS;
+					receivedHandshake = false;
+				}
+				finally
+				{
+					mutex.ReleaseMutex();
+				}
 
 				//Console.WriteLine("Listening for message from client #" + clientIndex);
+
+				KLFCommon.ClientMessageID id = KLFCommon.ClientMessageID.HANDSHAKE;
+				byte[] message_data = null;
+				int msg_length = 0;
+				int data_bytes_read = 0;
 
 				while (!stream_ended)
 				{
 
 					bool message_received = false;
-					KLFCommon.ClientMessageID id = KLFCommon.ClientMessageID.HANDSHAKE;
-					byte[] message_data = null;
 					bool should_read = false;
 
 					mutex.WaitOne();
-
-					//Close the timeout if connection is invalid or the handshake has not been received in the alloted time
-					if (tcpClient == null || !tcpClient.Connected || (!receivedHandshake && handshakeTimeoutTime <= parent.currentMillisecond))
-						stream_ended = true;
-					else
-						should_read = tcpClient.GetStream().DataAvailable;
-
-					mutex.ReleaseMutex();
+					try
+					{
+						//Close the timeout if connection is invalid or the handshake has not been received in the alloted time
+						if (tcpClient == null || !tcpClient.Connected || (!receivedHandshake && handshakeTimeoutTime <= parent.currentMillisecond))
+							stream_ended = true;
+						else
+							should_read = tcpClient.GetStream().DataAvailable;
+					}
+					finally
+					{
+						mutex.ReleaseMutex();
+					}
 
 					if (stream_ended)
 						break;
@@ -102,6 +115,44 @@ namespace KLFServer
 
 						try
 						{
+							if (header_bytes_read < KLFCommon.MSG_HEADER_LENGTH)
+							{
+								//Read message header bytes
+								int num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
+								header_bytes_read += num_read;
+								if (header_bytes_read == KLFCommon.MSG_HEADER_LENGTH)
+								{
+									id = (KLFCommon.ClientMessageID)KLFCommon.intFromBytes(message_header, 0);
+									msg_length = KLFCommon.intFromBytes(message_header, 4);
+									if (msg_length > 0)
+										message_data = new byte[msg_length];
+									else
+										message_data = null;
+									data_bytes_read = 0;
+								}
+							}
+							else
+							{
+
+								if (msg_length > 0 && data_bytes_read < msg_length)
+								{
+									//Read the message data
+									int num_read = tcpClient.GetStream().Read(message_data, data_bytes_read, msg_length - data_bytes_read);
+									if (num_read > 0)
+										data_bytes_read += num_read;
+								}
+
+								if (data_bytes_read == msg_length)
+								{
+									header_bytes_read = 0;
+									data_bytes_read = 0;
+									msg_length = 0;
+									message_received = true;
+								}
+
+
+							}
+							/*
 							//Read the message header
 							int num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
 							header_bytes_read += num_read;
@@ -129,6 +180,7 @@ namespace KLFServer
 								header_bytes_read = 0;
 								message_received = true;
 							}
+							 */
 						}
 						catch (InvalidOperationException)
 						{
@@ -146,33 +198,71 @@ namespace KLFServer
 					if (message_received && parent != null)
 					{
 						mutex.WaitOne();
-						lastMessageTime = parent.stopwatch.ElapsedMilliseconds;
-						mutex.ReleaseMutex();
+						try
+						{
+							lastMessageTime = parent.stopwatch.ElapsedMilliseconds;
+						}
+						finally
+						{
+							mutex.ReleaseMutex();
+						}
 
-						parent.handleMessage(clientIndex, id, message_data); //Have the parent server handle the message
+						//Queue the message to be handled by the parent
+						parent.messageQueueMutex.WaitOne();
+						try
+						{
+							Server.ClientMessage message = new Server.ClientMessage();
+							message.clientIndex = clientIndex;
+							message.id = id;
+							message.data = message_data;
+							parent.clientMessageQueue.Enqueue(message);
+						}
+						finally
+						{
+							parent.messageQueueMutex.ReleaseMutex();
+						}
 					}
 
 					Thread.Sleep(Server.SLEEP_TIME);
 				}
-
+				
 				mutex.WaitOne();
-				tcpClient.Close();
-				mutex.ReleaseMutex();
-
-				parent.clientDisconnected(clientIndex);
-				messageThread.Abort();
-
+				try
+				{
+					tcpClient.Close();
+				}
+				finally
+				{
+					mutex.ReleaseMutex();
+				}
 			}
 			catch (ThreadAbortException)
 			{
+				try
+				{
+					mutex.ReleaseMutex();
+				}
+				catch (ApplicationException)
+				{
+				}
 			}
 			catch (Exception e)
 			{
+				try
+				{
+					mutex.ReleaseMutex();
+				}
+				catch (ApplicationException)
+				{
+				}
+
 				parent.threadExceptionMutex.WaitOne();
 				if (parent.threadException == null)
 					parent.threadException = e; //Pass exception to parent
 				parent.threadExceptionMutex.ReleaseMutex();
 			}
+
+			
 		}
 
 		internal void startMessageThread()

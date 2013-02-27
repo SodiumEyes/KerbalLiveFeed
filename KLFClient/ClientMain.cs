@@ -335,27 +335,11 @@ namespace KLFClient
 						Thread.Sleep(SLEEP_TIME);
 					}
 
-					//Obtain all mutexes and abort all threads
-					tcpSendMutex.WaitOne();
-					serverSettingsMutex.WaitOne();
-					pluginUpdateInMutex.WaitOne();
-					textMessageQueueMutex.WaitOne();
-					threadExceptionMutex.WaitOne();
-					screenshotInMutex.WaitOne();
-					pluginChatInMutex.WaitOne();
-
+					//Abort all threads
 					pluginUpdateThread.Abort();
 					chatThread.Abort();
 					incomingMessageThread.Abort();
 					screenshotUpdateThread.Abort();
-
-					tcpSendMutex.ReleaseMutex();
-					serverSettingsMutex.ReleaseMutex();
-					pluginUpdateInMutex.ReleaseMutex();
-					textMessageQueueMutex.ReleaseMutex();
-					threadExceptionMutex.ReleaseMutex();
-					screenshotInMutex.ReleaseMutex();
-					pluginChatInMutex.ReleaseMutex();
 
 					//Close the connection
 					Console.ForegroundColor = ConsoleColor.Red;
@@ -504,6 +488,10 @@ namespace KLFClient
 				byte[] message_header = new byte[KLFCommon.MSG_HEADER_LENGTH];
 				int header_bytes_read = 0;
 				bool stream_ended = false;
+				KLFCommon.ServerMessageID id = KLFCommon.ServerMessageID.HANDSHAKE;
+				int msg_length = 0;
+				byte[] message_data = null;
+				int data_bytes_read = 0;
 
 				//Start connection loop
 				while (!stream_ended && !endSession && tcpClient.Connected)
@@ -525,35 +513,47 @@ namespace KLFClient
 						}
 
 						//Read the message header
-						int num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
-						header_bytes_read += num_read;
-
-						if (header_bytes_read == KLFCommon.MSG_HEADER_LENGTH)
+						if (tcpClient.GetStream().DataAvailable)
 						{
-							KLFCommon.ServerMessageID id = (KLFCommon.ServerMessageID)KLFCommon.intFromBytes(message_header, 0);
-							int msg_length = KLFCommon.intFromBytes(message_header, 4);
 
-							byte[] message_data = null;
-
-							if (msg_length > 0)
+							if (header_bytes_read < KLFCommon.MSG_HEADER_LENGTH)
 							{
-								//Read the message data
-								message_data = new byte[msg_length];
-
-								int data_bytes_read = 0;
-
-								while (data_bytes_read < msg_length)
+								//Read message header bytes
+								int num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
+								header_bytes_read += num_read;
+								if (header_bytes_read == KLFCommon.MSG_HEADER_LENGTH)
 								{
-									num_read = tcpClient.GetStream().Read(message_data, data_bytes_read, msg_length - data_bytes_read);
-									if (num_read > 0)
-										data_bytes_read += num_read;
-
+									id = (KLFCommon.ServerMessageID)KLFCommon.intFromBytes(message_header, 0);
+									msg_length = KLFCommon.intFromBytes(message_header, 4);
+									if (msg_length > 0)
+										message_data = new byte[msg_length];
+									else
+										message_data = null;
+									data_bytes_read = 0;
 								}
 							}
+							else
+							{
 
-							handleMessage(id, message_data);
+								if (msg_length > 0 && data_bytes_read < msg_length)
+								{
+									//Read the message data
+									int num_read = tcpClient.GetStream().Read(message_data, data_bytes_read, msg_length - data_bytes_read);
+									if (num_read > 0)
+										data_bytes_read += num_read;
+								}
+								
+								if (msg_length == 0 || data_bytes_read == msg_length) {
+									handleMessage(id, message_data);
 
-							header_bytes_read = 0;
+									header_bytes_read = 0;
+									data_bytes_read = 0;
+									msg_length = 0;
+								}
+
+								
+							}
+
 						}
 
 					}

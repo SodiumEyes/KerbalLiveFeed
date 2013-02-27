@@ -14,6 +14,12 @@ namespace KLFServer
 	class Server
 	{
 
+		public struct ClientMessage {
+			public int clientIndex;
+			public KLFCommon.ClientMessageID id;
+			public byte[] data;
+		}
+
 		public const bool SEND_UPDATES_TO_SENDER = false;
 		public const long CLIENT_TIMEOUT_DELAY = 8000;
 		public const int SLEEP_TIME = 15;
@@ -25,12 +31,16 @@ namespace KLFServer
 		
 		public bool quit = false;
 
+		public Queue<ClientMessage> clientMessageQueue;
+
 		public String threadExceptionStackTrace;
 		public Exception threadException;
 		public Mutex threadExceptionMutex;
+		public Mutex messageQueueMutex;
 
 		public Thread listenThread;
 		public Thread commandThread;
+		public Thread handleMessageThread;
 		public TcpListener tcpListener;
 
 		public ServerClient[] clients;
@@ -73,9 +83,13 @@ namespace KLFServer
 
 			listenThread = new Thread(new ThreadStart(listenForClients));
 			commandThread = new Thread(new ThreadStart(handleCommands));
+			handleMessageThread = new Thread(new ThreadStart(handleReceivedMessages));
 
 			threadException = null;
 			threadExceptionMutex = new Mutex();
+			messageQueueMutex = new Mutex();
+
+			clientMessageQueue = new Queue<ClientMessage>();
 
 			tcpListener = new TcpListener(IPAddress.Any, settings.port);
 			listenThread.Start();
@@ -105,6 +119,7 @@ namespace KLFServer
 			Console.WriteLine("/kick <username>");
 
 			commandThread.Start();
+			handleMessageThread.Start();
 
 			while (!quit)
 			{
@@ -152,8 +167,8 @@ namespace KLFServer
 
 			//End threads
 			listenThread.Abort();
-
 			commandThread.Abort();
+			handleMessageThread.Abort();
 
 			for (int i = 0; i < clients.Length; i++)
 			{
@@ -353,6 +368,37 @@ namespace KLFServer
 			}
 		}
 
+		private void handleReceivedMessages()
+		{
+
+			try
+			{
+				while (true)
+				{
+					messageQueueMutex.WaitOne();
+					while (clientMessageQueue.Count > 0)
+					{
+						ClientMessage message = clientMessageQueue.Dequeue();
+						handleMessage(message.clientIndex, message.id, message.data);
+					}
+					messageQueueMutex.ReleaseMutex();
+
+					Thread.Sleep(SLEEP_TIME);
+				}
+			}
+			catch (ThreadAbortException)
+			{
+			}
+			catch (Exception e)
+			{
+				threadExceptionMutex.WaitOne();
+				if (threadException == null)
+					threadException = e; //Pass exception to main thread
+				threadExceptionMutex.ReleaseMutex();
+			}
+
+		}
+
 		private int addClient(TcpClient tcp_client)
 		{
 
@@ -364,13 +410,13 @@ namespace KLFServer
 			{
 				ServerClient client = clients[i];
 
-				client.mutex.WaitOne();
-
 				//Check if the client is valid
 				if (client.canBeReplaced && !clientIsValid(i))
 				{
 
 					//Add the client
+					client.mutex.WaitOne();
+
 					client.tcpClient = tcp_client;
 					client.username = "new user";
 					client.screenshot = null;
@@ -378,15 +424,13 @@ namespace KLFServer
 					client.canBeReplaced = false;
 					client.lastMessageTime = stopwatch.ElapsedMilliseconds;
 
+					client.mutex.ReleaseMutex();
+
 					client.startMessageThread();
 					numClients++;
 
-					client.mutex.ReleaseMutex();
-
 					return i;
 				}
-
-				client.mutex.ReleaseMutex();
 			}
 
 			return -1;
@@ -529,7 +573,6 @@ namespace KLFServer
 						{
 							if ((i != client_index) && clientIsReady(i))
 							{
-
 								clients[i].mutex.WaitOne();
 								sendServerMessage(clients[i].tcpClient, join_message);
 								clients[i].mutex.ReleaseMutex();
@@ -724,9 +767,10 @@ namespace KLFServer
 			}
 
 			if (commandThread != null && commandThread.ThreadState == System.Threading.ThreadState.Running)
-			{
 				commandThread.Abort();
-			}
+
+			if (handleMessageThread != null && handleMessageThread.ThreadState == System.Threading.ThreadState.Running)
+				handleMessageThread.Abort();
 
 			if (clients != null)
 			{
@@ -759,7 +803,12 @@ namespace KLFServer
 		{
 			if (clients[index].tcpClient.Connected)
 				sendHandshakeRefusalMessage(clients[index].tcpClient, message);
+
+			if (clients[index].messageThread.ThreadState == System.Threading.ThreadState.Running)
+				clients[index].messageThread.Abort();
+
 			clients[index].tcpClient.Close();
+
 			clientDisconnected(index);
 		}
 
