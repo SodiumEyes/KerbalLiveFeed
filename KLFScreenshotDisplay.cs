@@ -20,7 +20,7 @@ namespace KerbalLiveFeed
 		public static bool windowEnabled = false;
 		public static String watchPlayerName = String.Empty;
 		public static Texture2D texture;
-		public static Rect windowPos = new Rect(Screen.height / 2 - WINDOW_WIDTH / 2, Screen.height / 2 - WINDOW_HEIGHT / 2, WINDOW_WIDTH, WINDOW_HEIGHT);
+		public static Rect windowPos = new Rect(Screen.width / 2 - WINDOW_WIDTH / 2, Screen.height / 2 - WINDOW_HEIGHT / 2, WINDOW_WIDTH, WINDOW_HEIGHT);
 		public static Vector2 scrollPos = Vector2.zero;
 
 		public static int size = 0;

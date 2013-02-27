@@ -53,12 +53,17 @@ namespace KLFClient
 		public const String PLUGIN_DATA_FILENAME = "PluginData/kerballivefeed/plugindata.txt";
 		public const String SCREENSHOT_OUT_FILENAME = "PluginData/kerballivefeed/screenout.png";
 		public const String SCREENSHOT_IN_FILENAME = "PluginData/kerballivefeed/screenin.png";
+		public const String CHAT_IN_FILENAME = "PluginData/kerballivefeed/chatin.txt";
+		public const String CHAT_OUT_FILENAME = "PluginData/kerballivefeed/chatout.txt";
 		public const String CLIENT_CONFIG_FILENAME = "KLFClientConfig.txt";
 		
 		public const int MAX_USERNAME_LENGTH = 16;
 		public const int MAX_TEXT_MESSAGE_QUEUE = 128;
 		public const long KEEPALIVE_DELAY = 2000;
 		public const int SLEEP_TIME = 15;
+		public const int CHAT_IN_WRITE_INTERVAL = 500;
+
+		public const int MAX_QUEUED_CHAT_LINES = 8;
 
 		public const String PLUGIN_DIRECTORY = "PluginData/kerballivefeed/";
 
@@ -67,7 +72,8 @@ namespace KLFClient
 
 		public static Queue<byte[]> pluginUpdateInQueue;
 		public static Queue<InTextMessage> textMessageQueue;
-
+		public static Queue<String> pluginChatInQueue;
+		public static long lastChatInWriteTime;
 		public static long lastScreenshotShareTime;
 		public static byte[] queuedScreenshot;
 		public static String watchPlayerName;
@@ -79,6 +85,7 @@ namespace KLFClient
 		public static Mutex textMessageQueueMutex;
 		public static Mutex serverSettingsMutex;
 		public static Mutex screenshotInMutex;
+		public static Mutex pluginChatInMutex;
 
 		public static String threadExceptionStackTrace;
 		public static Exception threadException;
@@ -241,6 +248,7 @@ namespace KLFClient
 
 					pluginUpdateInQueue = new Queue<byte[]>();
 					textMessageQueue = new Queue<InTextMessage>();
+					pluginChatInQueue = new Queue<string>();
 
 					tcpSendMutex = new Mutex();
 					pluginUpdateInMutex = new Mutex();
@@ -248,13 +256,14 @@ namespace KLFClient
 					textMessageQueueMutex = new Mutex();
 					threadExceptionMutex = new Mutex();
 					screenshotInMutex = new Mutex();
+					pluginChatInMutex = new Mutex();
 
 					threadException = null;
 
 					watchPlayerName = String.Empty;
 					queuedScreenshot = null;
 					lastScreenshotShareTime = 0;
-
+					lastChatInWriteTime = 0;
 					lastMessageSendTime = 0;
 
 					//Create a thread to handle plugin updates
@@ -279,6 +288,13 @@ namespace KLFClient
 						Directory.CreateDirectory(PLUGIN_DIRECTORY);
 					}
 
+					//Delete and in/out files, because they are probably remnants from another session
+					safeDelete(IN_FILENAME);
+					safeDelete(OUT_FILENAME);
+					safeDelete(CHAT_IN_FILENAME);
+					safeDelete(CHAT_OUT_FILENAME);
+					safeDelete(CLIENT_DATA_FILENAME);
+
 					//Create a file to pass the username to the plugin
 					FileStream client_data_stream = File.Open(CLIENT_DATA_FILENAME, FileMode.OpenOrCreate);
 
@@ -286,35 +302,6 @@ namespace KLFClient
 					byte[] username_bytes = encoder.GetBytes(username);
 					client_data_stream.Write(username_bytes, 0, username_bytes.Length);
 					client_data_stream.Close();
-
-					//Delete and in/out files, because they are probably remnants from another session
-					if (File.Exists(IN_FILENAME))
-					{
-						try
-						{
-							File.Delete(IN_FILENAME);
-						}
-						catch (System.UnauthorizedAccessException)
-						{
-						}
-						catch (System.IO.IOException)
-						{
-						}
-					}
-
-					if (File.Exists(OUT_FILENAME))
-					{
-						try
-						{
-							File.Delete(OUT_FILENAME);
-						}
-						catch (System.UnauthorizedAccessException)
-						{
-						}
-						catch (System.IO.IOException)
-						{
-						}
-					}
 
 					endSession = false;
 
@@ -349,6 +336,7 @@ namespace KLFClient
 					textMessageQueueMutex.WaitOne();
 					threadExceptionMutex.WaitOne();
 					screenshotInMutex.WaitOne();
+					pluginChatInMutex.WaitOne();
 
 					pluginUpdateThread.Abort();
 					chatThread.Abort();
@@ -361,6 +349,7 @@ namespace KLFClient
 					textMessageQueueMutex.ReleaseMutex();
 					threadExceptionMutex.ReleaseMutex();
 					screenshotInMutex.ReleaseMutex();
+					pluginChatInMutex.ReleaseMutex();
 
 					//Close the connection
 					Console.ForegroundColor = ConsoleColor.Red;
@@ -443,6 +432,10 @@ namespace KLFClient
 					enqueueTextMessage(in_message);
 					textMessageQueueMutex.ReleaseMutex();
 
+					pluginChatInMutex.WaitOne();
+					enqueuePluginChatMessage("[Server] "+in_message.message);
+					pluginChatInMutex.ReleaseMutex();
+
 					break;
 
 				case KLFCommon.ServerMessageID.TEXT_MESSAGE:
@@ -456,6 +449,10 @@ namespace KLFClient
 					textMessageQueueMutex.WaitOne();
 					enqueueTextMessage(in_message);
 					textMessageQueueMutex.ReleaseMutex();
+
+					pluginChatInMutex.WaitOne();
+					enqueuePluginChatMessage(in_message.message);
+					pluginChatInMutex.ReleaseMutex();
 
 					break;
 
@@ -769,7 +766,7 @@ namespace KLFClient
 
 		static bool readSharedScreenshot()
 		{
-			//Send outgoing plugin updates to server
+			//Send shared screenshots to server
 			if (File.Exists(SCREENSHOT_OUT_FILENAME))
 			{
 
@@ -993,6 +990,14 @@ namespace KLFClient
 						textMessageQueueMutex.ReleaseMutex();
 					}
 
+					if (stopwatch.ElapsedMilliseconds - lastChatInWriteTime >= CHAT_IN_WRITE_INTERVAL)
+					{
+						if (writeChatIn())
+							lastChatInWriteTime = stopwatch.ElapsedMilliseconds;
+					}
+
+					readChatOut();
+
 					Thread.Sleep(SLEEP_TIME);
 				}
 
@@ -1008,6 +1013,100 @@ namespace KLFClient
 			}
 		}
 
+		static bool writeChatIn()
+		{
+			bool success = false;
+
+			if (pluginChatInQueue.Count > 0 && !File.Exists(CHAT_IN_FILENAME))
+			{
+				pluginChatInMutex.WaitOne();
+
+				try
+				{
+					//Write chat in
+					StreamWriter in_stream = File.CreateText(CHAT_IN_FILENAME);
+
+					while (pluginChatInQueue.Count > 0)
+						in_stream.WriteLine(pluginChatInQueue.Dequeue());
+
+					in_stream.Close();
+
+					success = true;
+				}
+				catch (System.IO.FileNotFoundException)
+				{
+				}
+				catch (System.UnauthorizedAccessException)
+				{
+				}
+				catch (System.IO.DirectoryNotFoundException)
+				{
+				}
+				catch (System.InvalidOperationException)
+				{
+				}
+				catch (System.IO.IOException)
+				{
+				}
+
+				pluginChatInMutex.ReleaseMutex();
+			}
+
+			return success;
+		}
+
+		static void readChatOut()
+		{
+			if (File.Exists(CHAT_OUT_FILENAME))
+			{
+
+				try
+				{
+					byte[] bytes = File.ReadAllBytes(CHAT_OUT_FILENAME);
+
+					if (bytes != null && bytes.Length > 0)
+					{
+						ASCIIEncoding encoder = new ASCIIEncoding();
+						String[] lines = encoder.GetString(bytes, 0, bytes.Length).Split('\n');
+
+						tcpSendMutex.WaitOne();
+						foreach (String line in lines)
+						{
+							if (line.Length > 0)
+							{
+								InTextMessage message = new InTextMessage();
+								message.fromServer = false;
+								message.message = "[" + username + "] " + line;
+								enqueueTextMessage(message);
+
+								sendTextMessage(line);
+							}
+						}
+						tcpSendMutex.ReleaseMutex();
+					}
+
+					File.Delete(CHAT_OUT_FILENAME);
+
+				}
+				catch (System.IO.FileNotFoundException)
+				{
+				}
+				catch (System.UnauthorizedAccessException)
+				{
+				}
+				catch (System.IO.DirectoryNotFoundException)
+				{
+				}
+				catch (System.InvalidOperationException)
+				{
+				}
+				catch (System.IO.IOException)
+				{
+				}
+
+			}
+		}
+
 		static void enqueueTextMessage(InTextMessage message)
 		{
 			//Dequeue an old text message if there are a lot of messages backed up
@@ -1015,6 +1114,30 @@ namespace KLFClient
 				textMessageQueue.Dequeue();
 
 			textMessageQueue.Enqueue(message);
+		}
+
+		static void enqueuePluginChatMessage(String message)
+		{
+			pluginChatInQueue.Enqueue(message);
+			while (pluginChatInQueue.Count > MAX_QUEUED_CHAT_LINES)
+				pluginChatInQueue.Dequeue();
+		}
+
+		static void safeDelete(String filename)
+		{
+			if (File.Exists(filename))
+			{
+				try
+				{
+					File.Delete(filename);
+				}
+				catch (System.UnauthorizedAccessException)
+				{
+				}
+				catch (System.IO.IOException)
+				{
+				}
+			}
 		}
 
 		//Config

@@ -37,6 +37,8 @@ namespace KerbalLiveFeed
 		public const String PLUGIN_DATA_FILENAME = "plugindata.txt";
 		public const String SCREENSHOT_OUT_FILENAME = "screenout.png";
 		public const String SCREENSHOT_IN_FILENAME = "screenin.png";
+		public const String CHAT_OUT_FILENAME = "chatout.txt";
+		public const String CHAT_IN_FILENAME = "chatin.txt";
 
 		public const float INACTIVE_VESSEL_RANGE = 400000000.0f;
 		public const int MAX_INACTIVE_VESSELS = 4;
@@ -57,7 +59,7 @@ namespace KerbalLiveFeed
 
 		private Queue<KLFVesselUpdate> vesselUpdateQueue = new Queue<KLFVesselUpdate>();
 
-		GUIStyle playerNameStyle, vesselNameStyle, stateTextStyle;
+		GUIStyle playerNameStyle, vesselNameStyle, stateTextStyle, chatLineStyle;
 
 		public bool shouldDrawGUI
 		{
@@ -102,6 +104,9 @@ namespace KerbalLiveFeed
 			readUpdatesFromFile();
 			readScreenshotFromFile();
 			writePluginData();
+
+			readChatInFromFile();
+			writeChatToFile();
 
 			//Update the positions of all the vessels
 
@@ -593,6 +598,68 @@ namespace KerbalLiveFeed
 			}
 		}
 
+		private void readChatInFromFile()
+		{
+			if (KSP.IO.File.Exists<KLFManager>(CHAT_IN_FILENAME))
+			{
+				byte[] in_bytes = null;
+
+				try
+				{
+					in_bytes = KSP.IO.File.ReadAllBytes<KLFManager>(CHAT_IN_FILENAME); //Read the screenshot
+
+					//Delete the screenshot now that it's been read
+					KSP.IO.File.Delete<KLFManager>(CHAT_IN_FILENAME);
+
+				}
+				catch (KSP.IO.IOException)
+				{
+					in_bytes = null;
+				}
+
+				if (in_bytes != null)
+				{
+					ASCIIEncoding encoder = new ASCIIEncoding();
+					String chat_in_string = encoder.GetString(in_bytes);
+					String[] lines = chat_in_string.Split('\n');
+					foreach (String line in lines)
+					{
+						if (line.Length > 0)
+							KLFChatDisplay.enqueueChatLine(line);
+					}
+				}
+			}
+		}
+
+		private void writeChatToFile()
+		{
+			if (KLFChatDisplay.chatOutQueue.Count > 0 && !KSP.IO.File.Exists<KLFManager>(CHAT_OUT_FILENAME))
+			{
+				try
+				{
+
+					KSP.IO.FileStream out_stream = KSP.IO.File.Create<KLFManager>(CHAT_OUT_FILENAME);
+					out_stream.Lock(0, long.MaxValue);
+
+					ASCIIEncoding encoder = new ASCIIEncoding();
+
+					while (KLFChatDisplay.chatOutQueue.Count > 0)
+					{
+						byte[] bytes = encoder.GetBytes(KLFChatDisplay.chatOutQueue.Dequeue() + '\n');
+						out_stream.Write(bytes, 0, bytes.Length);
+					}
+					
+					out_stream.Unlock(0, long.MaxValue);
+					out_stream.Flush();
+					out_stream.Dispose();
+
+				}
+				catch (KSP.IO.IOException)
+				{
+				}
+			}
+		}
+
 		private VesselStatusInfo statusArrayToInfo(String[] status_array)
 		{
 			if (status_array != null && status_array.Length == STATUS_ARRAY_SIZE)
@@ -850,6 +917,33 @@ namespace KerbalLiveFeed
 			return KLFCommon.intFromBytes(bytes);
 		}
 
+		private void safeDelete(String filename)
+		{
+			if (KSP.IO.File.Exists<KLFManager>(filename))
+			{
+				try
+				{
+					KSP.IO.File.Delete<KLFManager>(filename);
+				}
+				catch (KSP.IO.IOException)
+				{
+				}
+			}
+		}
+
+		private void enqueueChatOutMessage(String message)
+		{
+			String line = message.Replace("\n", "");
+			if (line.Length > 0)
+			{
+				KLFChatDisplay.chatOutQueue.Enqueue(line);
+				while (KLFChatDisplay.chatOutQueue.Count > KLFChatDisplay.MAX_CHAT_OUT_QUEUE)
+					KLFChatDisplay.chatOutQueue.Dequeue();
+
+				KLFChatDisplay.enqueueChatLine("[" + playerName + "] " + line);
+			}
+		}
+
 		//MonoBehaviour
 
 		public void Awake()
@@ -857,6 +951,11 @@ namespace KerbalLiveFeed
 			DontDestroyOnLoad(this);
 			CancelInvoke();
 			InvokeRepeating("updateStep", 1/60.0f, 1/60.0f);
+
+			//Delete remnant in files
+			safeDelete(IN_FILENAME);
+			safeDelete(SCREENSHOT_IN_FILENAME);
+			safeDelete(CHAT_IN_FILENAME);
 		}
 
 		public void Update()
@@ -870,7 +969,6 @@ namespace KerbalLiveFeed
 
 			if (Input.GetKeyDown(KeyCode.F8))
 				shareScreenshot();
-
 		}
 
 		public void OnGUI()
@@ -878,6 +976,7 @@ namespace KerbalLiveFeed
 			if (shouldDrawGUI)
 			{
 
+				//Init info display options
 				if (KLFInfoDisplay.layoutOptions == null)
 					KLFInfoDisplay.layoutOptions = new GUILayoutOption[6];
 
@@ -913,6 +1012,12 @@ namespace KerbalLiveFeed
 					}
 				}
 
+				//Init chat display options
+				if (KLFChatDisplay.layoutOptions == null)
+					KLFChatDisplay.layoutOptions = new GUILayoutOption[1];
+
+				KLFChatDisplay.layoutOptions[0] = GUILayout.MaxWidth(KLFChatDisplay.WINDOW_WIDTH);
+
 				GUI.skin = HighLogic.Skin;
 				KLFInfoDisplay.infoWindowPos = GUILayout.Window(
 					999999,
@@ -929,6 +1034,17 @@ namespace KerbalLiveFeed
 						KLFScreenshotDisplay.windowPos,
 						screenshotWindow,
 						"Kerbal LiveFeed Viewer"
+						);
+				}
+
+				if (KLFChatDisplay.windowEnabled)
+				{
+					KLFChatDisplay.windowPos = GUILayout.Window(
+						999997,
+						KLFChatDisplay.windowPos,
+						chatWindow,
+						"Kerbal LiveFeed Chat",
+						KLFChatDisplay.layoutOptions
 						);
 				}
 
@@ -1005,6 +1121,7 @@ namespace KerbalLiveFeed
 				GUILayout.EndScrollView();
 
 				GUILayout.BeginHorizontal();
+				KLFChatDisplay.windowEnabled = GUILayout.Toggle(KLFChatDisplay.windowEnabled, "Chat", GUI.skin.button);
 				KLFScreenshotDisplay.windowEnabled = GUILayout.Toggle(KLFScreenshotDisplay.windowEnabled, "Viewer", GUI.skin.button);
 				if (GUILayout.Button("Share Screen (F8)"))
 					shareScreenshot();
@@ -1051,6 +1168,50 @@ namespace KerbalLiveFeed
 			GUILayout.EndScrollView();
 
 			GUILayout.EndHorizontal();
+
+			GUI.DragWindow();
+		}
+
+		private void chatWindow(int windowID)
+		{
+
+			//Init label styles
+			chatLineStyle = new GUIStyle(GUI.skin.label);
+			chatLineStyle.normal.textColor = Color.white;
+			chatLineStyle.margin = new RectOffset(0, 0, 0, 0);
+			chatLineStyle.padding = new RectOffset(0, 0, 0, 0);
+			chatLineStyle.alignment = TextAnchor.LowerLeft;
+			chatLineStyle.wordWrap = true;
+
+			GUIStyle chat_entry_style = new GUIStyle(GUI.skin.textField);
+			chat_entry_style.stretchWidth = true;
+
+			GUILayout.BeginVertical();
+			KLFChatDisplay.scrollPos = GUILayout.BeginScrollView(KLFChatDisplay.scrollPos);
+
+			//Chat text
+			GUILayout.BeginVertical();
+
+			foreach (String line in KLFChatDisplay.chatLineQueue)
+				GUILayout.Label(line, chatLineStyle);
+
+			GUILayout.EndVertical();
+
+			GUILayout.EndScrollView();
+
+			//Entry text field
+			KLFChatDisplay.chatEntryString = GUILayout.TextField(
+				KLFChatDisplay.chatEntryString,
+				KLFChatDisplay.MAX_CHAT_LINE_LENGTH,
+				chat_entry_style);
+
+			if (KLFChatDisplay.chatEntryString.Contains('\n') || GUILayout.Button("Send"))
+			{
+				enqueueChatOutMessage(KLFChatDisplay.chatEntryString);
+				KLFChatDisplay.chatEntryString = String.Empty;
+			}
+
+			GUILayout.EndVertical();
 
 			GUI.DragWindow();
 		}
