@@ -216,24 +216,28 @@ namespace KLFClient
 			try
 			{
 				host_entry = Dns.GetHostEntry(hostname);
-				if (host_entry.AddressList.Length == 0)
-				{
-					Console.WriteLine("Invalid server address.");
-					return;
-				}
 			}
 			catch (SocketException)
 			{
-				Console.WriteLine("Invalid server address.");
-				return;
+				host_entry = null;
 			}
 			catch (ArgumentException)
 			{
+				host_entry = null;
+			}
+
+			IPAddress address = null;
+			if (host_entry != null && host_entry.AddressList.Length == 1)
+				address = host_entry.AddressList.First();
+			else
+				IPAddress.TryParse(hostname, out address);
+
+			if (address == null) {
 				Console.WriteLine("Invalid server address.");
 				return;
 			}
 
-			IPEndPoint endpoint = new IPEndPoint(host_entry.AddressList.First(), port);
+			IPEndPoint endpoint = new IPEndPoint(address, port);
 
 			Console.WriteLine("Connecting to server...");
 
