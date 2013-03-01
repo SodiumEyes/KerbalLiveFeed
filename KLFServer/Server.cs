@@ -97,25 +97,6 @@ namespace KLFServer
 			tcpListener = new TcpListener(IPAddress.Any, settings.port);
 			listenThread.Start();
 
-			bool upnp_enabled = false;
-			/*
-			//Try to forward the port using UPnP
-			try
-			{
-				if (settings.useUpnp && UPnP.NAT.Discover())
-				{
-					stampedConsoleWriteLine("NAT Firewall discovered! Users won't be able to connect unless port "+settings.port+" is forwarded.");
-					stampedConsoleWriteLine("External IP: " + UPnP.NAT.GetExternalIP().ToString());
-					UPnP.NAT.ForwardPort(settings.port, ProtocolType.Tcp, "KLF (TCP)");
-					stampedConsoleWriteLine("Forwarded port " + settings.port + " with UPnP");
-					upnp_enabled = true;
-				}
-			}
-			catch (Exception)
-			{
-			}
-			 */
-
 			Console.WriteLine("Commands:");
 			Console.WriteLine("/quit - quit");
 			Console.WriteLine("/kick <username>");
@@ -160,18 +141,6 @@ namespace KLFServer
 
 				clients[i].mutex.ReleaseMutex();
 
-			}
-
-			if (upnp_enabled)
-			{
-				//Delete port forwarding rule
-				try
-				{
-					UPnP.NAT.DeleteForwardingRule(settings.port, ProtocolType.Tcp);
-				}
-				catch (Exception)
-				{
-				}
 			}
 
 			tcpListener.Stop();
