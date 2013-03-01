@@ -22,7 +22,7 @@ namespace KLFServer
 		public Server parent;
 		public Mutex mutex;
 
-		public long handshakeTimeoutTime;
+		public long connectionStartTime;
 		public bool receivedHandshake;
 		public bool canBeReplaced;
 		public long lastMessageTime;
@@ -45,19 +45,7 @@ namespace KLFServer
 
 				bool stream_ended = false;
 
-				//Set the handshake timeout timer
-				mutex.WaitOne();
-				try
-				{
-					handshakeTimeoutTime = parent.currentMillisecond + HANDSHAKE_TIMEOUT_MS;
-					receivedHandshake = false;
-				}
-				finally
-				{
-					mutex.ReleaseMutex();
-				}
-
-				//Console.WriteLine("Listening for message from client #" + clientIndex);
+				Server.debugConsoleWriteLine("Starting client message thread #" + clientIndex);
 
 				KLFCommon.ClientMessageID id = KLFCommon.ClientMessageID.HANDSHAKE;
 				byte[] message_data = null;
@@ -74,7 +62,7 @@ namespace KLFServer
 					try
 					{
 						//Close the timeout if connection is invalid or the handshake has not been received in the alloted time
-						if (tcpClient == null || !tcpClient.Connected || (!receivedHandshake && handshakeTimeoutTime <= parent.currentMillisecond))
+						if (tcpClient == null || !tcpClient.Connected)
 							stream_ended = true;
 						else
 							should_read = tcpClient.GetStream().DataAvailable;
@@ -124,6 +112,9 @@ namespace KLFServer
 								{
 									id = (KLFCommon.ClientMessageID)KLFCommon.intFromBytes(message_header, 0);
 									msg_length = KLFCommon.intFromBytes(message_header, 4);
+
+									Server.debugConsoleWriteLine("Read message id: " + id.ToString() + " data: " + msg_length);
+
 									if (msg_length > 0)
 										message_data = new byte[msg_length];
 									else
@@ -197,10 +188,11 @@ namespace KLFServer
 
 					if (message_received && parent != null)
 					{
+						//Update the last message received timestamp
 						mutex.WaitOne();
 						try
 						{
-							lastMessageTime = parent.stopwatch.ElapsedMilliseconds;
+							lastMessageTime = parent.currentMillisecond;
 						}
 						finally
 						{
@@ -216,6 +208,8 @@ namespace KLFServer
 							message.id = id;
 							message.data = message_data;
 							parent.clientMessageQueue.Enqueue(message);
+
+							Server.debugConsoleWriteLine("Queuing received message: " + id.ToString());
 						}
 						finally
 						{
@@ -262,6 +256,7 @@ namespace KLFServer
 				parent.threadExceptionMutex.ReleaseMutex();
 			}
 
+			Server.debugConsoleWriteLine("Ending client message thread.");
 			
 		}
 

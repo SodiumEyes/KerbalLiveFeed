@@ -21,6 +21,7 @@ namespace KLFServer
 		}
 
 		public const bool SEND_UPDATES_TO_SENDER = false;
+		public const bool DEBUG_OUT = false;
 		public const long CLIENT_TIMEOUT_DELAY = 8000;
 		public const int SLEEP_TIME = 15;
 		public const int MAX_SCREENSHOT_COUNT = 10000;
@@ -41,6 +42,7 @@ namespace KLFServer
 		public Thread listenThread;
 		public Thread commandThread;
 		public Thread handleMessageThread;
+		public Thread disconnectThread;
 		public TcpListener tcpListener;
 
 		public ServerClient[] clients;
@@ -84,6 +86,7 @@ namespace KLFServer
 			listenThread = new Thread(new ThreadStart(listenForClients));
 			commandThread = new Thread(new ThreadStart(handleCommands));
 			handleMessageThread = new Thread(new ThreadStart(handleReceivedMessages));
+			disconnectThread = new Thread(new ThreadStart(handleDisconnects));
 
 			threadException = null;
 			threadExceptionMutex = new Mutex();
@@ -94,25 +97,24 @@ namespace KLFServer
 			tcpListener = new TcpListener(IPAddress.Any, settings.port);
 			listenThread.Start();
 
-			//Try to forward the port using UPnP
 			bool upnp_enabled = false;
+			/*
+			//Try to forward the port using UPnP
 			try
 			{
-				if (UPnP.NAT.Discover())
+				if (settings.useUpnp && UPnP.NAT.Discover())
 				{
 					stampedConsoleWriteLine("NAT Firewall discovered! Users won't be able to connect unless port "+settings.port+" is forwarded.");
 					stampedConsoleWriteLine("External IP: " + UPnP.NAT.GetExternalIP().ToString());
-					if (settings.useUpnp)
-					{
-						UPnP.NAT.ForwardPort(settings.port, ProtocolType.Tcp, "KLF (TCP)");
-						stampedConsoleWriteLine("Forwarded port " + settings.port + " with UPnP");
-						upnp_enabled = true;
-					}
+					UPnP.NAT.ForwardPort(settings.port, ProtocolType.Tcp, "KLF (TCP)");
+					stampedConsoleWriteLine("Forwarded port " + settings.port + " with UPnP");
+					upnp_enabled = true;
 				}
 			}
 			catch (Exception)
 			{
 			}
+			 */
 
 			Console.WriteLine("Commands:");
 			Console.WriteLine("/quit - quit");
@@ -120,6 +122,7 @@ namespace KLFServer
 
 			commandThread.Start();
 			handleMessageThread.Start();
+			disconnectThread.Start();
 
 			while (!quit)
 			{
@@ -134,34 +137,6 @@ namespace KLFServer
 				}
 				threadExceptionMutex.ReleaseMutex();
 
-				//Check for clients that have not sent messages for too long
-				for (int i = 0; i < clients.Length; i++)
-				{
-					if (clientIsValid(i))
-					{
-						long time = 0;
-						clients[i].mutex.WaitOne();
-						time = clients[i].lastMessageTime;
-						clients[i].mutex.ReleaseMutex();
-
-						if (stopwatch.ElapsedMilliseconds - time > CLIENT_TIMEOUT_DELAY)
-						{
-							//Disconnect the client
-							clients[i].mutex.WaitOne();
-							disconnectClient(i, "Timeout");
-							clients[i].mutex.ReleaseMutex();
-						}
-					}
-					else if (!clients[i].canBeReplaced)
-					{
-						//Client is disconnected but slot has not been cleaned up
-						clients[i].mutex.WaitOne();
-						disconnectClient(i, "Connection lost");
-						clients[i].mutex.ReleaseMutex();
-					}
-
-				}
-
 				Thread.Sleep(SLEEP_TIME);
 			}
 
@@ -169,6 +144,7 @@ namespace KLFServer
 			listenThread.Abort();
 			commandThread.Abort();
 			handleMessageThread.Abort();
+			disconnectThread.Abort();
 
 			for (int i = 0; i < clients.Length; i++)
 			{
@@ -373,15 +349,24 @@ namespace KLFServer
 
 			try
 			{
+				debugConsoleWriteLine("Starting message handling thread");
+
 				while (true)
 				{
+
 					messageQueueMutex.WaitOne();
-					while (clientMessageQueue.Count > 0)
+					try
 					{
-						ClientMessage message = clientMessageQueue.Dequeue();
-						handleMessage(message.clientIndex, message.id, message.data);
+						while (clientMessageQueue.Count > 0)
+						{
+							ClientMessage message = clientMessageQueue.Dequeue();
+							handleMessage(message.clientIndex, message.id, message.data);
+						}
 					}
-					messageQueueMutex.ReleaseMutex();
+					finally
+					{
+						messageQueueMutex.ReleaseMutex();
+					}
 
 					Thread.Sleep(SLEEP_TIME);
 				}
@@ -397,6 +382,64 @@ namespace KLFServer
 				threadExceptionMutex.ReleaseMutex();
 			}
 
+			debugConsoleWriteLine("Ending message handling thread.");
+
+		}
+
+		private void handleDisconnects()
+		{
+			try
+			{
+				debugConsoleWriteLine("Starting disconnect thread");
+
+				while (true)
+				{
+					//Check for clients that have not sent messages for too long
+					for (int i = 0; i < clients.Length; i++)
+					{
+						if (clientIsValid(i))
+						{
+							long last_message_receive_time = 0;
+							long connection_start_time = 0;
+							clients[i].mutex.WaitOne();
+							last_message_receive_time = clients[i].lastMessageTime;
+							connection_start_time = clients[i].connectionStartTime;
+							clients[i].mutex.ReleaseMutex();
+
+							if (currentMillisecond - last_message_receive_time > CLIENT_TIMEOUT_DELAY
+								|| currentMillisecond - connection_start_time > ServerClient.HANDSHAKE_TIMEOUT_MS)
+							{
+								//Disconnect the client
+								clients[i].mutex.WaitOne();
+								disconnectClient(i, "Timeout");
+								clients[i].mutex.ReleaseMutex();
+							}
+						}
+						else if (!clients[i].canBeReplaced)
+						{
+							//Client is disconnected but slot has not been cleaned up
+							clients[i].mutex.WaitOne();
+							disconnectClient(i, "Connection lost");
+							clients[i].mutex.ReleaseMutex();
+						}
+
+					}
+					
+					Thread.Sleep(SLEEP_TIME);
+				}
+			}
+			catch (ThreadAbortException)
+			{
+			}
+			catch (Exception e)
+			{
+				threadExceptionMutex.WaitOne();
+				if (threadException == null)
+					threadException = e; //Pass exception to main thread
+				threadExceptionMutex.ReleaseMutex();
+			}
+
+			debugConsoleWriteLine("Ending disconnect thread.");
 		}
 
 		private int addClient(TcpClient tcp_client)
@@ -411,18 +454,19 @@ namespace KLFServer
 				ServerClient client = clients[i];
 
 				//Check if the client is valid
+				client.mutex.WaitOne();
 				if (client.canBeReplaced && !clientIsValid(i))
 				{
 
 					//Add the client
-					client.mutex.WaitOne();
-
 					client.tcpClient = tcp_client;
 					client.username = "new user";
 					client.screenshot = null;
 					client.watchPlayerName = String.Empty;
 					client.canBeReplaced = false;
-					client.lastMessageTime = stopwatch.ElapsedMilliseconds;
+					client.lastMessageTime = currentMillisecond;
+					client.connectionStartTime = currentMillisecond;
+					client.receivedHandshake = false;
 
 					client.mutex.ReleaseMutex();
 
@@ -431,12 +475,14 @@ namespace KLFServer
 
 					return i;
 				}
+
+				client.mutex.ReleaseMutex();
 			}
 
 			return -1;
 		}
 
-		public void clientDisconnected(int client_index)
+		public void clientDisconnected(int client_index, String reason)
 		{
 			if (clients[client_index].canBeReplaced)
 				return;
@@ -449,7 +495,7 @@ namespace KLFServer
 			//Only send the disconnect message if the client performed handshake successfully
 			if (clients[client_index].receivedHandshake)
 			{
-				stampedConsoleWriteLine("Client #" + client_index + " " + clients[client_index].username + " has disconnected.");
+				stampedConsoleWriteLine("Client #" + client_index + " " + clients[client_index].username + " has disconnected: " + reason);
 
 				StringBuilder sb = new StringBuilder();
 
@@ -457,7 +503,7 @@ namespace KLFServer
 				sb.Clear();
 				sb.Append("User ");
 				sb.Append(clients[client_index].username);
-				sb.Append(" has disconnected from the server.");
+				sb.Append(" has disconnected from the server: "+reason);
 
 				String message = sb.ToString();
 
@@ -474,7 +520,7 @@ namespace KLFServer
 			}
 			else
 			{
-				stampedConsoleWriteLine("Client failed to handshake successfully.");
+				stampedConsoleWriteLine("Client failed to handshake successfully: " + reason);
 			}
 
 			sendServerSettings();
@@ -484,6 +530,8 @@ namespace KLFServer
 		{
 			if (!clientIsValid(client_index))
 				return;
+
+			debugConsoleWriteLine("Message id: " + id.ToString() + " data: " + (data != null ? data.Length : '0'));
 
 			ASCIIEncoding encoder = new ASCIIEncoding();
 
@@ -593,7 +641,6 @@ namespace KLFServer
 						{
 							if ((i != client_index || SEND_UPDATES_TO_SENDER) && clientIsReady(i))
 							{
-
 								clients[i].mutex.WaitOne();
 								sendPluginUpdate(clients[i].tcpClient, data);
 								clients[i].mutex.ReleaseMutex();
@@ -725,6 +772,8 @@ namespace KLFServer
 					break;
 
 			}
+
+			debugConsoleWriteLine("Handled message");
 		}
 
 		public bool clientIsValid(int index)
@@ -757,6 +806,12 @@ namespace KLFServer
 			}
 		}
 
+		public static void debugConsoleWriteLine(String message)
+		{
+			if (DEBUG_OUT)
+				stampedConsoleWriteLine(message);
+		}
+
 		public void clearState()
 		{
 
@@ -771,6 +826,9 @@ namespace KLFServer
 
 			if (handleMessageThread != null && handleMessageThread.ThreadState == System.Threading.ThreadState.Running)
 				handleMessageThread.Abort();
+
+			if (disconnectThread != null && disconnectThread.ThreadState == System.Threading.ThreadState.Running)
+				disconnectThread.Abort();
 
 			if (clients != null)
 			{
@@ -809,7 +867,7 @@ namespace KLFServer
 
 			clients[index].tcpClient.Close();
 
-			clientDisconnected(index);
+			clientDisconnected(index, message);
 		}
 
 		public void saveScreenshot(byte[] bytes, String player)
@@ -864,6 +922,8 @@ namespace KLFServer
 		{
 			client.GetStream().Write(KLFCommon.intToBytes((int)id), 0, 4);
 			client.GetStream().Write(KLFCommon.intToBytes(msg_length), 0, 4);
+
+			debugConsoleWriteLine("Sending message: " + id.ToString());
 		}
 
 		private void sendHandshakeMessage(TcpClient client)
