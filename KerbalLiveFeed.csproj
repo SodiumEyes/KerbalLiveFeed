@@ -49,6 +49,7 @@
     <Compile Include="KerbalLiveFeedModule.cs" />
     <Compile Include="KLFChatDisplay.cs" />
     <Compile Include="KLFCommon.cs" />
+    <Compile Include="KLFGlobalSettings.cs" />
     <Compile Include="KLFInfoDisplay.cs" />
     <Compile Include="KLFManager.cs">
       <SubType>Code</SubType>

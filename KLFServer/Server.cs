@@ -370,13 +370,15 @@ namespace KLFServer
 						{
 							long last_message_receive_time = 0;
 							long connection_start_time = 0;
+							bool handshook = false;
 							clients[i].mutex.WaitOne();
 							last_message_receive_time = clients[i].lastMessageTime;
 							connection_start_time = clients[i].connectionStartTime;
+							handshook = clients[i].receivedHandshake;
 							clients[i].mutex.ReleaseMutex();
 
 							if (currentMillisecond - last_message_receive_time > CLIENT_TIMEOUT_DELAY
-								|| currentMillisecond - connection_start_time > ServerClient.HANDSHAKE_TIMEOUT_MS)
+								|| (!handshook && currentMillisecond - connection_start_time > ServerClient.HANDSHAKE_TIMEOUT_MS))
 							{
 								//Disconnect the client
 								clients[i].mutex.WaitOne();

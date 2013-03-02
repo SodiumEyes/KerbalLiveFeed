@@ -327,10 +327,15 @@ namespace KerbalLiveFeed
 				orbitValid = true;
 
 				//Check for invalid values in the physics data
-				if ((localPosition.x == 0.0f && localPosition.y == 0.0f && localPosition.z == 0.0f)
-					|| (localVelocity.x == 0.0f && localVelocity.y == 0.0f && localVelocity.z == 0.0f)
-					|| localPosition.magnitude > mainBody.sphereOfInfluence)
+				if (info.situation != Vessel.Situations.LANDED && info.situation != Vessel.Situations.PRELAUNCH
+					&& info.situation != Vessel.Situations.SPLASHED
+					&& ((localPosition.x == 0.0f && localPosition.y == 0.0f && localPosition.z == 0.0f)
+						|| (localVelocity.x == 0.0f && localVelocity.y == 0.0f && localVelocity.z == 0.0f)
+						|| localPosition.magnitude > mainBody.sphereOfInfluence)
+					)
+				{
 					orbitValid = false;
+				}
 
 				for (int i = 0; i < 3; i++)
 				{
@@ -355,6 +360,7 @@ namespace KerbalLiveFeed
 
 				if (!orbitValid)
 				{
+					//Debug.Log("Orbit invalid: " + vesselName);
 					//Spoof some values so the game doesn't freak out
 					localPosition = new Vector3(1000.0f, 1000.0f, 1000.0f);
 					translationFromBody = localPosition;
@@ -499,10 +505,13 @@ namespace KerbalLiveFeed
 			line.SetColors(color, color);
 			orbitRenderer.orbitColor = color * 0.5f;
 
-			if (info.state == Vessel.State.ACTIVE && shouldShowOrbit)
+			if (!orbitValid)
+				orbitRenderer.drawIcons = OrbitRenderer.DrawIcons.NONE;
+			else if (info.state == Vessel.State.ACTIVE && shouldShowOrbit)
 				orbitRenderer.drawIcons = OrbitRenderer.DrawIcons.OBJ_PE_AP;
 			else
 				orbitRenderer.drawIcons = OrbitRenderer.DrawIcons.OBJ;
+
 
         }
 

@@ -663,16 +663,9 @@ namespace KLFClient
 				FileStream out_stream = null;
 				try
 				{
-					out_stream = File.OpenRead(OUT_FILENAME);
-					out_stream.Lock(0, long.MaxValue);
 
 					//Read the update
-					byte[] update_bytes = new byte[out_stream.Length];
-					out_stream.Read(update_bytes, 0, (int)out_stream.Length);
-
-					out_stream.Unlock(0, long.MaxValue);
-
-					out_stream.Close();
+					byte[] update_bytes = File.ReadAllBytes(OUT_FILENAME);
 					File.Delete(OUT_FILENAME); //Delete the file now that it's been read
 
 					//Make sure the file format version is correct

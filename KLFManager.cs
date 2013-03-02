@@ -40,6 +40,8 @@ namespace KerbalLiveFeed
 		public const String CHAT_OUT_FILENAME = "chatout.txt";
 		public const String CHAT_IN_FILENAME = "chatin.txt";
 
+		public const String GLOBAL_SETTINGS_FILENAME = "globalsettings.txt";
+
 		public const float INACTIVE_VESSEL_RANGE = 400000000.0f;
 		public const int MAX_INACTIVE_VESSELS = 4;
 		public const int STATUS_ARRAY_SIZE = 2;
@@ -54,6 +56,7 @@ namespace KerbalLiveFeed
 		public Dictionary<String, VesselStatusInfo> playerStatus = new Dictionary<string, VesselStatusInfo>();
 
 		private float lastUsernameReadTime = 0.0f;
+		private float lastGlobalSettingSaveTime = 0.0f;
 
 		private Queue<KLFVesselUpdate> vesselUpdateQueue = new Queue<KLFVesselUpdate>();
 
@@ -106,6 +109,16 @@ namespace KerbalLiveFeed
 			readChatInFromFile();
 			writeChatToFile();
 
+			//Save global settings periodically
+
+			if ((UnityEngine.Time.time - lastGlobalSettingSaveTime) > 10.0f)
+			{
+				saveGlobalSettings();
+
+				//Keep track of when the name was last read so we don't read it every time
+				lastGlobalSettingSaveTime = UnityEngine.Time.time;
+			}
+
 			//Update the positions of all the vessels
 
 			List<String> delete_list = new List<String>();
@@ -148,7 +161,7 @@ namespace KerbalLiveFeed
 
 		private void writePluginUpdate()
 		{
-			if ((UnityEngine.Time.fixedTime - lastUsernameReadTime) > 10.0f
+			if ((UnityEngine.Time.time - lastUsernameReadTime) > 10.0f
 						&& KSP.IO.File.Exists<KLFManager>(CLIENT_DATA_FILENAME))
 			{
 				//Read the username from the client data file
@@ -158,7 +171,7 @@ namespace KerbalLiveFeed
 				playerName = encoder.GetString(bytes, 0, bytes.Length);
 
 				//Keep track of when the name was last read so we don't read it every time
-				lastUsernameReadTime = UnityEngine.Time.fixedTime;
+				lastUsernameReadTime = UnityEngine.Time.time;
 			}
 
 			if (playerName == null || playerName.Length == 0)
@@ -886,9 +899,8 @@ namespace KerbalLiveFeed
 				Vector3 dir = new Vector3(vessel_update.localDirection[0], vessel_update.localDirection[1], vessel_update.localDirection[2]);
 				Vector3 vel = new Vector3(vessel_update.localVelocity[0], vessel_update.localVelocity[1], vessel_update.localVelocity[2]);
 
-				vessel.setOrbitalData(update_body, pos, vel, dir);
-
 				vessel.info = vessel_update;
+				vessel.setOrbitalData(update_body, pos, vel, dir);
 
 			}
 
@@ -952,6 +964,62 @@ namespace KerbalLiveFeed
 			}
 		}
 
+		//Settings
+
+		private void saveGlobalSettings()
+		{
+			//Get the global settings
+			KLFGlobalSettings global_settings = new KLFGlobalSettings();
+			global_settings.infoDisplayWindowX = KLFInfoDisplay.infoWindowPos.x;
+			global_settings.infoDisplayWindowY = KLFInfoDisplay.infoWindowPos.y;
+
+			global_settings.screenshotDisplayWindowX = KLFScreenshotDisplay.windowPos.x;
+			global_settings.screenshotDisplayWindowY = KLFScreenshotDisplay.windowPos.y;
+
+			global_settings.chatDisplayWindowX = KLFChatDisplay.windowPos.x;
+			global_settings.chatDisplayWindowY = KLFChatDisplay.windowPos.y;
+
+			//Serialize global settings to file
+			try
+			{
+				byte[] serialized = KSP.IO.IOUtils.SerializeToBinary(global_settings);
+				KSP.IO.File.WriteAllBytes<KLFManager>(serialized, GLOBAL_SETTINGS_FILENAME);
+			}
+			catch (KSP.IO.IOException)
+			{
+			}
+		}
+
+		private void loadGlobalSettings()
+		{
+			try
+			{
+				if (KSP.IO.File.Exists<KLFManager>(GLOBAL_SETTINGS_FILENAME))
+				{
+					//Deserialize global settings from file
+					byte[] bytes = KSP.IO.File.ReadAllBytes<KLFManager>(GLOBAL_SETTINGS_FILENAME);
+					object deserialized = KSP.IO.IOUtils.DeserializeFromBinary(bytes);
+					if (deserialized is KLFGlobalSettings)
+					{
+						KLFGlobalSettings global_settings = (KLFGlobalSettings)deserialized;
+
+						//Apply deserialized global settings
+						KLFInfoDisplay.infoWindowPos.x = global_settings.infoDisplayWindowX;
+						KLFInfoDisplay.infoWindowPos.y = global_settings.infoDisplayWindowY;
+
+						KLFScreenshotDisplay.windowPos.x = global_settings.screenshotDisplayWindowX;
+						KLFScreenshotDisplay.windowPos.y = global_settings.screenshotDisplayWindowY;
+
+						KLFChatDisplay.windowPos.x = global_settings.chatDisplayWindowX;
+						KLFChatDisplay.windowPos.y = global_settings.chatDisplayWindowY;
+					}
+				}
+			}
+			catch (KSP.IO.IOException)
+			{
+			}
+		}
+
 		//MonoBehaviour
 
 		public void Awake()
@@ -964,6 +1032,8 @@ namespace KerbalLiveFeed
 			safeDelete(IN_FILENAME);
 			safeDelete(SCREENSHOT_IN_FILENAME);
 			safeDelete(CHAT_IN_FILENAME);
+
+			loadGlobalSettings();
 		}
 
 		public void Update()
