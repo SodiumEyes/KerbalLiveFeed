@@ -184,6 +184,7 @@ namespace KLFClient
 					}
 					catch (Exception e)
 					{
+
 						//Write an error log
 						TextWriter writer = File.CreateText("KLFClientlog.txt");
 						writer.WriteLine(e.ToString());
@@ -194,16 +195,23 @@ namespace KLFClient
 						}
 						writer.Close();
 
-						if (tcpClient != null)
-							tcpClient.Close();
+						clearConnectionState();
 
 						Console.ForegroundColor = ConsoleColor.Red;
+
+						Console.WriteLine();
+						Console.WriteLine(e.ToString());
+						if (threadExceptionStackTrace != null && threadExceptionStackTrace.Length > 0)
+						{
+							Console.Write("Stacktrace: ");
+							Console.WriteLine(threadExceptionStackTrace);
+						}
+						
 						Console.WriteLine();
 						Console.WriteLine("Unexpected expection encountered! Crash report written to KLFClientlog.txt");
-						Console.WriteLine("Press any key to close client.");
-						Console.ReadKey();
+						Console.WriteLine();
+
 						Console.ResetColor();
-						return;
 					}
 				}
 
@@ -335,15 +343,7 @@ namespace KLFClient
 						Thread.Sleep(SLEEP_TIME);
 					}
 
-					//Abort all threads
-					pluginUpdateThread.Abort();
-					chatThread.Abort();
-					incomingMessageThread.Abort();
-					screenshotUpdateThread.Abort();
-					disconnectThread.Abort();
-
-					//Close the connection
-					tcpClient.Close();
+					clearConnectionState();
 
 					Console.ForegroundColor = ConsoleColor.Red;
 					Console.WriteLine();
@@ -370,11 +370,9 @@ namespace KLFClient
 				Console.WriteLine("Exception: " + e.ToString());
 			}
 
-			//Close the socket if it's still open
-			if (tcpClient != null)
-				tcpClient.Close();
-
 			Console.WriteLine("Unable to connect to server");
+
+			clearConnectionState();
 
 		}
 
@@ -485,6 +483,20 @@ namespace KLFClient
 					}
 					break;
 			}
+		}
+
+		static void clearConnectionState()
+		{
+			//Abort all threads
+			safeAbort(pluginUpdateThread);
+			safeAbort(chatThread);
+			safeAbort(incomingMessageThread);
+			safeAbort(screenshotUpdateThread);
+			safeAbort(disconnectThread);
+
+			//Close the socket if it's still open
+			if (tcpClient != null)
+				tcpClient.Close();
 		}
 
 		//Threads
@@ -648,7 +660,7 @@ namespace KLFClient
 			catch (Exception e)
 			{
 				threadExceptionMutex.WaitOne();
-				if (threadException != null)
+				if (threadException == null)
 					threadException = e;
 				threadExceptionMutex.ReleaseMutex();
 			}
@@ -681,7 +693,7 @@ namespace KLFClient
 			catch (Exception e)
 			{
 				threadExceptionMutex.WaitOne();
-				if (threadException != null)
+				if (threadException == null)
 					threadException = e;
 				threadExceptionMutex.ReleaseMutex();
 			}
@@ -698,7 +710,18 @@ namespace KLFClient
 
 					//Send a keep-alive message to prevent timeout
 					if (stopwatch.ElapsedMilliseconds - lastMessageSendTime >= KEEPALIVE_DELAY)
-						sendMessageHeader(KLFCommon.ClientMessageID.KEEPALIVE, 0);
+					{
+						try
+						{
+							sendMessageHeader(KLFCommon.ClientMessageID.KEEPALIVE, 0);
+						}
+						catch (System.InvalidOperationException)
+						{
+						}
+						catch (System.IO.IOException)
+						{
+						}
+					}
 
 					tcpSendMutex.ReleaseMutex();
 
@@ -712,7 +735,7 @@ namespace KLFClient
 			catch (Exception e)
 			{
 				threadExceptionMutex.WaitOne();
-				if (threadException != null)
+				if (threadException == null)
 					threadException = e;
 				threadExceptionMutex.ReleaseMutex();
 			}
@@ -747,10 +770,6 @@ namespace KLFClient
 									{
 										if (line == "/quit")
 										{
-											tcpSendMutex.WaitOne();
-											tcpClient.Close(); //Close the tcp client
-											tcpSendMutex.ReleaseMutex();
-
 											endSession = true;
 										}
 										else if (line == "/crash")
@@ -838,9 +857,24 @@ namespace KLFClient
 			catch (Exception e)
 			{
 				threadExceptionMutex.WaitOne();
-				if (threadException != null)
+				if (threadException == null)
 					threadException = e;
 				threadExceptionMutex.ReleaseMutex();
+			}
+		}
+
+		static void safeAbort(Thread thread, bool join = false)
+		{
+			if (thread != null)
+			{
+				try
+				{
+					thread.Abort();
+					if (join)
+						thread.Join();
+				}
+				catch (ThreadStateException) { }
+				catch (ThreadInterruptedException) { }
 			}
 		}
 
@@ -1327,6 +1361,9 @@ namespace KLFClient
 			catch (System.InvalidOperationException)
 			{
 			}
+			catch (System.IO.IOException)
+			{
+			}
 
 		}
 
@@ -1349,6 +1386,9 @@ namespace KLFClient
 			catch (System.InvalidOperationException)
 			{
 			}
+			catch (System.IO.IOException)
+			{
+			}
 		}
 
 		private static void sendShareScreenshotMesssage(byte[] data)
@@ -1365,6 +1405,9 @@ namespace KLFClient
 
 			}
 			catch (System.InvalidOperationException)
+			{
+			}
+			catch (System.IO.IOException)
 			{
 			}
 		}
@@ -1386,6 +1429,9 @@ namespace KLFClient
 
 			}
 			catch (System.InvalidOperationException)
+			{
+			}
+			catch (System.IO.IOException)
 			{
 			}
 		}
