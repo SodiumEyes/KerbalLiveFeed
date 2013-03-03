@@ -111,12 +111,12 @@ namespace KerbalLiveFeed
 
 			//Save global settings periodically
 
-			if ((UnityEngine.Time.time - lastGlobalSettingSaveTime) > 10.0f)
+			if ((UnityEngine.Time.fixedTime - lastGlobalSettingSaveTime) > 10.0f)
 			{
 				saveGlobalSettings();
 
 				//Keep track of when the name was last read so we don't read it every time
-				lastGlobalSettingSaveTime = UnityEngine.Time.time;
+				lastGlobalSettingSaveTime = UnityEngine.Time.fixedTime;
 			}
 
 			//Update the positions of all the vessels
@@ -127,7 +127,7 @@ namespace KerbalLiveFeed
 
 				VesselEntry entry = pair.Value;
 
-				if ((UnityEngine.Time.time-entry.lastUpdateTime) <= TIMEOUT_DELAY
+				if ((UnityEngine.Time.fixedTime-entry.lastUpdateTime) <= TIMEOUT_DELAY
 					&& entry.vessel != null && entry.vessel.gameObj != null)
 				{
 					entry.vessel.updateRenderProperties();
@@ -151,7 +151,7 @@ namespace KerbalLiveFeed
 			//Delete outdated player status entries
 			foreach (KeyValuePair<String, VesselStatusInfo> pair in playerStatus)
 			{
-				if ((UnityEngine.Time.time - pair.Value.lastUpdateTime) > TIMEOUT_DELAY)
+				if ((UnityEngine.Time.fixedTime - pair.Value.lastUpdateTime) > TIMEOUT_DELAY)
 					delete_list.Add(pair.Key);
 			}
 
@@ -161,7 +161,7 @@ namespace KerbalLiveFeed
 
 		private void writePluginUpdate()
 		{
-			if ((UnityEngine.Time.time - lastUsernameReadTime) > 10.0f
+			if ((UnityEngine.Time.fixedTime - lastUsernameReadTime) > 10.0f
 						&& KSP.IO.File.Exists<KLFManager>(CLIENT_DATA_FILENAME))
 			{
 				//Read the username from the client data file
@@ -171,7 +171,7 @@ namespace KerbalLiveFeed
 				playerName = encoder.GetString(bytes, 0, bytes.Length);
 
 				//Keep track of when the name was last read so we don't read it every time
-				lastUsernameReadTime = UnityEngine.Time.time;
+				lastUsernameReadTime = UnityEngine.Time.fixedTime;
 			}
 
 			if (playerName == null || playerName.Length == 0)
@@ -471,7 +471,7 @@ namespace KerbalLiveFeed
 				my_status.color = KLFVessel.generateActiveColor(playerName);
 				my_status.ownerName = playerName;
 				my_status.vesselName = vessel.vesselName;
-				my_status.lastUpdateTime = UnityEngine.Time.time;
+				my_status.lastUpdateTime = UnityEngine.Time.fixedTime;
 
 				if (playerStatus.ContainsKey(playerName))
 					playerStatus[playerName] = my_status;
@@ -691,7 +691,7 @@ namespace KerbalLiveFeed
 				status.ownerName = status_array[0];
 				status.vesselName = status_array[1];
 				status.orbit = null;
-				status.lastUpdateTime = UnityEngine.Time.time;
+				status.lastUpdateTime = UnityEngine.Time.fixedTime;
 				status.color = KLFVessel.generateActiveColor(status.ownerName);
 
 				return status;
@@ -798,7 +798,7 @@ namespace KerbalLiveFeed
 					status.ownerName = vessel_update.ownerName;
 					status.vesselName = vessel_update.vesselName;
 					status.orbit = null;
-					status.lastUpdateTime = UnityEngine.Time.time;
+					status.lastUpdateTime = UnityEngine.Time.fixedTime;
 					status.color = KLFVessel.generateActiveColor(status.ownerName);
 
 					if (playerStatus.ContainsKey(status.ownerName))
@@ -841,7 +841,7 @@ namespace KerbalLiveFeed
 					//Update the entry's timestamp
 					VesselEntry new_entry = new VesselEntry();
 					new_entry.vessel = entry.vessel;
-					new_entry.lastUpdateTime = UnityEngine.Time.time;
+					new_entry.lastUpdateTime = UnityEngine.Time.fixedTime;
 
 					vessels[vessel_key] = new_entry;
 				}
@@ -852,7 +852,7 @@ namespace KerbalLiveFeed
 				vessel = new KLFVessel(vessel_update.vesselName, vessel_update.ownerName, vessel_update.id);
 				entry = new VesselEntry();
 				entry.vessel = vessel;
-				entry.lastUpdateTime = UnityEngine.Time.time;
+				entry.lastUpdateTime = UnityEngine.Time.fixedTime;
 
 				if (vessels.ContainsKey(vessel_key))
 					vessels[vessel_key] = entry;
@@ -915,7 +915,7 @@ namespace KerbalLiveFeed
 				if (vessel.orbitValid)
 					status.orbit = vessel.orbitRenderer.orbit;
 
-				status.lastUpdateTime = UnityEngine.Time.time;
+				status.lastUpdateTime = UnityEngine.Time.fixedTime;
 				status.color = KLFVessel.generateActiveColor(status.ownerName);
 
 				if (playerStatus.ContainsKey(status.ownerName))

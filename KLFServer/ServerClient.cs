@@ -16,22 +16,27 @@ namespace KLFServer
 		public String watchPlayerName;
 		public byte[] screenshot;
 
+		//Protected by mutex
 		public TcpClient tcpClient;
 		public Thread messageThread;
 
 		public Server parent;
-		public Mutex mutex;
+		public Mutex tcpClientMutex;
+		public Mutex propertyMutex;
 
-		public long connectionStartTime;
 		public bool receivedHandshake;
 		public bool canBeReplaced;
+
+		//Protected by propertyMutex
+		public long connectionStartTime;
 		public long lastMessageTime;
 
 		public const long HANDSHAKE_TIMEOUT_MS = 4000;
 
 		public ServerClient()
 		{
-			mutex = new Mutex();
+			tcpClientMutex = new Mutex();
+			propertyMutex = new Mutex();
 			canBeReplaced = true;
 		}
 
@@ -58,7 +63,7 @@ namespace KLFServer
 					bool message_received = false;
 					bool should_read = false;
 
-					mutex.WaitOne();
+					tcpClientMutex.WaitOne();
 					try
 					{
 						//Close the timeout if connection is invalid or the handshake has not been received in the alloted time
@@ -69,7 +74,7 @@ namespace KLFServer
 					}
 					finally
 					{
-						mutex.ReleaseMutex();
+						tcpClientMutex.ReleaseMutex();
 					}
 
 					if (stream_ended)
@@ -106,7 +111,18 @@ namespace KLFServer
 							if (header_bytes_read < KLFCommon.MSG_HEADER_LENGTH)
 							{
 								//Read message header bytes
-								int num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
+								int num_read = 0;
+
+								tcpClientMutex.WaitOne();
+								try
+								{
+									num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
+								}
+								finally
+								{
+									tcpClientMutex.ReleaseMutex();
+								}
+
 								header_bytes_read += num_read;
 								if (header_bytes_read == KLFCommon.MSG_HEADER_LENGTH)
 								{
@@ -127,8 +143,19 @@ namespace KLFServer
 
 								if (msg_length > 0 && data_bytes_read < msg_length)
 								{
+									int num_read = 0;
+
 									//Read the message data
-									int num_read = tcpClient.GetStream().Read(message_data, data_bytes_read, msg_length - data_bytes_read);
+									tcpClientMutex.WaitOne();
+									try
+									{
+										num_read = tcpClient.GetStream().Read(message_data, data_bytes_read, msg_length - data_bytes_read);
+									}
+									finally
+									{
+										tcpClientMutex.ReleaseMutex();
+									}
+
 									if (num_read > 0)
 										data_bytes_read += num_read;
 								}
@@ -143,6 +170,7 @@ namespace KLFServer
 
 
 							}
+							
 							/*
 							//Read the message header
 							int num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
@@ -151,14 +179,14 @@ namespace KLFServer
 							if (header_bytes_read == KLFCommon.MSG_HEADER_LENGTH)
 							{
 								id = (KLFCommon.ClientMessageID)KLFCommon.intFromBytes(message_header, 0);
-								int msg_length = KLFCommon.intFromBytes(message_header, 4);
+								msg_length = KLFCommon.intFromBytes(message_header, 4);
 
 								if (msg_length > 0)
 								{
 									//Read the message data
 									message_data = new byte[msg_length];
 
-									int data_bytes_read = 0;
+									data_bytes_read = 0;
 
 									while (data_bytes_read < msg_length)
 									{
@@ -189,14 +217,14 @@ namespace KLFServer
 					if (message_received && parent != null)
 					{
 						//Update the last message received timestamp
-						mutex.WaitOne();
+						propertyMutex.WaitOne();
 						try
 						{
 							lastMessageTime = parent.currentMillisecond;
 						}
 						finally
 						{
-							mutex.ReleaseMutex();
+							propertyMutex.ReleaseMutex();
 						}
 
 						//Queue the message to be handled by the parent
@@ -220,21 +248,21 @@ namespace KLFServer
 					Thread.Sleep(Server.SLEEP_TIME);
 				}
 				
-				mutex.WaitOne();
+				tcpClientMutex.WaitOne();
 				try
 				{
 					tcpClient.Close();
 				}
 				finally
 				{
-					mutex.ReleaseMutex();
+					tcpClientMutex.ReleaseMutex();
 				}
 			}
 			catch (ThreadAbortException)
 			{
 				try
 				{
-					mutex.ReleaseMutex();
+					tcpClientMutex.ReleaseMutex();
 				}
 				catch (ApplicationException)
 				{
@@ -244,7 +272,7 @@ namespace KLFServer
 			{
 				try
 				{
-					mutex.ReleaseMutex();
+					tcpClientMutex.ReleaseMutex();
 				}
 				catch (ApplicationException)
 				{

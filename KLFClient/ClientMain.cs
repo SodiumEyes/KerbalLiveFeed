@@ -96,6 +96,7 @@ namespace KLFClient
 		public static Thread screenshotUpdateThread;
 		public static Thread chatThread;
 		public static Thread incomingMessageThread;
+		public static Thread disconnectThread;
 
 		public static Stopwatch stopwatch;
 
@@ -199,9 +200,10 @@ namespace KLFClient
 						Console.ForegroundColor = ConsoleColor.Red;
 						Console.WriteLine();
 						Console.WriteLine("Unexpected expection encountered! Crash report written to KLFClientlog.txt");
-						Console.WriteLine();
-
+						Console.WriteLine("Press any key to close client.");
+						Console.ReadKey();
 						Console.ResetColor();
+						return;
 					}
 				}
 
@@ -288,6 +290,10 @@ namespace KLFClient
 					incomingMessageThread = new Thread(new ThreadStart(handleIncomingMessages));
 					incomingMessageThread.Start();
 
+					//Create a thread to handle disconnection
+					disconnectThread = new Thread(new ThreadStart(handleDisconnect));
+					disconnectThread.Start();
+
 					//Create the plugin directory if it doesn't exist
 					if (!Directory.Exists(PLUGIN_DIRECTORY))
 					{
@@ -313,7 +319,7 @@ namespace KLFClient
 
 					Console.WriteLine("Connected to server! Handshaking...");
 
-					while (!endSession)
+					while (!endSession && tcpClient.Connected)
 					{
 						//Check for exceptions thrown by threads
 						threadExceptionMutex.WaitOne();
@@ -326,12 +332,6 @@ namespace KLFClient
 						}
 						threadExceptionMutex.ReleaseMutex();
 
-						//Send a keep-alive message to prevent timeout
-						tcpSendMutex.WaitOne();
-						if (stopwatch.ElapsedMilliseconds - lastMessageSendTime >= KEEPALIVE_DELAY)
-							sendMessageHeader(KLFCommon.ClientMessageID.KEEPALIVE, 0);
-						tcpSendMutex.ReleaseMutex();
-
 						Thread.Sleep(SLEEP_TIME);
 					}
 
@@ -340,13 +340,18 @@ namespace KLFClient
 					chatThread.Abort();
 					incomingMessageThread.Abort();
 					screenshotUpdateThread.Abort();
+					disconnectThread.Abort();
 
 					//Close the connection
+					tcpClient.Close();
+
 					Console.ForegroundColor = ConsoleColor.Red;
 					Console.WriteLine();
-					Console.WriteLine("Lost connection with server.");
+
+					enqueuePluginChatMessage("Lost connection with server.", true);
+					writeChatIn();
+
 					Console.ResetColor();
-					tcpClient.Close();
 
 					//Delete the client data file
 					if (File.Exists(CLIENT_DATA_FILENAME))
@@ -405,8 +410,12 @@ namespace KLFClient
 				case KLFCommon.ServerMessageID.HANDSHAKE_REFUSAL:
 
 					String refusal_message = encoder.GetString(data, 0, data.Length);
-					Console.WriteLine("Server refused connection. Reason: " + refusal_message);
+
 					endSession = true;
+
+					pluginChatInMutex.WaitOne();
+					enqueuePluginChatMessage("Server refused connection. Reason: " + refusal_message, true);
+					pluginChatInMutex.ReleaseMutex();
 
 					break;
 
@@ -450,9 +459,7 @@ namespace KLFClient
 
 					//Add the update the queue
 					pluginUpdateInMutex.WaitOne();
-
 					pluginUpdateInQueue.Enqueue(data);
-
 					pluginUpdateInMutex.ReleaseMutex();
 
 					break;
@@ -479,6 +486,8 @@ namespace KLFClient
 					break;
 			}
 		}
+
+		//Threads
 
 		static void handleIncomingMessages()
 		{
@@ -519,7 +528,18 @@ namespace KLFClient
 							if (header_bytes_read < KLFCommon.MSG_HEADER_LENGTH)
 							{
 								//Read message header bytes
-								int num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
+								int num_read = 0;
+
+								tcpSendMutex.WaitOne();
+								try
+								{
+									num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
+								}
+								finally
+								{
+									tcpSendMutex.ReleaseMutex();
+								}
+
 								header_bytes_read += num_read;
 								if (header_bytes_read == KLFCommon.MSG_HEADER_LENGTH)
 								{
@@ -537,8 +557,19 @@ namespace KLFClient
 
 								if (msg_length > 0 && data_bytes_read < msg_length)
 								{
+									int num_read = 0;
+
 									//Read the message data
-									int num_read = tcpClient.GetStream().Read(message_data, data_bytes_read, msg_length - data_bytes_read);
+									tcpSendMutex.WaitOne();
+									try
+									{
+										num_read = tcpClient.GetStream().Read(message_data, data_bytes_read, msg_length - data_bytes_read);
+									}
+									finally
+									{
+										tcpSendMutex.ReleaseMutex();
+									}
+
 									if (num_read > 0)
 										data_bytes_read += num_read;
 								}
@@ -617,7 +648,8 @@ namespace KLFClient
 			catch (Exception e)
 			{
 				threadExceptionMutex.WaitOne();
-				threadException = e;
+				if (threadException != null)
+					threadException = e;
 				threadExceptionMutex.ReleaseMutex();
 			}
 		}
@@ -649,10 +681,170 @@ namespace KLFClient
 			catch (Exception e)
 			{
 				threadExceptionMutex.WaitOne();
-				threadException = e;
+				if (threadException != null)
+					threadException = e;
 				threadExceptionMutex.ReleaseMutex();
 			}
 		}
+
+		static void handleDisconnect()
+		{
+			try
+			{
+
+				while (true)
+				{
+					tcpSendMutex.WaitOne();
+
+					//Send a keep-alive message to prevent timeout
+					if (stopwatch.ElapsedMilliseconds - lastMessageSendTime >= KEEPALIVE_DELAY)
+						sendMessageHeader(KLFCommon.ClientMessageID.KEEPALIVE, 0);
+
+					tcpSendMutex.ReleaseMutex();
+
+					Thread.Sleep(SLEEP_TIME);
+				}
+
+			}
+			catch (ThreadAbortException)
+			{
+			}
+			catch (Exception e)
+			{
+				threadExceptionMutex.WaitOne();
+				if (threadException != null)
+					threadException = e;
+				threadExceptionMutex.ReleaseMutex();
+			}
+		}
+
+		static void handleChat()
+		{
+
+			try
+			{
+
+				StringBuilder sb = new StringBuilder();
+
+				while (true)
+				{
+
+					//Handle outgoing messsages
+					if (Console.KeyAvailable)
+					{
+						ConsoleKeyInfo key = Console.ReadKey();
+
+						switch (key.Key)
+						{
+
+							case ConsoleKey.Enter:
+
+								String line = sb.ToString();
+
+								if (line.Length > 0)
+								{
+									if (line.ElementAt(0) == '/')
+									{
+										if (line == "/quit")
+										{
+											tcpSendMutex.WaitOne();
+											tcpClient.Close(); //Close the tcp client
+											tcpSendMutex.ReleaseMutex();
+
+											endSession = true;
+										}
+										else if (line == "/crash")
+										{
+											Object o = null;
+											o.ToString();
+										}
+
+									}
+									else
+									{
+										tcpSendMutex.WaitOne();
+										sendTextMessage(line);
+										tcpSendMutex.ReleaseMutex();
+									}
+								}
+
+								sb.Clear();
+								Console.WriteLine();
+								break;
+
+							case ConsoleKey.Backspace:
+							case ConsoleKey.Delete:
+								if (sb.Length > 0)
+								{
+									sb.Remove(sb.Length - 1, 1);
+									Console.Write(' ');
+									if (Console.CursorLeft > 0)
+										Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
+								}
+								break;
+
+							default:
+								if (key.KeyChar != '\0')
+									sb.Append(key.KeyChar);
+								else if (Console.CursorLeft > 0)
+									Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
+								break;
+
+						}
+					}
+
+					if (sb.Length == 0)
+					{
+						//Handle incoming messages
+						textMessageQueueMutex.WaitOne();
+
+						try
+						{
+							while (textMessageQueue.Count > 0)
+							{
+								InTextMessage message = textMessageQueue.Dequeue();
+								if (message.fromServer)
+								{
+									Console.ForegroundColor = ConsoleColor.Green;
+									Console.Write("[Server] ");
+									Console.ResetColor();
+								}
+
+								Console.WriteLine(message.message);
+							}
+						}
+						catch (System.IO.IOException)
+						{
+						}
+
+						textMessageQueueMutex.ReleaseMutex();
+					}
+
+					if (stopwatch.ElapsedMilliseconds - lastChatInWriteTime >= CHAT_IN_WRITE_INTERVAL)
+					{
+						if (writeChatIn())
+							lastChatInWriteTime = stopwatch.ElapsedMilliseconds;
+					}
+
+					readChatOut();
+
+					Thread.Sleep(SLEEP_TIME);
+				}
+
+			}
+			catch (ThreadAbortException)
+			{
+			}
+			catch (Exception e)
+			{
+				threadExceptionMutex.WaitOne();
+				if (threadException != null)
+					threadException = e;
+				threadExceptionMutex.ReleaseMutex();
+			}
+		}
+
+		//Plugin Interop
 
 		static void readPluginUpdates()
 		{
@@ -908,131 +1100,6 @@ namespace KLFClient
 			}
 		}
 
-		static void handleChat()
-		{
-
-			try
-			{
-
-				StringBuilder sb = new StringBuilder();
-
-				while (true)
-				{
-
-					//Handle outgoing messsages
-					if (Console.KeyAvailable)
-					{
-						ConsoleKeyInfo key = Console.ReadKey();
-
-						switch (key.Key)
-						{
-
-							case ConsoleKey.Enter:
-
-								String line = sb.ToString();
-
-								if (line.Length > 0)
-								{
-									if (line.ElementAt(0) == '/')
-									{
-										if (line == "/quit")
-										{
-											tcpSendMutex.WaitOne();
-											tcpClient.Close(); //Close the tcp client
-											tcpSendMutex.ReleaseMutex();
-
-											endSession = true;
-										}
-										else if (line == "/crash")
-										{
-											Object o = null;
-											o.ToString();
-										}
-
-									}
-									else
-									{
-										tcpSendMutex.WaitOne();
-										sendTextMessage(line);
-										tcpSendMutex.ReleaseMutex();
-									}
-								}
-
-								sb.Clear();
-								Console.WriteLine();
-								break;
-
-							case ConsoleKey.Backspace:
-							case ConsoleKey.Delete:
-								if (sb.Length > 0)
-								{
-									sb.Remove(sb.Length - 1, 1);
-									Console.Write(' ');
-									if (Console.CursorLeft > 0)
-										Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
-								}
-								break;
-
-							default:
-								if (key.KeyChar != '\0')
-									sb.Append(key.KeyChar);
-								else if (Console.CursorLeft > 0)
-									Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
-								break;
-
-						}
-					}
-
-					if (sb.Length == 0)
-					{
-						//Handle incoming messages
-						textMessageQueueMutex.WaitOne();
-
-						try
-						{
-							while (textMessageQueue.Count > 0)
-							{
-								InTextMessage message = textMessageQueue.Dequeue();
-								if (message.fromServer)
-								{
-									Console.ForegroundColor = ConsoleColor.Green;
-									Console.Write("[Server] ");
-									Console.ResetColor();
-								}
-
-								Console.WriteLine(message.message);
-							}
-						}
-						catch (System.IO.IOException)
-						{
-						}
-
-						textMessageQueueMutex.ReleaseMutex();
-					}
-
-					if (stopwatch.ElapsedMilliseconds - lastChatInWriteTime >= CHAT_IN_WRITE_INTERVAL)
-					{
-						if (writeChatIn())
-							lastChatInWriteTime = stopwatch.ElapsedMilliseconds;
-					}
-
-					readChatOut();
-
-					Thread.Sleep(SLEEP_TIME);
-				}
-
-			}
-			catch (ThreadAbortException)
-			{
-			}
-			catch (Exception e)
-			{
-				threadExceptionMutex.WaitOne();
-				threadException = e;
-				threadExceptionMutex.ReleaseMutex();
-			}
-		}
-
 		static bool writeChatIn()
 		{
 			bool success = false;
@@ -1068,8 +1135,11 @@ namespace KLFClient
 				catch (System.IO.IOException)
 				{
 				}
+				finally
+				{
+					pluginChatInMutex.ReleaseMutex();
+				}
 
-				pluginChatInMutex.ReleaseMutex();
 			}
 
 			return success;
@@ -1136,11 +1206,14 @@ namespace KLFClient
 			textMessageQueue.Enqueue(message);
 		}
 
-		static void enqueuePluginChatMessage(String message)
+		static void enqueuePluginChatMessage(String message, bool print = false)
 		{
 			pluginChatInQueue.Enqueue(message);
 			while (pluginChatInQueue.Count > MAX_QUEUED_CHAT_LINES)
 				pluginChatInQueue.Dequeue();
+
+			if (print)
+				Console.WriteLine(message);
 		}
 
 		static void safeDelete(String filename)
