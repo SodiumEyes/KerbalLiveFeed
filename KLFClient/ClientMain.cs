@@ -399,8 +399,14 @@ namespace KLFClient
 					else
 					{
 						tcpSendMutex.WaitOne();
-						sendHandshakeMessage(); //Reply to the handshake
-						tcpSendMutex.ReleaseMutex();
+						try
+						{
+							sendHandshakeMessage(); //Reply to the handshake
+						}
+						finally
+						{
+							tcpSendMutex.ReleaseMutex();
+						}
 					}
 
 					break;
@@ -412,8 +418,14 @@ namespace KLFClient
 					endSession = true;
 
 					pluginChatInMutex.WaitOne();
-					enqueuePluginChatMessage("Server refused connection. Reason: " + refusal_message, true);
-					pluginChatInMutex.ReleaseMutex();
+					try
+					{
+						enqueuePluginChatMessage("Server refused connection. Reason: " + refusal_message, true);
+					}
+					finally
+					{
+						pluginChatInMutex.ReleaseMutex();
+					}
 
 					break;
 
@@ -426,12 +438,21 @@ namespace KLFClient
 
 					//Queue the message
 					textMessageQueueMutex.WaitOne();
-					enqueueTextMessage(in_message);
-					textMessageQueueMutex.ReleaseMutex();
+					try
+					{
+						enqueueTextMessage(in_message);
+					}
+					finally
+					{
+						textMessageQueueMutex.ReleaseMutex();
+					}
 
 					pluginChatInMutex.WaitOne();
-					enqueuePluginChatMessage("[Server] "+in_message.message);
-					pluginChatInMutex.ReleaseMutex();
+					try
+					{
+						enqueuePluginChatMessage("[Server] " + in_message.message);
+					}
+					finally { pluginChatInMutex.ReleaseMutex(); }
 
 					break;
 
@@ -444,12 +465,24 @@ namespace KLFClient
 
 					//Queue the message
 					textMessageQueueMutex.WaitOne();
-					enqueueTextMessage(in_message);
-					textMessageQueueMutex.ReleaseMutex();
+					try
+					{
+						enqueueTextMessage(in_message);
+					}
+					finally
+					{
+						textMessageQueueMutex.ReleaseMutex();
+					}
 
 					pluginChatInMutex.WaitOne();
-					enqueuePluginChatMessage(in_message.message);
-					pluginChatInMutex.ReleaseMutex();
+					try
+					{
+						enqueuePluginChatMessage(in_message.message);
+					}
+					finally
+					{
+						pluginChatInMutex.ReleaseMutex();
+					}
 
 					break;
 
@@ -457,18 +490,30 @@ namespace KLFClient
 
 					//Add the update the queue
 					pluginUpdateInMutex.WaitOne();
-					pluginUpdateInQueue.Enqueue(data);
-					pluginUpdateInMutex.ReleaseMutex();
+					try
+					{
+						pluginUpdateInQueue.Enqueue(data);
+					}
+					finally
+					{
+						pluginUpdateInMutex.ReleaseMutex();
+					}
 
 					break;
 
 				case KLFCommon.ServerMessageID.SERVER_SETTINGS:
 
 					serverSettingsMutex.WaitOne();
-					updateInterval = KLFCommon.intFromBytes(data, 0);
-					maxQueuedUpdates = KLFCommon.intFromBytes(data, 4);
-					screenshotInterval = KLFCommon.intFromBytes(data, 8);
-					serverSettingsMutex.ReleaseMutex();
+					try
+					{
+						updateInterval = KLFCommon.intFromBytes(data, 0);
+						maxQueuedUpdates = KLFCommon.intFromBytes(data, 4);
+						screenshotInterval = KLFCommon.intFromBytes(data, 8);
+					}
+					finally
+					{
+						serverSettingsMutex.ReleaseMutex();
+					}
 
 					break;
 
@@ -478,8 +523,14 @@ namespace KLFClient
 						&& watchPlayerName.Length > 0 && watchPlayerName != username)
 					{
 						screenshotInMutex.WaitOne();
-						queuedInScreenshot = data;
-						screenshotInMutex.ReleaseMutex();
+						try
+						{
+							queuedInScreenshot = data;
+						}
+						finally
+						{
+							screenshotInMutex.ReleaseMutex();
+						}
 					}
 					break;
 			}
@@ -646,9 +697,16 @@ namespace KLFClient
 
 					readPluginData();
 
+					int sleep_time = 0;
 					serverSettingsMutex.WaitOne();
-					int sleep_time = updateInterval;
-					serverSettingsMutex.ReleaseMutex();
+					try
+					{
+						sleep_time = updateInterval;
+					}
+					finally
+					{
+						serverSettingsMutex.ReleaseMutex();
+					}
 
 					Thread.Sleep(sleep_time);
 				}
@@ -707,23 +765,28 @@ namespace KLFClient
 				while (true)
 				{
 					tcpSendMutex.WaitOne();
-
-					//Send a keep-alive message to prevent timeout
-					if (stopwatch.ElapsedMilliseconds - lastMessageSendTime >= KEEPALIVE_DELAY)
+					try
 					{
-						try
+						//Send a keep-alive message to prevent timeout
+						if (stopwatch.ElapsedMilliseconds - lastMessageSendTime >= KEEPALIVE_DELAY)
 						{
-							sendMessageHeader(KLFCommon.ClientMessageID.KEEPALIVE, 0);
+							try
+							{
+								sendMessageHeader(KLFCommon.ClientMessageID.KEEPALIVE, 0);
+							}
+							catch (System.InvalidOperationException)
+							{
+							}
+							catch (System.IO.IOException)
+							{
+							}
 						}
-						catch (System.InvalidOperationException)
-						{
-						}
-						catch (System.IO.IOException)
-						{
-						}
-					}
 
-					tcpSendMutex.ReleaseMutex();
+					}
+					finally
+					{
+						tcpSendMutex.ReleaseMutex();
+					}
 
 					Thread.Sleep(SLEEP_TIME);
 				}
@@ -782,8 +845,14 @@ namespace KLFClient
 									else
 									{
 										tcpSendMutex.WaitOne();
-										sendTextMessage(line);
-										tcpSendMutex.ReleaseMutex();
+										try
+										{
+											sendTextMessage(line);
+										}
+										finally
+										{
+											tcpSendMutex.ReleaseMutex();
+										}
 									}
 								}
 
@@ -901,12 +970,19 @@ namespace KLFClient
 						//Send the update to the server
 						tcpSendMutex.WaitOne();
 
-						//Remove the file format version bytes before sending
-						sendMessageHeader(KLFCommon.ClientMessageID.PLUGIN_UPDATE, update_bytes.Length - 4);
-						tcpClient.GetStream().Write(update_bytes, 4, update_bytes.Length - 4);
-						tcpClient.GetStream().Flush();
+						try
+						{
 
-						tcpSendMutex.ReleaseMutex();
+							//Remove the file format version bytes before sending
+							sendMessageHeader(KLFCommon.ClientMessageID.PLUGIN_UPDATE, update_bytes.Length - 4);
+							tcpClient.GetStream().Write(update_bytes, 4, update_bytes.Length - 4);
+							tcpClient.GetStream().Flush();
+
+						}
+						finally
+						{
+							tcpSendMutex.ReleaseMutex();
+						}
 					}
 					else
 					{
@@ -942,61 +1018,67 @@ namespace KLFClient
 		{
 			//Pass queued updates to plugin
 			pluginUpdateInMutex.WaitOne();
-
-			if (!File.Exists(IN_FILENAME) && pluginUpdateInQueue.Count > 0)
+			try
 			{
 
-				FileStream in_stream = null;
-
-				try
+				if (!File.Exists(IN_FILENAME) && pluginUpdateInQueue.Count > 0)
 				{
-					in_stream = File.Create(IN_FILENAME);
 
-					//Write the file format version
-					in_stream.Write(KLFCommon.intToBytes(KLFCommon.FILE_FORMAT_VERSION), 0, 4);
+					FileStream in_stream = null;
 
-					//Write the updates to the file
-					while (pluginUpdateInQueue.Count > 0)
+					try
 					{
-						byte[] update = pluginUpdateInQueue.Dequeue();
-						in_stream.Write(update, 0, update.Length);
+						in_stream = File.Create(IN_FILENAME);
+
+						//Write the file format version
+						in_stream.Write(KLFCommon.intToBytes(KLFCommon.FILE_FORMAT_VERSION), 0, 4);
+
+						//Write the updates to the file
+						while (pluginUpdateInQueue.Count > 0)
+						{
+							byte[] update = pluginUpdateInQueue.Dequeue();
+							in_stream.Write(update, 0, update.Length);
+						}
+
+					}
+					catch (System.IO.FileNotFoundException)
+					{
+					}
+					catch (System.UnauthorizedAccessException)
+					{
+					}
+					catch (System.IO.DirectoryNotFoundException)
+					{
+					}
+					catch (System.InvalidOperationException)
+					{
+					}
+					catch (System.IO.IOException)
+					{
 					}
 
-				}
-				catch (System.IO.FileNotFoundException)
-				{
-				}
-				catch (System.UnauthorizedAccessException)
-				{
-				}
-				catch (System.IO.DirectoryNotFoundException)
-				{
-				}
-				catch (System.InvalidOperationException)
-				{
-				}
-				catch (System.IO.IOException)
-				{
-				}
+					if (in_stream != null)
+						in_stream.Close();
 
-				if (in_stream != null)
-					in_stream.Close();
+				}
+				else
+				{
+					//Don't let the update queue get insanely large
+					serverSettingsMutex.WaitOne();
+					int max_queue_size = maxQueuedUpdates;
+					serverSettingsMutex.ReleaseMutex();
+
+					while (pluginUpdateInQueue.Count > max_queue_size)
+					{
+						pluginUpdateInQueue.Dequeue();
+					}
+				}
 
 			}
-			else
+			finally
 			{
-				//Don't let the update queue get insanely large
-				serverSettingsMutex.WaitOne();
-				int max_queue_size = maxQueuedUpdates;
-				serverSettingsMutex.ReleaseMutex();
-
-				while (pluginUpdateInQueue.Count > max_queue_size)
-				{
-					pluginUpdateInQueue.Dequeue();
-				}
+				pluginUpdateInMutex.ReleaseMutex();
 			}
-
-			pluginUpdateInMutex.ReleaseMutex();
 		}
 
 		static bool readSharedScreenshot()
@@ -1012,15 +1094,27 @@ namespace KLFClient
 					if (bytes != null && bytes.Length > 0 && bytes.Length <= KLFCommon.MAX_SCREENSHOT_BYTES)
 					{
 						tcpSendMutex.WaitOne();
-						sendShareScreenshotMesssage(bytes);
-						tcpSendMutex.ReleaseMutex();
+						try
+						{
+							sendShareScreenshotMesssage(bytes);
+						}
+						finally
+						{
+							tcpSendMutex.ReleaseMutex();
+						}
 
 						lastSharedScreenshot = bytes;
 						if (watchPlayerName == username)
 						{
 							screenshotInMutex.WaitOne();
-							queuedInScreenshot = lastSharedScreenshot;
-							screenshotInMutex.ReleaseMutex();
+							try
+							{
+								queuedInScreenshot = lastSharedScreenshot;
+							}
+							finally
+							{
+								screenshotInMutex.ReleaseMutex();
+							}
 						}
 					}
 
@@ -1054,7 +1148,6 @@ namespace KLFClient
 			if (queuedInScreenshot != null && queuedInScreenshot.Length > 0 && !File.Exists(SCREENSHOT_IN_FILENAME))
 			{
 				screenshotInMutex.WaitOne();
-
 				try
 				{
 					File.WriteAllBytes(SCREENSHOT_IN_FILENAME, queuedInScreenshot);
@@ -1075,8 +1168,11 @@ namespace KLFClient
 				catch (System.IO.IOException)
 				{
 				}
-
-				screenshotInMutex.ReleaseMutex();
+				finally
+				{
+					screenshotInMutex.ReleaseMutex();
+				}
+				
 			}
 		}
 
@@ -1104,15 +1200,27 @@ namespace KLFClient
 						watchPlayerName = new_watch_player_name;
 
 						screenshotInMutex.WaitOne();
-						if (watchPlayerName != username)
-							queuedInScreenshot = null;
-						else
-							queuedInScreenshot = lastSharedScreenshot; //Show the player their last shared screenshot
-						screenshotInMutex.ReleaseMutex();
+						try
+						{
+							if (watchPlayerName != username)
+								queuedInScreenshot = null;
+							else
+								queuedInScreenshot = lastSharedScreenshot; //Show the player their last shared screenshot
+						}
+						finally
+						{
+							screenshotInMutex.ReleaseMutex();
+						}
 
 						tcpSendMutex.WaitOne();
-						sendScreenshotWatchPlayerMessage(watchPlayerName);
-						tcpSendMutex.ReleaseMutex();
+						try
+						{
+							sendScreenshotWatchPlayerMessage(watchPlayerName);
+						}
+						finally
+						{
+							tcpSendMutex.ReleaseMutex();
+						}
 					}
 
 				}
@@ -1141,7 +1249,6 @@ namespace KLFClient
 			if (pluginChatInQueue.Count > 0 && !File.Exists(CHAT_IN_FILENAME))
 			{
 				pluginChatInMutex.WaitOne();
-
 				try
 				{
 					//Write chat in
@@ -1194,19 +1301,25 @@ namespace KLFClient
 						String[] lines = encoder.GetString(bytes, 0, bytes.Length).Split('\n');
 
 						tcpSendMutex.WaitOne();
-						foreach (String line in lines)
+						try
 						{
-							if (line.Length > 0)
+							foreach (String line in lines)
 							{
-								InTextMessage message = new InTextMessage();
-								message.fromServer = false;
-								message.message = "[" + username + "] " + line;
-								enqueueTextMessage(message);
+								if (line.Length > 0)
+								{
+									InTextMessage message = new InTextMessage();
+									message.fromServer = false;
+									message.message = "[" + username + "] " + line;
+									enqueueTextMessage(message);
 
-								sendTextMessage(line);
+									sendTextMessage(line);
+								}
 							}
 						}
-						tcpSendMutex.ReleaseMutex();
+						finally
+						{
+							tcpSendMutex.ReleaseMutex();
+						}
 					}
 
 					File.Delete(CHAT_OUT_FILENAME);
