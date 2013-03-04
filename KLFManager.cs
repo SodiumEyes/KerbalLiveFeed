@@ -43,6 +43,7 @@ namespace KerbalLiveFeed
 		public const String GLOBAL_SETTINGS_FILENAME = "globalsettings.txt";
 
 		public const float INACTIVE_VESSEL_RANGE = 400000000.0f;
+		public const float DOCKING_TARGET_RANGE = 200.0f;
 		public const int MAX_INACTIVE_VESSELS = 4;
 		public const int STATUS_ARRAY_SIZE = 2;
 
@@ -111,12 +112,12 @@ namespace KerbalLiveFeed
 
 			//Save global settings periodically
 
-			if ((UnityEngine.Time.fixedTime - lastGlobalSettingSaveTime) > 10.0f)
+			if ((UnityEngine.Time.realtimeSinceStartup - lastGlobalSettingSaveTime) > 10.0f)
 			{
 				saveGlobalSettings();
 
 				//Keep track of when the name was last read so we don't read it every time
-				lastGlobalSettingSaveTime = UnityEngine.Time.fixedTime;
+				lastGlobalSettingSaveTime = UnityEngine.Time.realtimeSinceStartup;
 			}
 
 			//Update the positions of all the vessels
@@ -127,7 +128,7 @@ namespace KerbalLiveFeed
 
 				VesselEntry entry = pair.Value;
 
-				if ((UnityEngine.Time.fixedTime-entry.lastUpdateTime) <= TIMEOUT_DELAY
+				if ((UnityEngine.Time.realtimeSinceStartup-entry.lastUpdateTime) <= TIMEOUT_DELAY
 					&& entry.vessel != null && entry.vessel.gameObj != null)
 				{
 					entry.vessel.updateRenderProperties();
@@ -151,7 +152,7 @@ namespace KerbalLiveFeed
 			//Delete outdated player status entries
 			foreach (KeyValuePair<String, VesselStatusInfo> pair in playerStatus)
 			{
-				if ((UnityEngine.Time.fixedTime - pair.Value.lastUpdateTime) > TIMEOUT_DELAY)
+				if ((UnityEngine.Time.realtimeSinceStartup - pair.Value.lastUpdateTime) > TIMEOUT_DELAY)
 					delete_list.Add(pair.Key);
 			}
 
@@ -161,7 +162,7 @@ namespace KerbalLiveFeed
 
 		private void writePluginUpdate()
 		{
-			if ((UnityEngine.Time.fixedTime - lastUsernameReadTime) > 10.0f
+			if ((UnityEngine.Time.realtimeSinceStartup - lastUsernameReadTime) > 10.0f
 						&& KSP.IO.File.Exists<KLFManager>(CLIENT_DATA_FILENAME))
 			{
 				//Read the username from the client data file
@@ -171,7 +172,7 @@ namespace KerbalLiveFeed
 				playerName = encoder.GetString(bytes, 0, bytes.Length);
 
 				//Keep track of when the name was last read so we don't read it every time
-				lastUsernameReadTime = UnityEngine.Time.fixedTime;
+				lastUsernameReadTime = UnityEngine.Time.realtimeSinceStartup;
 			}
 
 			if (playerName == null || playerName.Length == 0)
@@ -336,6 +337,11 @@ namespace KerbalLiveFeed
 
 				update.state = Vessel.State.ACTIVE;
 
+				//Check if the vessel is docking
+				if (FlightGlobals.fetch.VesselTarget != null && FlightGlobals.fetch.VesselTarget is ModuleDockingNode
+					&& Vector3.Distance(vessel.GetWorldPos3D(), FlightGlobals.fetch.VesselTarget.GetTransform().position) < DOCKING_TARGET_RANGE)
+					update.situation = Vessel.Situations.DOCKED;
+
 				bool is_eva = false;
 
 				//Check if the vessel is an EVA Kerbal
@@ -471,7 +477,7 @@ namespace KerbalLiveFeed
 				my_status.color = KLFVessel.generateActiveColor(playerName);
 				my_status.ownerName = playerName;
 				my_status.vesselName = vessel.vesselName;
-				my_status.lastUpdateTime = UnityEngine.Time.fixedTime;
+				my_status.lastUpdateTime = UnityEngine.Time.realtimeSinceStartup;
 
 				if (playerStatus.ContainsKey(playerName))
 					playerStatus[playerName] = my_status;
@@ -691,7 +697,7 @@ namespace KerbalLiveFeed
 				status.ownerName = status_array[0];
 				status.vesselName = status_array[1];
 				status.orbit = null;
-				status.lastUpdateTime = UnityEngine.Time.fixedTime;
+				status.lastUpdateTime = UnityEngine.Time.realtimeSinceStartup;
 				status.color = KLFVessel.generateActiveColor(status.ownerName);
 
 				return status;
@@ -798,7 +804,7 @@ namespace KerbalLiveFeed
 					status.ownerName = vessel_update.ownerName;
 					status.vesselName = vessel_update.vesselName;
 					status.orbit = null;
-					status.lastUpdateTime = UnityEngine.Time.fixedTime;
+					status.lastUpdateTime = UnityEngine.Time.realtimeSinceStartup;
 					status.color = KLFVessel.generateActiveColor(status.ownerName);
 
 					if (playerStatus.ContainsKey(status.ownerName))
@@ -841,7 +847,7 @@ namespace KerbalLiveFeed
 					//Update the entry's timestamp
 					VesselEntry new_entry = new VesselEntry();
 					new_entry.vessel = entry.vessel;
-					new_entry.lastUpdateTime = UnityEngine.Time.fixedTime;
+					new_entry.lastUpdateTime = UnityEngine.Time.realtimeSinceStartup;
 
 					vessels[vessel_key] = new_entry;
 				}
@@ -852,7 +858,7 @@ namespace KerbalLiveFeed
 				vessel = new KLFVessel(vessel_update.vesselName, vessel_update.ownerName, vessel_update.id);
 				entry = new VesselEntry();
 				entry.vessel = vessel;
-				entry.lastUpdateTime = UnityEngine.Time.fixedTime;
+				entry.lastUpdateTime = UnityEngine.Time.realtimeSinceStartup;
 
 				if (vessels.ContainsKey(vessel_key))
 					vessels[vessel_key] = entry;
@@ -915,7 +921,7 @@ namespace KerbalLiveFeed
 				if (vessel.orbitValid)
 					status.orbit = vessel.orbitRenderer.orbit;
 
-				status.lastUpdateTime = UnityEngine.Time.fixedTime;
+				status.lastUpdateTime = UnityEngine.Time.realtimeSinceStartup;
 				status.color = KLFVessel.generateActiveColor(status.ownerName);
 
 				if (playerStatus.ContainsKey(status.ownerName))

@@ -84,7 +84,7 @@ namespace KLFServer
 
 			listenThread = new Thread(new ThreadStart(listenForClients));
 			commandThread = new Thread(new ThreadStart(handleCommands));
-			handleMessageThread = new Thread(new ThreadStart(handleReceivedMessages));
+			//handleMessageThread = new Thread(new ThreadStart(handleReceivedMessages));
 			disconnectThread = new Thread(new ThreadStart(handleDisconnects));
 
 			threadException = null;
@@ -101,7 +101,7 @@ namespace KLFServer
 			Console.WriteLine("/kick <username>");
 
 			commandThread.Start();
-			handleMessageThread.Start();
+			//handleMessageThread.Start();
 			disconnectThread.Start();
 
 			while (!quit)
