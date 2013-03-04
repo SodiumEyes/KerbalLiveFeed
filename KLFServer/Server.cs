@@ -14,12 +14,6 @@ namespace KLFServer
 	class Server
 	{
 
-		public struct ClientMessage {
-			public int clientIndex;
-			public KLFCommon.ClientMessageID id;
-			public byte[] data;
-		}
-
 		public const bool SEND_UPDATES_TO_SENDER = false;
 		public const bool DEBUG_OUT = false;
 		public const long CLIENT_TIMEOUT_DELAY = 8000;
@@ -33,16 +27,12 @@ namespace KLFServer
 		
 		public bool quit = false;
 
-		public Queue<ClientMessage> clientMessageQueue;
-
 		public String threadExceptionStackTrace;
 		public Exception threadException;
 		public Mutex threadExceptionMutex;
-		public Mutex messageQueueMutex;
 
 		public Thread listenThread;
 		public Thread commandThread;
-		public Thread handleMessageThread;
 		public Thread disconnectThread;
 		public TcpListener tcpListener;
 
@@ -84,14 +74,10 @@ namespace KLFServer
 
 			listenThread = new Thread(new ThreadStart(listenForClients));
 			commandThread = new Thread(new ThreadStart(handleCommands));
-			//handleMessageThread = new Thread(new ThreadStart(handleReceivedMessages));
 			disconnectThread = new Thread(new ThreadStart(handleDisconnects));
 
 			threadException = null;
 			threadExceptionMutex = new Mutex();
-			messageQueueMutex = new Mutex();
-
-			clientMessageQueue = new Queue<ClientMessage>();
 
 			tcpListener = new TcpListener(IPAddress.Any, settings.port);
 			listenThread.Start();
@@ -101,7 +87,6 @@ namespace KLFServer
 			Console.WriteLine("/kick <username>");
 
 			commandThread.Start();
-			//handleMessageThread.Start();
 			disconnectThread.Start();
 
 			while (!quit)
@@ -268,48 +253,6 @@ namespace KLFServer
 					threadException = e; //Pass exception to main thread
 				threadExceptionMutex.ReleaseMutex();
 			}
-		}
-
-		private void handleReceivedMessages()
-		{
-
-			try
-			{
-				debugConsoleWriteLine("Starting message handling thread");
-
-				while (true)
-				{
-
-					messageQueueMutex.WaitOne();
-					try
-					{
-						while (clientMessageQueue.Count > 0)
-						{
-							ClientMessage message = clientMessageQueue.Dequeue();
-							handleMessage(message.clientIndex, message.id, message.data);
-						}
-					}
-					finally
-					{
-						messageQueueMutex.ReleaseMutex();
-					}
-
-					Thread.Sleep(SLEEP_TIME);
-				}
-			}
-			catch (ThreadAbortException)
-			{
-			}
-			catch (Exception e)
-			{
-				threadExceptionMutex.WaitOne();
-				if (threadException == null)
-					threadException = e; //Pass exception to main thread
-				threadExceptionMutex.ReleaseMutex();
-			}
-
-			debugConsoleWriteLine("Ending message handling thread.");
-
 		}
 
 		private void handleDisconnects()
@@ -696,7 +639,6 @@ namespace KLFServer
 
 			safeAbort(listenThread, true);
 			safeAbort(commandThread);
-			safeAbort(handleMessageThread);
 			safeAbort(disconnectThread);
 
 			if (clients != null)
@@ -926,57 +868,12 @@ namespace KLFServer
 
 		private void sendPluginUpdate(int client_index, byte[] data)
 		{
-
 			clients[client_index].queueOutgoingMessage(KLFCommon.ServerMessageID.PLUGIN_UPDATE, data);
-			/*
-			try
-			{
-
-				//Encode message
-				sendMessageHeader(client, KLFCommon.ServerMessageID.PLUGIN_UPDATE, data.Length);
-				client.GetStream().Write(data, 0, data.Length);
-
-				client.GetStream().Flush();
-
-			}
-			catch (System.IO.IOException)
-			{
-			}
-			catch (System.ObjectDisposedException)
-			{
-			}
-			catch (System.InvalidOperationException)
-			{
-			}
-			 */
 		}
 
 		private void sendScreenshot(int client_index, byte[] bytes)
 		{
 			clients[client_index].queueOutgoingMessage(KLFCommon.ServerMessageID.SCREENSHOT_SHARE, bytes);
-			/*
-			try
-			{
-
-				if (bytes != null)
-				{
-					//Encode message
-					sendMessageHeader(client, KLFCommon.ServerMessageID.SCREENSHOT_SHARE, bytes.Length);
-					client.GetStream().Write(bytes, 0, bytes.Length);
-					client.GetStream().Flush();
-				}
-
-			}
-			catch (System.IO.IOException)
-			{
-			}
-			catch (System.ObjectDisposedException)
-			{
-			}
-			catch (System.InvalidOperationException)
-			{
-			}
-			 */
 		}
 
 		private void sendServerSettingsToAll()
@@ -992,31 +889,7 @@ namespace KLFServer
 
 		private void sendServerSettings(int client_index)
 		{
-
 			clients[client_index].queueOutgoingMessage(KLFCommon.ServerMessageID.SERVER_SETTINGS, serverSettingBytes());
-			/*
-			try
-			{
-
-				//Encode message
-				sendMessageHeader(client, KLFCommon.ServerMessageID.SERVER_SETTINGS, 12);
-				client.GetStream().Write(KLFCommon.intToBytes(settings.updateInterval), 0, 4);
-				client.GetStream().Write(KLFCommon.intToBytes((numClients-1) * 2), 0, 4);
-				client.GetStream().Write(KLFCommon.intToBytes(settings.screenshotInterval), 0, 4);
-
-				client.GetStream().Flush();
-
-			}
-			catch (System.IO.IOException)
-			{
-			}
-			catch (System.ObjectDisposedException)
-			{
-			}
-			catch (System.InvalidOperationException)
-			{
-			}
-			 */
 		}
 
 		private byte[] serverSettingBytes()
