@@ -9,6 +9,7 @@ using System.Threading;
 using System.Diagnostics;
 
 using System.IO;
+using System.Runtime.InteropServices;
 
 namespace KLFClient
 {
@@ -208,7 +209,7 @@ namespace KLFClient
 						}
 						
 						Console.WriteLine();
-						Console.WriteLine("Unexpected expection encountered! Crash report written to KLFClientlog.txt");
+						Console.WriteLine("Unexpected exception encountered! Crash report written to KLFClientlog.txt");
 						Console.WriteLine();
 
 						Console.ResetColor();
@@ -398,15 +399,7 @@ namespace KLFClient
 					}
 					else
 					{
-						tcpSendMutex.WaitOne();
-						try
-						{
-							sendHandshakeMessage(); //Reply to the handshake
-						}
-						finally
-						{
-							tcpSendMutex.ReleaseMutex();
-						}
+						sendHandshakeMessage(); //Reply to the handshake
 					}
 
 					break;
@@ -764,29 +757,9 @@ namespace KLFClient
 
 				while (true)
 				{
-					tcpSendMutex.WaitOne();
-					try
-					{
-						//Send a keep-alive message to prevent timeout
-						if (stopwatch.ElapsedMilliseconds - lastMessageSendTime >= KEEPALIVE_DELAY)
-						{
-							try
-							{
-								sendMessageHeader(KLFCommon.ClientMessageID.KEEPALIVE, 0);
-							}
-							catch (System.InvalidOperationException)
-							{
-							}
-							catch (System.IO.IOException)
-							{
-							}
-						}
-
-					}
-					finally
-					{
-						tcpSendMutex.ReleaseMutex();
-					}
+					//Send a keep-alive message to prevent timeout
+					if (stopwatch.ElapsedMilliseconds - lastMessageSendTime >= KEEPALIVE_DELAY)
+						sendMessage(KLFCommon.ClientMessageID.KEEPALIVE, null);
 
 					Thread.Sleep(SLEEP_TIME);
 				}
@@ -844,15 +817,7 @@ namespace KLFClient
 									}
 									else
 									{
-										tcpSendMutex.WaitOne();
-										try
-										{
-											sendTextMessage(line);
-										}
-										finally
-										{
-											tcpSendMutex.ReleaseMutex();
-										}
+										sendTextMessage(line);
 									}
 								}
 
@@ -967,22 +932,8 @@ namespace KLFClient
 					Int32 file_format_version = KLFCommon.intFromBytes(update_bytes, 0);
 					if (file_format_version == KLFCommon.FILE_FORMAT_VERSION)
 					{
-						//Send the update to the server
-						tcpSendMutex.WaitOne();
-
-						try
-						{
-
-							//Remove the file format version bytes before sending
-							sendMessageHeader(KLFCommon.ClientMessageID.PLUGIN_UPDATE, update_bytes.Length - 4);
-							tcpClient.GetStream().Write(update_bytes, 4, update_bytes.Length - 4);
-							tcpClient.GetStream().Flush();
-
-						}
-						finally
-						{
-							tcpSendMutex.ReleaseMutex();
-						}
+						//Remove the 4 file format version bytes before sending
+						sendMessage(KLFCommon.ClientMessageID.PLUGIN_UPDATE, update_bytes, 4);
 					}
 					else
 					{
@@ -1093,15 +1044,7 @@ namespace KLFClient
 
 					if (bytes != null && bytes.Length > 0 && bytes.Length <= KLFCommon.MAX_SCREENSHOT_BYTES)
 					{
-						tcpSendMutex.WaitOne();
-						try
-						{
-							sendShareScreenshotMesssage(bytes);
-						}
-						finally
-						{
-							tcpSendMutex.ReleaseMutex();
-						}
+						sendShareScreenshotMesssage(bytes);
 
 						lastSharedScreenshot = bytes;
 						if (watchPlayerName == username)
@@ -1212,15 +1155,7 @@ namespace KLFClient
 							screenshotInMutex.ReleaseMutex();
 						}
 
-						tcpSendMutex.WaitOne();
-						try
-						{
-							sendScreenshotWatchPlayerMessage(watchPlayerName);
-						}
-						finally
-						{
-							tcpSendMutex.ReleaseMutex();
-						}
+						sendScreenshotWatchPlayerMessage(watchPlayerName);
 					}
 
 				}
@@ -1300,25 +1235,17 @@ namespace KLFClient
 						ASCIIEncoding encoder = new ASCIIEncoding();
 						String[] lines = encoder.GetString(bytes, 0, bytes.Length).Split('\n');
 
-						tcpSendMutex.WaitOne();
-						try
+						foreach (String line in lines)
 						{
-							foreach (String line in lines)
+							if (line.Length > 0)
 							{
-								if (line.Length > 0)
-								{
-									InTextMessage message = new InTextMessage();
-									message.fromServer = false;
-									message.message = "[" + username + "] " + line;
-									enqueueTextMessage(message);
+								InTextMessage message = new InTextMessage();
+								message.fromServer = false;
+								message.message = "[" + username + "] " + line;
+								enqueueTextMessage(message);
 
-									sendTextMessage(line);
-								}
+								sendTextMessage(line);
 							}
-						}
-						finally
-						{
-							tcpSendMutex.ReleaseMutex();
 						}
 					}
 
@@ -1443,110 +1370,75 @@ namespace KLFClient
 
 		//Messages
 
-		private static void sendMessageHeader(KLFCommon.ClientMessageID id, int msg_length)
-		{
-			tcpClient.GetStream().Write(KLFCommon.intToBytes((int)id), 0, 4);
-			tcpClient.GetStream().Write(KLFCommon.intToBytes(msg_length), 0, 4);
-
-			lastMessageSendTime = stopwatch.ElapsedMilliseconds;
-		}
-
 		private static void sendHandshakeMessage()
 		{
-			try
-			{
+			//Encode username
+			ASCIIEncoding encoder = new ASCIIEncoding();
+			byte[] username_bytes = encoder.GetBytes(username);
+			byte[] version_bytes = encoder.GetBytes(KLFCommon.PROGRAM_VERSION);
 
-				//Encode username
-				ASCIIEncoding encoder = new ASCIIEncoding();
-				byte[] username_bytes = encoder.GetBytes(username);
-				byte[] version_bytes = encoder.GetBytes(KLFCommon.PROGRAM_VERSION);
+			byte[] message_data = new byte[4 + username_bytes.Length + version_bytes.Length];
 
-				sendMessageHeader(KLFCommon.ClientMessageID.HANDSHAKE, username_bytes.Length + version_bytes.Length + 4);
+			KLFCommon.intToBytes(username_bytes.Length).CopyTo(message_data, 0);
+			username_bytes.CopyTo(message_data, 4);
+			version_bytes.CopyTo(message_data, 4 + username_bytes.Length);
 
-				//Write username bytes length
-				tcpClient.GetStream().Write(KLFCommon.intToBytes(username_bytes.Length), 0, 4);
-				tcpClient.GetStream().Write(username_bytes, 0, username_bytes.Length);
-				tcpClient.GetStream().Write(version_bytes, 0, version_bytes.Length);
-
-				tcpClient.GetStream().Flush();
-
-			}
-			catch (System.InvalidOperationException)
-			{
-			}
-			catch (System.IO.IOException)
-			{
-			}
-
+			sendMessage(KLFCommon.ClientMessageID.HANDSHAKE, message_data);
 		}
 
 		private static void sendTextMessage(String message)
 		{
-			try
-			{
+			//Encode message
+			ASCIIEncoding encoder = new ASCIIEncoding();
+			byte[] message_bytes = encoder.GetBytes(message);
 
-				//Encode message
-				ASCIIEncoding encoder = new ASCIIEncoding();
-				byte[] message_bytes = encoder.GetBytes(message);
-
-				sendMessageHeader(KLFCommon.ClientMessageID.TEXT_MESSAGE, message_bytes.Length);
-
-				tcpClient.GetStream().Write(message_bytes, 0, message_bytes.Length);
-
-				tcpClient.GetStream().Flush();
-
-			}
-			catch (System.InvalidOperationException)
-			{
-			}
-			catch (System.IO.IOException)
-			{
-			}
+			sendMessage(KLFCommon.ClientMessageID.TEXT_MESSAGE, message_bytes);
 		}
 
 		private static void sendShareScreenshotMesssage(byte[] data)
 		{
-			try
-			{
-
-				//Encode message
-				sendMessageHeader(KLFCommon.ClientMessageID.SCREENSHOT_SHARE, data.Length);
-
-				tcpClient.GetStream().Write(data, 0, data.Length);
-
-				tcpClient.GetStream().Flush();
-
-			}
-			catch (System.InvalidOperationException)
-			{
-			}
-			catch (System.IO.IOException)
-			{
-			}
+			sendMessage(KLFCommon.ClientMessageID.SCREENSHOT_SHARE, data);
 		}
 
 		private static void sendScreenshotWatchPlayerMessage(String name)
 		{
+			//Encode name
+			ASCIIEncoding encoder = new ASCIIEncoding();
+			byte[] bytes = encoder.GetBytes(name);
+
+			sendMessage(KLFCommon.ClientMessageID.SCREEN_WATCH_PLAYER, bytes);
+		}
+
+		private static void sendMessage(KLFCommon.ClientMessageID id, byte[] data, int offset = 0, int length = -1)
+		{
+			tcpSendMutex.WaitOne();
+
 			try
 			{
+				//Write header
+				tcpClient.GetStream().Write(KLFCommon.intToBytes((int)id), 0, 4);
 
-				//Encode message
-				ASCIIEncoding encoder = new ASCIIEncoding();
-				byte[] bytes = encoder.GetBytes(name);
+				if (data != null)
+				{
+					if (length < 0 || length > (data.Length-offset))
+						length = (data.Length-offset);
 
-				sendMessageHeader(KLFCommon.ClientMessageID.SCREEN_WATCH_PLAYER, bytes.Length);
-
-				tcpClient.GetStream().Write(bytes, 0, bytes.Length);
+					tcpClient.GetStream().Write(KLFCommon.intToBytes(length), 0, 4);
+					tcpClient.GetStream().Write(data, offset, length);
+				}
+				else
+					tcpClient.GetStream().Write(KLFCommon.intToBytes(0), 0, 4);
 
 				tcpClient.GetStream().Flush();
+			}
+			catch (System.InvalidOperationException) { }
+			catch (System.IO.IOException) { }
+			finally
+			{
+				tcpSendMutex.ReleaseMutex();
+			}
 
-			}
-			catch (System.InvalidOperationException)
-			{
-			}
-			catch (System.IO.IOException)
-			{
-			}
+			lastMessageSendTime = stopwatch.ElapsedMilliseconds;
 		}
 
 	}

@@ -188,7 +188,7 @@ namespace KLFServer
 				Console.WriteLine();
 
 				Console.ForegroundColor = ConsoleColor.Red;
-				Server.stampedConsoleWriteLine("Unexpected expection encountered! Crash report written to KLFServerlog.txt");
+				Server.stampedConsoleWriteLine("Unexpected exception encountered! Crash report written to KLFServerlog.txt");
 				Console.WriteLine(e.ToString());
 				if (server.threadExceptionStackTrace != null && server.threadExceptionStackTrace.Length > 0)
 				{
