@@ -69,6 +69,7 @@ namespace KLFClient
 		public const String PLUGIN_DIRECTORY = "PluginData/kerballivefeed/";
 
 		public static bool endSession;
+		public static bool intentionalConnectionEnd;
 		public static TcpClient tcpClient;
 
 		public static Queue<byte[]> pluginUpdateInQueue;
@@ -81,6 +82,7 @@ namespace KLFClient
 		public static String watchPlayerName;
 
 		public static long lastMessageSendTime;
+		public static bool quitHelperMessageShow;
 
 		public static Mutex tcpSendMutex;
 		public static Mutex pluginUpdateInMutex;
@@ -261,6 +263,7 @@ namespace KLFClient
 				{
 
 					endSession = false;
+					intentionalConnectionEnd = false;
 
 					pluginUpdateInQueue = new Queue<byte[]>();
 					textMessageQueue = new Queue<InTextMessage>();
@@ -282,6 +285,8 @@ namespace KLFClient
 					lastScreenshotShareTime = 0;
 					lastChatInWriteTime = 0;
 					lastMessageSendTime = 0;
+
+					quitHelperMessageShow = true;
 
 					//Create a thread to handle plugin updates
 					pluginUpdateThread = new Thread(new ThreadStart(handlePluginUpdates));
@@ -328,7 +333,7 @@ namespace KLFClient
 
 					Console.WriteLine("Connected to server! Handshaking...");
 
-					while (!endSession && tcpClient.Connected)
+					while (!endSession && !intentionalConnectionEnd && tcpClient.Connected)
 					{
 						//Check for exceptions thrown by threads
 						threadExceptionMutex.WaitOne();
@@ -349,7 +354,11 @@ namespace KLFClient
 					Console.ForegroundColor = ConsoleColor.Red;
 					Console.WriteLine();
 
-					enqueuePluginChatMessage("Lost connection with server.", true);
+					if (intentionalConnectionEnd)
+						enqueuePluginChatMessage("Closed connection with server", true);
+					else
+						enqueuePluginChatMessage("Lost connection with server", true);
+
 					writeChatIn();
 
 					Console.ResetColor();
@@ -526,6 +535,25 @@ namespace KLFClient
 						}
 					}
 					break;
+
+				case KLFCommon.ServerMessageID.CONNECTION_END:
+
+					String message = encoder.GetString(data, 0, data.Length);
+
+					endSession = true;
+					intentionalConnectionEnd = true;
+
+					pluginChatInMutex.WaitOne();
+					try
+					{
+						enqueuePluginChatMessage("Server closed the connection: " + message, true);
+					}
+					finally
+					{
+						pluginChatInMutex.ReleaseMutex();
+					}
+
+					break;
 			}
 		}
 
@@ -541,6 +569,47 @@ namespace KLFClient
 			//Close the socket if it's still open
 			if (tcpClient != null)
 				tcpClient.Close();
+		}
+
+		static void handleChatInput(String line)
+		{
+			if (line.Length > 0)
+			{
+				if (quitHelperMessageShow && (line == "q" || line == "Q"))
+				{
+					pluginChatInMutex.WaitOne();
+					try
+					{
+						Console.WriteLine();
+						enqueuePluginChatMessage("If you are trying to quit, use the /quit command.", true);
+					}
+					finally
+					{
+						pluginChatInMutex.ReleaseMutex();
+					}
+					quitHelperMessageShow = false;
+				}
+
+				if (line.ElementAt(0) == '/')
+				{
+					if (line == "/quit")
+					{
+						intentionalConnectionEnd = true;
+						endSession = true;
+						sendConnectionEndMessage("Quit");
+					}
+					else if (line == "/crash")
+					{
+						Object o = null;
+						o.ToString();
+					}
+
+				}
+				else
+				{
+					sendTextMessage(line);
+				}
+			}
 		}
 
 		//Threads
@@ -800,26 +869,7 @@ namespace KLFClient
 
 								String line = sb.ToString();
 
-								if (line.Length > 0)
-								{
-									if (line.ElementAt(0) == '/')
-									{
-										if (line == "/quit")
-										{
-											endSession = true;
-										}
-										else if (line == "/crash")
-										{
-											Object o = null;
-											o.ToString();
-										}
-
-									}
-									else
-									{
-										sendTextMessage(line);
-									}
-								}
+								handleChatInput(line);
 
 								sb.Clear();
 								Console.WriteLine();
@@ -1244,7 +1294,7 @@ namespace KLFClient
 								message.message = "[" + username + "] " + line;
 								enqueueTextMessage(message);
 
-								sendTextMessage(line);
+								handleChatInput(line);
 							}
 						}
 					}
@@ -1407,6 +1457,15 @@ namespace KLFClient
 			byte[] bytes = encoder.GetBytes(name);
 
 			sendMessage(KLFCommon.ClientMessageID.SCREEN_WATCH_PLAYER, bytes);
+		}
+
+		private static void sendConnectionEndMessage(String message)
+		{
+			//Encode message
+			ASCIIEncoding encoder = new ASCIIEncoding();
+			byte[] message_bytes = encoder.GetBytes(message);
+
+			sendMessage(KLFCommon.ClientMessageID.CONNECTION_END, message_bytes);
 		}
 
 		private static void sendMessage(KLFCommon.ClientMessageID id, byte[] data, int offset = 0, int length = -1)

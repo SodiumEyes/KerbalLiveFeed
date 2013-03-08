@@ -441,7 +441,7 @@ namespace KLFServer
 						sb.Append(" has joined the server.");
 
 						//Send the join message to all other clients
-						sendServerMessageToAll(sb.ToString());
+						sendServerMessageToAll(sb.ToString(), client_index);
 
 					}
 
@@ -487,6 +487,11 @@ namespace KLFServer
 								}
 
 								sendTextMessage(client_index, sb.ToString());
+								break;
+							}
+							else if (message_text == "!quit")
+							{
+								disconnectClient(client_index, "Requested quit");
 								break;
 							}
 						}
@@ -593,6 +598,15 @@ namespace KLFServer
 
 					break;
 
+				case KLFCommon.ClientMessageID.CONNECTION_END:
+
+					String message = String.Empty;
+					if (data != null)
+						message = encoder.GetString(data, 0, data.Length); //Decode the message
+
+					disconnectClient(client_index, message); //Disconnect the client
+					break;
+
 			}
 
 			debugConsoleWriteLine("Handled message");
@@ -671,7 +685,7 @@ namespace KLFServer
 
 			//Send a message to client informing them why they were disconnected
 			if (clients[index].tcpClient.Connected)
-				sendHandshakeRefusalMessageDirect(clients[index].tcpClient, message);
+				sendConnectionEndMessageDirect(clients[index].tcpClient, message);
 
 			//Close the socket
 			clients[index].tcpClientMutex.WaitOne();
@@ -697,7 +711,7 @@ namespace KLFServer
 				sb.Clear();
 				sb.Append("User ");
 				sb.Append(clients[index].username);
-				sb.Append(" has disconnected from the server: " + message);
+				sb.Append(" has disconnected : " + message);
 
 				//Send the disconnect message to all other clients
 				sendServerMessageToAll(sb.ToString());
@@ -793,6 +807,33 @@ namespace KLFServer
 				byte[] message_bytes = encoder.GetBytes(message);
 
 				sendMessageHeaderDirect(client, KLFCommon.ServerMessageID.HANDSHAKE_REFUSAL, message_bytes.Length);
+
+				client.GetStream().Write(message_bytes, 0, message_bytes.Length);
+
+				client.GetStream().Flush();
+
+			}
+			catch (System.IO.IOException)
+			{
+			}
+			catch (System.ObjectDisposedException)
+			{
+			}
+			catch (System.InvalidOperationException)
+			{
+			}
+		}
+
+		private void sendConnectionEndMessageDirect(TcpClient client, String message)
+		{
+			try
+			{
+
+				//Encode message
+				ASCIIEncoding encoder = new ASCIIEncoding();
+				byte[] message_bytes = encoder.GetBytes(message);
+
+				sendMessageHeaderDirect(client, KLFCommon.ServerMessageID.CONNECTION_END, message_bytes.Length);
 
 				client.GetStream().Write(message_bytes, 0, message_bytes.Length);
 

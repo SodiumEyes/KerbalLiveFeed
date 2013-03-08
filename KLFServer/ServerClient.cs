@@ -138,9 +138,8 @@ namespace KLFServer
 					}
 					else
 					{
-						//No message data
-						messageReceived(currentMessageID, null);
 						beginAsyncRead(); //Begin the read for the next packet
+						messageReceived(currentMessageID, null);
 					}
 				}
 				else
@@ -181,8 +180,8 @@ namespace KLFServer
 				currentMessageDataIndex += read;
 				if (currentMessageDataIndex >= currentMessageData.Length)
 				{
+					beginAsyncRead(); //Begin the read for the next packet
 					messageReceived(currentMessageID, currentMessageData);
-					beginAsyncRead();
 				}
 				else
 				{
