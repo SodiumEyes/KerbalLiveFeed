@@ -84,6 +84,16 @@ namespace KLFClient
 		public static long lastMessageSendTime;
 		public static bool quitHelperMessageShow;
 
+		//Messages
+
+		public static byte[] currentMessageHeader = new byte[KLFCommon.MSG_HEADER_LENGTH];
+		public static int currentMessageHeaderIndex;
+		public static byte[] currentMessageData;
+		public static int currentMessageDataIndex;
+		public static KLFCommon.ServerMessageID currentMessageID;
+
+		//Threading
+
 		public static Mutex tcpSendMutex;
 		public static Mutex pluginUpdateInMutex;
 		public static Mutex textMessageQueueMutex;
@@ -98,7 +108,6 @@ namespace KLFClient
 		public static Thread pluginUpdateThread;
 		public static Thread screenshotUpdateThread;
 		public static Thread chatThread;
-		public static Thread incomingMessageThread;
 		public static Thread disconnectThread;
 
 		public static Stopwatch stopwatch;
@@ -300,13 +309,11 @@ namespace KLFClient
 					chatThread = new Thread(new ThreadStart(handleChat));
 					chatThread.Start();
 
-					//Create a thread to handle incoming message
-					incomingMessageThread = new Thread(new ThreadStart(handleIncomingMessages));
-					incomingMessageThread.Start();
-
 					//Create a thread to handle disconnection
 					disconnectThread = new Thread(new ThreadStart(handleDisconnect));
 					disconnectThread.Start();
+
+					beginAsyncRead();
 
 					//Create the plugin directory if it doesn't exist
 					if (!Directory.Exists(PLUGIN_DIRECTORY))
@@ -328,8 +335,6 @@ namespace KLFClient
 					byte[] username_bytes = encoder.GetBytes(username);
 					client_data_stream.Write(username_bytes, 0, username_bytes.Length);
 					client_data_stream.Close();
-
-					endSession = false;
 
 					Console.WriteLine("Connected to server! Handshaking...");
 
@@ -562,7 +567,6 @@ namespace KLFClient
 			//Abort all threads
 			safeAbort(pluginUpdateThread);
 			safeAbort(chatThread);
-			safeAbort(incomingMessageThread);
 			safeAbort(screenshotUpdateThread);
 			safeAbort(disconnectThread);
 
@@ -613,138 +617,6 @@ namespace KLFClient
 		}
 
 		//Threads
-
-		static void handleIncomingMessages()
-		{
-			try
-			{
-
-				byte[] message_header = new byte[KLFCommon.MSG_HEADER_LENGTH];
-				int header_bytes_read = 0;
-				bool stream_ended = false;
-				KLFCommon.ServerMessageID id = KLFCommon.ServerMessageID.HANDSHAKE;
-				int msg_length = 0;
-				byte[] message_data = null;
-				int data_bytes_read = 0;
-
-				//Start connection loop
-				while (!stream_ended && !endSession && tcpClient.Connected)
-				{
-
-					try
-					{
-
-						//Detect if the socket closed
-						if (tcpClient.Client.Poll(0, SelectMode.SelectRead))
-						{
-							byte[] buff = new byte[1];
-							if (tcpClient.Client.Receive(buff, SocketFlags.Peek) == 0)
-							{
-								// Client disconnected
-								stream_ended = true;
-								break;
-							}
-						}
-
-						//Read the message header
-						if (tcpClient.GetStream().DataAvailable)
-						{
-
-							if (header_bytes_read < KLFCommon.MSG_HEADER_LENGTH)
-							{
-								//Read message header bytes
-								int num_read = 0;
-
-								tcpSendMutex.WaitOne();
-								try
-								{
-									num_read = tcpClient.GetStream().Read(message_header, header_bytes_read, KLFCommon.MSG_HEADER_LENGTH - header_bytes_read);
-								}
-								finally
-								{
-									tcpSendMutex.ReleaseMutex();
-								}
-
-								header_bytes_read += num_read;
-								if (header_bytes_read == KLFCommon.MSG_HEADER_LENGTH)
-								{
-									id = (KLFCommon.ServerMessageID)KLFCommon.intFromBytes(message_header, 0);
-									msg_length = KLFCommon.intFromBytes(message_header, 4);
-									if (msg_length > 0)
-										message_data = new byte[msg_length];
-									else
-										message_data = null;
-									data_bytes_read = 0;
-								}
-							}
-							else
-							{
-
-								if (msg_length > 0 && data_bytes_read < msg_length)
-								{
-									int num_read = 0;
-
-									//Read the message data
-									tcpSendMutex.WaitOne();
-									try
-									{
-										num_read = tcpClient.GetStream().Read(message_data, data_bytes_read, msg_length - data_bytes_read);
-									}
-									finally
-									{
-										tcpSendMutex.ReleaseMutex();
-									}
-
-									if (num_read > 0)
-										data_bytes_read += num_read;
-								}
-								
-								if (msg_length == 0 || data_bytes_read == msg_length) {
-									handleMessage(id, message_data);
-
-									header_bytes_read = 0;
-									data_bytes_read = 0;
-									msg_length = 0;
-								}
-
-								
-							}
-
-						}
-
-					}
-					catch (System.IO.IOException)
-					{
-						stream_ended = true;
-					}
-					catch (SocketException)
-					{
-						stream_ended = true;
-					}
-					catch (System.ObjectDisposedException)
-					{
-						stream_ended = true;
-					}
-					catch (System.Security.SecurityException)
-					{
-						stream_ended = true;
-					}
-
-					Thread.Sleep(SLEEP_TIME);
-				}
-			}
-			catch (ThreadAbortException)
-			{
-			}
-			catch (Exception e)
-			{
-				threadExceptionMutex.WaitOne();
-				threadException = e;
-				threadExceptionMutex.ReleaseMutex();
-			}
-
-			endSession = true;
-		}
 
 		static void handlePluginUpdates()
 		{
@@ -1419,6 +1291,136 @@ namespace KLFClient
 		}
 
 		//Messages
+
+		private static void beginAsyncRead()
+		{
+			try
+			{
+				if (tcpClient != null)
+				{
+					currentMessageHeaderIndex = 0;
+
+					tcpClient.GetStream().BeginRead(
+						currentMessageHeader,
+						0,
+						currentMessageHeader.Length,
+						asyncReadHeader,
+						currentMessageHeader);
+				}
+			}
+			catch (InvalidOperationException)
+			{
+			}
+			catch (System.IO.IOException)
+			{
+			}
+			catch (Exception e)
+			{
+				threadExceptionMutex.WaitOne();
+				if (threadException == null)
+					threadException = e; //Pass exception to parent
+				threadExceptionMutex.ReleaseMutex();
+			}
+		}
+
+		private static void asyncReadHeader(IAsyncResult result)
+		{
+			try
+			{
+				int read = tcpClient.GetStream().EndRead(result);
+
+				currentMessageHeaderIndex += read;
+				if (currentMessageHeaderIndex >= currentMessageHeader.Length)
+				{
+					currentMessageID = (KLFCommon.ServerMessageID)KLFCommon.intFromBytes(currentMessageHeader, 0);
+					int data_length = KLFCommon.intFromBytes(currentMessageHeader, 4);
+
+					if (data_length > 0)
+					{
+						//Begin the read for the message data
+						currentMessageData = new byte[data_length];
+						currentMessageDataIndex = 0;
+
+						tcpClient.GetStream().BeginRead(
+							currentMessageData,
+							0,
+							currentMessageData.Length,
+							asyncReadData,
+							currentMessageData);
+					}
+					else
+					{
+						beginAsyncRead(); //Begin the read for the next packet
+						handleMessage(currentMessageID, null);
+					}
+				}
+				else
+				{
+					//Begin an async read for the rest of the header
+					tcpClient.GetStream().BeginRead(
+						currentMessageHeader,
+						currentMessageHeaderIndex,
+						currentMessageHeader.Length - currentMessageHeaderIndex,
+						asyncReadHeader,
+						currentMessageHeader);
+				}
+
+
+			}
+			catch (InvalidOperationException)
+			{
+			}
+			catch (System.IO.IOException)
+			{
+			}
+			catch (Exception e)
+			{
+				threadExceptionMutex.WaitOne();
+				if (threadException == null)
+					threadException = e; //Pass exception to parent
+				threadExceptionMutex.ReleaseMutex();
+			}
+		}
+
+		private static void asyncReadData(IAsyncResult result)
+		{
+			try
+			{
+
+				int read = tcpClient.GetStream().EndRead(result);
+
+				currentMessageDataIndex += read;
+				if (currentMessageDataIndex >= currentMessageData.Length)
+				{
+					beginAsyncRead(); //Begin the read for the next packet
+					handleMessage(currentMessageID, currentMessageData);
+				}
+				else
+				{
+					//Begin an async read for the rest of the data
+					tcpClient.GetStream().BeginRead(
+						currentMessageData,
+						currentMessageDataIndex,
+						currentMessageData.Length - currentMessageDataIndex,
+						asyncReadData,
+						currentMessageData);
+				}
+
+			}
+			catch (InvalidOperationException)
+			{
+			}
+			catch (System.IO.IOException)
+			{
+			}
+			catch (Exception e)
+			{
+				threadExceptionMutex.WaitOne();
+				if (threadException == null)
+					threadException = e; //Pass exception to parent
+				threadExceptionMutex.ReleaseMutex();
+			}
+		}
 
 		private static void sendHandshakeMessage()
 		{
