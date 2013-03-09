@@ -8,7 +8,7 @@
     <ProjectGuid>{D7FB689F-A23A-4FC9-9098-CCC20B9B9E6D}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>KerbalLiveFeed</RootNamespace>
+    <RootNamespace>KLF</RootNamespace>
     <AssemblyName>KerbalLiveFeed</AssemblyName>
     <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>

@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using UnityEngine;
 
-namespace KerbalLiveFeed
+namespace KLF
 {
     public class KLFVessel
     {
@@ -70,8 +70,7 @@ namespace KerbalLiveFeed
 
 				if (mainBody != null)
 				{
-					if (info.situation == Vessel.Situations.LANDED || info.situation == Vessel.Situations.SPLASHED
-						|| info.situation == Vessel.Situations.PRELAUNCH)
+					if (situationIsGrounded(info.situation))
 					{
 						//Vessel is fixed in relation to body
 						return mainBody.transform.TransformPoint(localPosition);
@@ -148,20 +147,10 @@ namespace KerbalLiveFeed
         {
             get
             {
-				if (!orbitValid)
+				if (!orbitValid || situationIsGrounded(info.situation))
 					return false;
-
-				switch (info.situation)
-                {
-                    case Vessel.Situations.FLYING:
-                    case Vessel.Situations.ORBITING:
-                    case Vessel.Situations.SUB_ORBITAL:
-                    case Vessel.Situations.ESCAPING:
-                        return info.state == Vessel.State.ACTIVE || orbitRenderer.mouseOver;
-
-                    default:
-                        return false;
-                }
+				else
+					return info.state == State.ACTIVE || orbitRenderer.mouseOver;
             }
         }
 
@@ -327,8 +316,7 @@ namespace KerbalLiveFeed
 				orbitValid = true;
 
 				//Check for invalid values in the physics data
-				if (info.situation != Vessel.Situations.LANDED && info.situation != Vessel.Situations.PRELAUNCH
-					&& info.situation != Vessel.Situations.SPLASHED
+				if (!situationIsGrounded(info.situation)
 					&& ((localPosition.x == 0.0f && localPosition.y == 0.0f && localPosition.z == 0.0f)
 						|| (localVelocity.x == 0.0f && localVelocity.y == 0.0f && localVelocity.z == 0.0f)
 						|| localPosition.magnitude > mainBody.sphereOfInfluence)
@@ -394,17 +382,17 @@ namespace KerbalLiveFeed
 			bool pointed = true;
 			switch (info.state)
 			{
-				case Vessel.State.ACTIVE:
+				case State.ACTIVE:
 					apparent_size = 0.015f;
 					pointed = true;
 					break;
 
-				case Vessel.State.INACTIVE:
+				case State.INACTIVE:
 					apparent_size = 0.01f;
 					pointed = true;
 					break;
 
-				case Vessel.State.DEAD:
+				case State.DEAD:
 					apparent_size = 0.01f;
 					pointed = false;
 					break;
@@ -429,16 +417,8 @@ namespace KerbalLiveFeed
             line.SetPosition(0, ScaledSpace.LocalToScaledSpace(worldPosition - line_half_dir));
             line.SetPosition(1, ScaledSpace.LocalToScaledSpace(worldPosition + line_half_dir));
 
-			switch (info.situation)
-			{
-				case Vessel.Situations.ESCAPING:
-				case Vessel.Situations.FLYING:
-				case Vessel.Situations.ORBITING:
-				case Vessel.Situations.SUB_ORBITAL:
-				case Vessel.Situations.DOCKED:
-					orbitRenderer.orbit.UpdateFromUT(adjustedUT);
-					break;
-			}	
+			if (!situationIsGrounded(info.situation))
+				orbitRenderer.orbit.UpdateFromUT(adjustedUT);
         }
 
         public void updateOrbitProperties()
@@ -486,16 +466,16 @@ namespace KerbalLiveFeed
 				
 				switch (info.state)
 				{
-					case Vessel.State.ACTIVE:
+					case State.ACTIVE:
 						color = activeColor;
 						break;
 
-					case Vessel.State.INACTIVE:
+					case State.INACTIVE:
 						color = activeColor * 0.75f;
 						color.a = 1;
 						break;
 
-					case Vessel.State.DEAD:
+					case State.DEAD:
 						color = activeColor * 0.5f;
 						break;
 				}
@@ -507,13 +487,29 @@ namespace KerbalLiveFeed
 
 			if (!orbitValid)
 				orbitRenderer.drawIcons = OrbitRenderer.DrawIcons.NONE;
-			else if (info.state == Vessel.State.ACTIVE && shouldShowOrbit)
+			else if (info.state == State.ACTIVE && shouldShowOrbit)
 				orbitRenderer.drawIcons = OrbitRenderer.DrawIcons.OBJ_PE_AP;
 			else
 				orbitRenderer.drawIcons = OrbitRenderer.DrawIcons.OBJ;
 
 
         }
+
+		public static bool situationIsGrounded(Situation situation) {
+
+			switch (situation) {
+
+				case Situation.LANDED:
+				case Situation.SPLASHED:
+				case Situation.PRELAUNCH:
+				case Situation.DESTROYED:
+				case Situation.UNKNOWN:
+					return true;
+
+				default:
+					return false;
+			}
+		}
 
     }
 }

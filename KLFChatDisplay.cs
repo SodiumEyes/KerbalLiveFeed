@@ -5,7 +5,7 @@ using System.Text;
 
 using UnityEngine;
 
-namespace KerbalLiveFeed
+namespace KLF
 {
 	class KLFChatDisplay
 	{

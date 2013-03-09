@@ -1,4 +1,6 @@
-﻿using System;
+﻿//#define DEBUG_OUT
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -15,7 +17,6 @@ namespace KLFServer
 	{
 
 		public const bool SEND_UPDATES_TO_SENDER = false;
-		public const bool DEBUG_OUT = false;
 		public const long CLIENT_TIMEOUT_DELAY = 8000;
 		public const long CLIENT_HANDSHAKE_TIMEOUT_DELAY = 5000;
 		public const int SLEEP_TIME = 15;
@@ -649,8 +650,9 @@ namespace KLFServer
 
 		public static void debugConsoleWriteLine(String message)
 		{
-			if (DEBUG_OUT)
-				stampedConsoleWriteLine(message);
+#if DEBUG_OUT
+			stampedConsoleWriteLine(message);
+#endif
 		}
 
 		public void clearState()

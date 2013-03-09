@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using UnityEngine;
 
-namespace KerbalLiveFeed
+namespace KLF
 {
 	public class KLFManager : MonoBehaviour
 	{
@@ -311,11 +311,11 @@ namespace KerbalLiveFeed
 			KLFVesselUpdate update = new KLFVesselUpdate();
 
 			if (vessel.vesselName.Length <= MAX_VESSEL_NAME_LENGTH)
-				update.vesselName = vessel.vesselName;
+				update.name = vessel.vesselName;
 			else
-				update.vesselName = vessel.vesselName.Substring(0, MAX_VESSEL_NAME_LENGTH);
+				update.name = vessel.vesselName.Substring(0, MAX_VESSEL_NAME_LENGTH);
 
-			update.ownerName = playerName;
+			update.player = playerName;
 			update.id = vessel.id;
 
 			Vector3 pos = vessel.mainBody.transform.InverseTransformPoint(vessel.GetWorldPos3D());
@@ -324,139 +324,79 @@ namespace KerbalLiveFeed
 
 			for (int i = 0; i < 3; i++)
 			{
-				update.localPosition[i] = pos[i];
-				update.localDirection[i] = dir[i];
-				update.localVelocity[i] = vel[i];
+				update.pos[i] = pos[i];
+				update.dir[i] = dir[i];
+				update.vel[i] = vel[i];
 			}
+			
+			//Determine situation
+			if (vessel.GetTotalMass() <= 0.0)
+				update.situation = Situation.DESTROYED;
+			else
+			{
+				switch (vessel.situation)
+				{
 
-			update.situation = vessel.situation;
-			update.mass = vessel.GetTotalMass();
+					case Vessel.Situations.LANDED:
+						update.situation = Situation.LANDED;
+						break;
+
+					case Vessel.Situations.SPLASHED:
+						update.situation = Situation.SPLASHED;
+						break;
+
+					case Vessel.Situations.PRELAUNCH:
+						update.situation = Situation.PRELAUNCH;
+						break;
+
+					case Vessel.Situations.SUB_ORBITAL:
+						if (vessel.orbit.timeToAp < vessel.orbit.period / 2.0)
+							update.situation = Situation.ASCENDING;
+						else
+							update.situation = Situation.DESCENDING;
+						break;
+
+					case Vessel.Situations.ORBITING:
+						update.situation = Situation.ORBITING;
+						break;
+
+					case Vessel.Situations.ESCAPING:
+						if (vessel.orbit.timeToPe > 0.0)
+							update.situation = Situation.ENCOUNTERING;
+						else
+							update.situation = Situation.ESCAPING;
+						break;
+
+					case Vessel.Situations.DOCKED:
+						update.situation = Situation.DOCKED;
+						break;
+
+					case Vessel.Situations.FLYING:
+						update.situation = Situation.FLYING;
+						break;
+
+					default:
+						update.situation = Situation.UNKNOWN;
+						break;
+
+				}
+			}
 
 			if (vessel == FlightGlobals.ActiveVessel)
 			{
+				update.state = State.ACTIVE;
 
-				update.state = Vessel.State.ACTIVE;
-
-				//Check if the vessel is docking
-				if (FlightGlobals.fetch.VesselTarget != null && FlightGlobals.fetch.VesselTarget is ModuleDockingNode
-					&& Vector3.Distance(vessel.GetWorldPos3D(), FlightGlobals.fetch.VesselTarget.GetTransform().position) < DOCKING_TARGET_RANGE)
-					update.situation = Vessel.Situations.DOCKED;
-
-				bool is_eva = false;
-
-				//Check if the vessel is an EVA Kerbal
-				if (vessel.isEVA && vessel.parts.Count > 0 && vessel.parts.First().Modules.Count > 0)
-				{
-					foreach (PartModule module in vessel.parts.First().Modules) {
-						if (module is KerbalEVA)
-						{
-							KerbalEVA kerbal = (KerbalEVA)module;
-
-							update.percentFuel = (byte)Math.Round(kerbal.Fuel / kerbal.FuelCapacity * 100);
-							update.percentRCS = byte.MaxValue;
-							update.numCrew = byte.MaxValue;
-
-							is_eva = true;
-							break;
-						}
-							
-					}
-				}
-
-				if (!is_eva) {
-
-					if (vessel.GetCrewCapacity() > 0)
-						update.numCrew = (byte)vessel.GetCrewCount();
-					else
-						update.numCrew = byte.MaxValue;
-
-					Dictionary<string, float> fuel_densities = new Dictionary<string, float>();
-					Dictionary<string, float> rcs_fuel_densities = new Dictionary<string, float>();
-
-					//Determine what kinds of fuel this vessel can use and their densities
-
-					bool has_engines = false;
-					bool has_rcs = false;
-
-					foreach (Part part in vessel.parts)
-					{
-
-						foreach (ModuleEngines engine in part.Modules.OfType<ModuleEngines>())
-						{
-							has_engines = true;
-
-							foreach (ModuleEngines.Propellant propellant in engine.propellants)
-							{
-								if (propellant.name == "ElectricCharge" || propellant.name == "IntakeAir")
-								{
-									continue;
-								}
-
-								if (!fuel_densities.ContainsKey(propellant.name))
-									fuel_densities.Add(propellant.name, PartResourceLibrary.Instance.GetDefinition(propellant.id).density);
-							}
-						}
-
-						foreach (ModuleRCS rcs in part.Modules.OfType<ModuleRCS>())
-						{
-							if (rcs.requiresFuel)
-							{
-								has_rcs = true;
-								if (!rcs_fuel_densities.ContainsKey(rcs.resourceName))
-									rcs_fuel_densities.Add(rcs.resourceName, PartResourceLibrary.Instance.GetDefinition(rcs.resourceName).density);
-							}
-						}
-
-					}
-
-					//Determine how much fuel this vessel has and can hold
-					float fuel_capacity = 0.0f;
-					float fuel_amount = 0.0f;
-					float rcs_capacity = 0.0f;
-					float rcs_amount = 0.0f;
-
-					foreach (Part part in vessel.parts)
-					{
-						if (part != null && part.Resources != null)
-						{
-							foreach (PartResource resource in part.Resources)
-							{
-								float density = 0.0f;
-
-								//Check that this vessel can use this type of resource as fuel
-								if (has_engines && fuel_densities.TryGetValue(resource.resourceName, out density))
-								{
-									fuel_capacity += ((float)resource.maxAmount) * density;
-									fuel_amount += ((float)resource.amount) * density;
-								}
-
-								if (has_rcs && rcs_fuel_densities.TryGetValue(resource.resourceName, out density))
-								{
-									rcs_capacity += ((float)resource.maxAmount) * density;
-									rcs_amount += ((float)resource.amount) * density;
-								}
-							}
-						}
-					}
-
-					if (has_engines && fuel_capacity > 0.0f)
-						update.percentFuel = (byte)Math.Round(fuel_amount / fuel_capacity * 100);
-					else
-						update.percentFuel = byte.MaxValue;
-
-					if (has_rcs && rcs_capacity > 0.0f)
-						update.percentRCS = (byte)Math.Round(rcs_amount / rcs_capacity * 100);
-					else
-						update.percentRCS = byte.MaxValue;
-
-				}
+				//Set vessel details since it's the active vessel
+				Debug.Log("1");
+				update.detail = getVesselDetail(vessel);
+				Debug.Log("2");
 			}
 			else if (vessel.isCommandable)
-				update.state = Vessel.State.INACTIVE;
+				update.state = State.INACTIVE;
 			else
-				update.state = Vessel.State.DEAD;
+				update.state = State.DEAD;
 
-			update.timeScale = Planetarium.TimeScale;
+			update.timeScale = (float)Planetarium.TimeScale;
 			update.bodyName = vessel.mainBody.bodyName;
 
 			//Serialize the update
@@ -485,6 +425,182 @@ namespace KerbalLiveFeed
 					playerStatus.Add(playerName, my_status);
 			}
 
+		}
+
+		private KLFVesselDetail getVesselDetail(Vessel vessel)
+		{
+			KLFVesselDetail detail = new KLFVesselDetail();
+
+			detail.mass = vessel.GetTotalMass();
+
+			bool is_eva = false;
+			bool parachutes_open = false;
+
+			//Check if the vessel is an EVA Kerbal
+			if (vessel.isEVA && vessel.parts.Count > 0 && vessel.parts.First().Modules.Count > 0)
+			{
+				foreach (PartModule module in vessel.parts.First().Modules)
+				{
+					if (module is KerbalEVA)
+					{
+						KerbalEVA kerbal = (KerbalEVA)module;
+
+						detail.percentFuel = (byte)Math.Round(kerbal.Fuel / kerbal.FuelCapacity * 100);
+						detail.percentRCS = byte.MaxValue;
+						detail.numCrew = byte.MaxValue;
+
+						is_eva = true;
+						break;
+					}
+
+				}
+			}
+
+			Debug.Log("a");
+
+			if (!is_eva)
+			{
+
+				if (vessel.GetCrewCapacity() > 0)
+					detail.numCrew = (byte)vessel.GetCrewCount();
+				else
+					detail.numCrew = byte.MaxValue;
+
+				Dictionary<string, float> fuel_densities = new Dictionary<string, float>();
+				Dictionary<string, float> rcs_fuel_densities = new Dictionary<string, float>();
+
+				bool has_engines = false;
+				bool has_rcs = false;
+
+				foreach (Part part in vessel.parts)
+				{
+
+					foreach (PartModule module in part.Modules)
+					{
+
+						if (module is ModuleEngines)
+						{
+							//Determine what kinds of fuel this vessel can use and their densities
+							ModuleEngines engine = (ModuleEngines)module;
+							has_engines = true;
+
+							foreach (ModuleEngines.Propellant propellant in engine.propellants)
+							{
+								if (propellant.name == "ElectricCharge" || propellant.name == "IntakeAir")
+								{
+									continue;
+								}
+
+								if (!fuel_densities.ContainsKey(propellant.name))
+									fuel_densities.Add(propellant.name, PartResourceLibrary.Instance.GetDefinition(propellant.id).density);
+							}
+						}
+
+						if (module is ModuleRCS)
+						{
+							ModuleRCS rcs = (ModuleRCS)module;
+							if (rcs.requiresFuel)
+							{
+								has_rcs = true;
+								if (!rcs_fuel_densities.ContainsKey(rcs.resourceName))
+									rcs_fuel_densities.Add(rcs.resourceName, PartResourceLibrary.Instance.GetDefinition(rcs.resourceName).density);
+							}
+						}
+
+						if (module is ModuleParachute)
+						{
+							ModuleParachute parachute = (ModuleParachute)module;
+							if (parachute.deploymentState == ModuleParachute.deploymentStates.DEPLOYED)
+								parachutes_open = true;
+						}
+					}
+
+
+				}
+
+				Debug.Log("b");
+
+				//Determine how much fuel this vessel has and can hold
+				float fuel_capacity = 0.0f;
+				float fuel_amount = 0.0f;
+				float rcs_capacity = 0.0f;
+				float rcs_amount = 0.0f;
+
+				foreach (Part part in vessel.parts)
+				{
+					if (part != null && part.Resources != null)
+					{
+						foreach (PartResource resource in part.Resources)
+						{
+							float density = 0.0f;
+
+							//Check that this vessel can use this type of resource as fuel
+							if (has_engines && fuel_densities.TryGetValue(resource.resourceName, out density))
+							{
+								fuel_capacity += ((float)resource.maxAmount) * density;
+								fuel_amount += ((float)resource.amount) * density;
+							}
+
+							if (has_rcs && rcs_fuel_densities.TryGetValue(resource.resourceName, out density))
+							{
+								rcs_capacity += ((float)resource.maxAmount) * density;
+								rcs_amount += ((float)resource.amount) * density;
+							}
+						}
+					}
+				}
+
+				if (has_engines && fuel_capacity > 0.0f)
+					detail.percentFuel = (byte)Math.Round(fuel_amount / fuel_capacity * 100);
+				else
+					detail.percentFuel = byte.MaxValue;
+
+				if (has_rcs && rcs_capacity > 0.0f)
+					detail.percentRCS = (byte)Math.Round(rcs_amount / rcs_capacity * 100);
+				else
+					detail.percentRCS = byte.MaxValue;
+
+			}
+
+			//Determine vessel activity
+
+			if (parachutes_open)
+				detail.activity = Activity.PARACHUTING;
+
+			Debug.Log("A");
+
+			//Check if the vessel is aerobraking
+			if (vessel.orbit != null && vessel.orbit.referenceBody != null
+				&& vessel.orbit.referenceBody.atmosphere && vessel.orbit.altitude < vessel.orbit.referenceBody.maxAtmosphereAltitude)
+			{
+				//Vessel inside its body's atmosphere
+				switch (vessel.situation)
+				{
+					case Vessel.Situations.LANDED:
+					case Vessel.Situations.SPLASHED:
+					case Vessel.Situations.SUB_ORBITAL:
+					case Vessel.Situations.PRELAUNCH:
+						break;
+
+					default:
+
+						//If the apoapsis of the orbit is above the atmosphere, vessel is aerobraking
+						if ((float)vessel.orbit.ApA > vessel.orbit.referenceBody.maxAtmosphereAltitude)
+							detail.activity = Activity.AEROBRAKING;
+
+						break;
+				}
+
+			}
+
+			Debug.Log("B");
+
+			//Check if the vessel is docking
+			if (detail.activity == Activity.NONE && FlightGlobals.fetch.VesselTarget != null && FlightGlobals.fetch.VesselTarget is ModuleDockingNode
+				&& Vector3.Distance(vessel.GetWorldPos3D(), FlightGlobals.fetch.VesselTarget.GetTransform().position) < DOCKING_TARGET_RANGE)
+				detail.activity = Activity.DOCKING;
+
+			return detail;
 		}
 
 		private void readUpdatesFromFile()
@@ -797,12 +913,12 @@ namespace KerbalLiveFeed
 			if (!isInFlight)
 			{
 				//While not in-flight don't create KLF vessel, just store the active vessel status info
-				if (vessel_update.state == Vessel.State.ACTIVE) {
+				if (vessel_update.state == State.ACTIVE) {
 
 					VesselStatusInfo status = new VesselStatusInfo();
 					status.info = vessel_update;
-					status.ownerName = vessel_update.ownerName;
-					status.vesselName = vessel_update.vesselName;
+					status.ownerName = vessel_update.player;
+					status.vesselName = vessel_update.name;
 					status.orbit = null;
 					status.lastUpdateTime = UnityEngine.Time.realtimeSinceStartup;
 					status.color = KLFVessel.generateActiveColor(status.ownerName);
@@ -819,7 +935,7 @@ namespace KerbalLiveFeed
 			
 			//Build the key for the vessel
 			System.Text.StringBuilder sb = new System.Text.StringBuilder();
-			sb.Append(vessel_update.ownerName);
+			sb.Append(vessel_update.player);
 			sb.Append(vessel_update.id.ToString());
 
 			String vessel_key = sb.ToString();
@@ -832,7 +948,7 @@ namespace KerbalLiveFeed
 			{
 				vessel = entry.vessel;
 
-				if (vessel == null || vessel.gameObj == null || vessel.vesselName != vessel_update.vesselName)
+				if (vessel == null || vessel.gameObj == null || vessel.vesselName != vessel_update.name)
 				{
 					//Delete the vessel if it's null or needs to be renamed
 					vessels.Remove(vessel_key);
@@ -855,7 +971,7 @@ namespace KerbalLiveFeed
 				
 			if (vessel == null) {
 				//Add the vessel to the dictionary
-				vessel = new KLFVessel(vessel_update.vesselName, vessel_update.ownerName, vessel_update.id);
+				vessel = new KLFVessel(vessel_update.name, vessel_update.player, vessel_update.id);
 				entry = new VesselEntry();
 				entry.vessel = vessel;
 				entry.lastUpdateTime = UnityEngine.Time.realtimeSinceStartup;
@@ -901,22 +1017,22 @@ namespace KerbalLiveFeed
 			{
 
 				//Convert float arrays to Vector3s
-				Vector3 pos = new Vector3(vessel_update.localPosition[0], vessel_update.localPosition[1], vessel_update.localPosition[2]);
-				Vector3 dir = new Vector3(vessel_update.localDirection[0], vessel_update.localDirection[1], vessel_update.localDirection[2]);
-				Vector3 vel = new Vector3(vessel_update.localVelocity[0], vessel_update.localVelocity[1], vessel_update.localVelocity[2]);
+				Vector3 pos = new Vector3(vessel_update.pos[0], vessel_update.pos[1], vessel_update.pos[2]);
+				Vector3 dir = new Vector3(vessel_update.dir[0], vessel_update.dir[1], vessel_update.dir[2]);
+				Vector3 vel = new Vector3(vessel_update.vel[0], vessel_update.vel[1], vessel_update.vel[2]);
 
 				vessel.info = vessel_update;
 				vessel.setOrbitalData(update_body, pos, vel, dir);
 
 			}
 
-			if (vessel_update.state == Vessel.State.ACTIVE)
+			if (vessel_update.state == State.ACTIVE)
 			{
 				//Update the player status info
 				VesselStatusInfo status = new VesselStatusInfo();
 				status.info = vessel_update;
-				status.ownerName = vessel_update.ownerName;
-				status.vesselName = vessel_update.vesselName;
+				status.ownerName = vessel_update.player;
+				status.vesselName = vessel_update.name;
 
 				if (vessel.orbitValid)
 					status.orbit = vessel.orbitRenderer.orbit;
@@ -1303,129 +1419,119 @@ namespace KerbalLiveFeed
 			if (big)
 				GUILayout.EndHorizontal();
 
-			if (info.info == null)
+			if (info.info == null || info.info.detail == null)
 				return;
 
 			StringBuilder sb = new StringBuilder();
-			bool status_determined = false;
 			bool exploded = false;
+			bool situation_determined = false;
 
-			if (info.info.mass <= 0.0f)
+			if (info.info.situation == Situation.DESTROYED || info.info.detail.mass <= 0.0f)
 			{
 				sb.Append("Exploded at ");
-				status_determined = true;
 				exploded = true;
+				situation_determined = true;
 			}
-			else if (info.orbit != null && info.orbit.referenceBody != null && info.orbit.referenceBody.atmosphere
-				&& info.orbit.altitude < info.orbit.referenceBody.maxAtmosphereAltitude)
+			else 
 			{
-				//Vessel inside its body's atmosphere
-				switch (info.info.situation)
+
+				//Check if the vessel's activity overrides the situation
+				switch (info.info.detail.activity)
 				{
-					case Vessel.Situations.LANDED:
-					case Vessel.Situations.SUB_ORBITAL:
-					case Vessel.Situations.PRELAUNCH:
+					case Activity.AEROBRAKING:
+						sb.Append("Aerobraking at ");
+						situation_determined = true;
 						break;
 
-					default:
+					case Activity.DOCKING:
+						if (KLFVessel.situationIsGrounded(info.info.situation))
+							sb.Append("Docking on ");
+						else
+							sb.Append("Docking above ");
+						situation_determined = true;
+						break;
 
-						float pe = (float)info.orbit.PeA;
-
-						if ((float)info.orbit.ApA > info.orbit.referenceBody.maxAtmosphereAltitude)
-						{
-
-							if (info.info.situation == Vessel.Situations.ORBITING
-								|| info.info.situation == Vessel.Situations.ESCAPING)
-							{
-								sb.Append("Aerobraking at ");
-								status_determined = true;
-							}
-
-						}
-
+					case Activity.PARACHUTING:
+						sb.Append("Parachuting to ");
+						situation_determined = true;
 						break;
 				}
 
-			}
-
-			if (!status_determined)
-			{
-
-				switch (info.info.situation)
+				if (!situation_determined)
 				{
-					case Vessel.Situations.DOCKED:
-						sb.Append("Docking at ");
-						break;
+					switch (info.info.situation)
+					{
+						case Situation.DOCKED:
+							sb.Append("Docked at ");
+							break;
 
-					case Vessel.Situations.ESCAPING:
-						if (info.orbit != null && info.orbit.timeToPe > 0.0)
+						case Situation.ENCOUNTERING:
 							sb.Append("Encountering ");
-						else
+							break;
+
+						case Situation.ESCAPING:
 							sb.Append("Escaping ");
-						break;
+							break;
 
-					case Vessel.Situations.FLYING:
-						sb.Append("Flying at ");
-						break;
+						case Situation.FLYING:
+							sb.Append("Flying at ");
+							break;
 
-					case Vessel.Situations.LANDED:
-						sb.Append("Landed at ");
-						break;
+						case Situation.LANDED:
+							sb.Append("Landed at ");
+							break;
 
-					case Vessel.Situations.ORBITING:
-						sb.Append("Orbiting ");
-						break;
+						case Situation.ORBITING:
+							sb.Append("Orbiting ");
+							break;
 
-					case Vessel.Situations.PRELAUNCH:
-						sb.Append("Prelaunch at ");
-						break;
+						case Situation.PRELAUNCH:
+							sb.Append("Prelaunch at ");
+							break;
 
-					case Vessel.Situations.SPLASHED:
-						sb.Append("Splashed at ");
-						break;
+						case Situation.SPLASHED:
+							sb.Append("Splashed at ");
+							break;
 
-					case Vessel.Situations.SUB_ORBITAL:
-						if (info.orbit != null)
-						{
-							if (info.orbit.timeToAp < info.orbit.period / 2.0)
-								sb.Append("Ascending from ");
-							else
-								sb.Append("Descending to ");
-						}
-						else
-							sb.Append("Sub-Orbital at ");
+						case Situation.ASCENDING:
+							sb.Append("Ascending from ");
+							break;
 
-						break;
+						case Situation.DESCENDING:
+							sb.Append("Descending to ");
+							break;
+					}
 				}
+			
 			}
-
+ 
 			sb.Append(info.info.bodyName);
 
 			if (!exploded && KLFInfoDisplay.infoDisplayDetailed)
 			{
 
 				sb.Append(" - Mass: ");
-				sb.Append(info.info.mass.ToString("0.0"));
+				sb.Append(info.info.detail.mass.ToString("0.0"));
 				sb.Append(' ');
 
-				if (info.info.percentFuel < byte.MaxValue)
+				if (info.info.detail.percentFuel < byte.MaxValue)
 				{
 					sb.Append("Fuel: ");
-					sb.Append(info.info.percentFuel);
+					sb.Append(info.info.detail.percentFuel);
 					sb.Append("% ");
 				}
 
-				if (info.info.percentRCS < byte.MaxValue)
+				if (info.info.detail.percentRCS < byte.MaxValue)
 				{
 					sb.Append("RCS: ");
-					sb.Append(info.info.percentRCS);
+					sb.Append(info.info.detail.percentRCS);
 					sb.Append("% ");
 				}
 
-				if (info.info.numCrew < byte.MaxValue)
+				if (info.info.detail.numCrew < byte.MaxValue)
 				{
 					sb.Append("Crew: ");
-					sb.Append(info.info.numCrew);
+					sb.Append(info.info.detail.numCrew);
 				}
 			}
 
