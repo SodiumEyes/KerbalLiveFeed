@@ -30,7 +30,8 @@ namespace KLFServer
 
 		public String threadExceptionStackTrace;
 		public Exception threadException;
-		public Mutex threadExceptionMutex;
+
+		public object threadExceptionLock = new object();
 
 		public Thread listenThread;
 		public Thread commandThread;
@@ -179,15 +180,10 @@ namespace KLFServer
 
 		public void passExceptionToMain(Exception e)
 		{
-			threadExceptionMutex.WaitOne();
-			try
+			lock (threadExceptionLock)
 			{
 				if (threadException == null)
 					threadException = e; //Pass exception to main thread
-			}
-			finally
-			{
-				threadExceptionMutex.ReleaseMutex();
 			}
 		}
 
@@ -215,7 +211,6 @@ namespace KLFServer
 			disconnectThread = new Thread(new ThreadStart(handleDisconnects));
 
 			threadException = null;
-			threadExceptionMutex = new Mutex();
 
 			tcpListener = new TcpListener(IPAddress.Any, settings.port);
 			listenThread.Start();
@@ -230,8 +225,7 @@ namespace KLFServer
 			while (!quit)
 			{
 				//Check for exceptions that occur in threads
-				threadExceptionMutex.WaitOne();
-				try
+				lock (threadExceptionLock)
 				{
 					if (threadException != null)
 					{
@@ -239,10 +233,6 @@ namespace KLFServer
 						threadExceptionStackTrace = e.StackTrace;
 						throw e;
 					}
-				}
-				finally
-				{
-					threadExceptionMutex.ReleaseMutex();
 				}
 
 				Thread.Sleep(SLEEP_TIME);
@@ -414,17 +404,11 @@ namespace KLFServer
 							long connection_start_time = 0;
 							bool handshook = false;
 
-							clients[i].propertyMutex.WaitOne();
-							try
+							lock (clients[i].timestampLock)
 							{
 								last_message_receive_time = clients[i].lastMessageTime;
 								connection_start_time = clients[i].connectionStartTime;
 								handshook = clients[i].receivedHandshake;
-
-							}
-							finally
-							{
-								clients[i].propertyMutex.ReleaseMutex();
 							}
 
 							if (currentMillisecond - last_message_receive_time > CLIENT_TIMEOUT_DELAY
@@ -476,10 +460,8 @@ namespace KLFServer
 					//Add the client
 					client.tcpClient = tcp_client;
 
-					client.propertyMutex.WaitOne();
-					try
+					lock (clients[i].timestampLock)
 					{
-
 						client.username = "new user";
 						client.screenshot = null;
 						client.watchPlayerName = String.Empty;
@@ -487,11 +469,6 @@ namespace KLFServer
 						client.lastMessageTime = currentMillisecond;
 						client.connectionStartTime = currentMillisecond;
 						client.receivedHandshake = false;
-
-					}
-					finally
-					{
-						client.propertyMutex.ReleaseMutex();
 					}
 
 					client.startMessageThread();
@@ -524,14 +501,9 @@ namespace KLFServer
 				sendConnectionEndMessageDirect(clients[index].tcpClient, message);
 
 			//Close the socket
-			clients[index].tcpClientMutex.WaitOne();
-			try
+			lock (clients[index].tcpClientLock)
 			{
 				clients[index].tcpClient.Close();
-			}
-			finally
-			{
-				clients[index].tcpClientMutex.ReleaseMutex();
 			}
 
 			if (clients[index].canBeReplaced)
@@ -737,44 +709,38 @@ namespace KLFServer
 					if (data != null)
 						watch_name = encoder.GetString(data);
 
-					clients[client_index].propertyMutex.WaitOne();
-					try
+					bool watch_name_changed = false;
+
+					lock (clients[client_index].watchPlayerNameLock)
 					{
 						if (watch_name != clients[client_index].watchPlayerName)
 						{
 							//Set the watch player name
 							clients[client_index].watchPlayerName = watch_name;
+							watch_name_changed = true;
+						}
+					}
 
-							//Try to find the player the client is watching and send the current screenshot
-							if (clients[client_index].watchPlayerName.Length > 0
-								&& clients[client_index].watchPlayerName != clients[client_index].username)
+					if (watch_name_changed && watch_name.Length > 0
+						&& watch_name != clients[client_index].username)
+					{
+						//Try to find the player the client is watching and send that player's current screenshot
+						for (int i = 0; i < clients.Length; i++)
+						{
+							if (i != client_index && clientIsReady(i) && clients[i].username == watch_name)
 							{
-								for (int i = 0; i < clients.Length; i++)
+
+								lock (clients[i].screenshotLock)
 								{
-									if (i != client_index && clientIsReady(i) && clients[i].username == clients[client_index].watchPlayerName)
-									{
-
-										clients[i].propertyMutex.WaitOne();
-										try
-										{
-											if (clients[i].screenshot != null)
-												sendScreenshot(client_index, clients[i].screenshot);
-										}
-										finally
-										{
-											clients[i].propertyMutex.ReleaseMutex();
-										}
-
-										break;
-									}
+									if (clients[i].screenshot != null)
+										sendScreenshot(client_index, clients[i].screenshot);
 								}
+
+								break;
 							}
 						}
 					}
-					finally
-					{
-						clients[client_index].propertyMutex.ReleaseMutex();
-					}
+					
 
 					break;
 
@@ -783,14 +749,9 @@ namespace KLFServer
 					if (data != null && data.Length <= KLFCommon.MAX_SCREENSHOT_BYTES && clientIsReady(client_index))
 					{
 						//Set the screenshot for the player
-						clients[client_index].propertyMutex.WaitOne();
-						try
+						lock (clients[client_index].screenshotLock)
 						{
 							clients[client_index].screenshot = data;
-						}
-						finally
-						{
-							clients[client_index].propertyMutex.ReleaseMutex();
 						}
 
 						StringBuilder sb = new StringBuilder();
@@ -808,14 +769,9 @@ namespace KLFServer
 
 								bool match = false;
 
-								clients[i].propertyMutex.WaitOne();
-								try
+								lock (clients[i].watchPlayerNameLock)
 								{
 									match = clients[i].watchPlayerName == clients[client_index].username;
-								}
-								finally
-								{
-									clients[i].propertyMutex.ReleaseMutex();
 								}
 
 								if (match)

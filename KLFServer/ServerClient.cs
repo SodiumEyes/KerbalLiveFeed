@@ -43,19 +43,22 @@ namespace KLFServer
 
 		public bool receivedHandshake;
 		public bool canBeReplaced;
-		
-		//Protected by propertyMutex
+
 		public byte[] screenshot;
 		public String watchPlayerName;
+		
+		//Protected by propertyMutex
 		public long connectionStartTime;
 		public long lastMessageTime;
 
 		public TcpClient tcpClient;
 		public Thread messageThread;
-		
-		public Mutex tcpClientMutex;
-		public Mutex outgoingMessageMutex;
-		public Mutex propertyMutex;
+
+		public object tcpClientLock = new object();
+		public object outgoingMessageLock = new object();
+		public object timestampLock = new object();
+		public object screenshotLock = new object();
+		public object watchPlayerNameLock = new object();
 
 		public byte[] currentMessageHeader = new byte[KLFCommon.MSG_HEADER_LENGTH];
 		public int currentMessageHeaderIndex;
@@ -69,9 +72,6 @@ namespace KLFServer
 		{
 			this.parent = parent;
 			this.clientIndex = index;
-			tcpClientMutex = new Mutex();
-			outgoingMessageMutex = new Mutex();
-			propertyMutex = new Mutex();
 
 			canBeReplaced = true;
 
@@ -203,14 +203,9 @@ namespace KLFServer
 
 		private void messageReceived(KLFCommon.ClientMessageID id, byte[] data)
 		{
-			propertyMutex.WaitOne();
-			try
+			lock (timestampLock)
 			{
 				lastMessageTime = parent.currentMillisecond;
-			}
-			finally
-			{
-				propertyMutex.ReleaseMutex();
 			}
 
 			parent.handleMessage(clientIndex, id, data);
@@ -229,13 +224,6 @@ namespace KLFServer
 			}
 			catch (ThreadAbortException)
 			{
-				try
-				{
-					tcpClientMutex.ReleaseMutex();
-				}
-				catch (ApplicationException)
-				{
-				}
 			}
 			catch (Exception e)
 			{
@@ -245,18 +233,12 @@ namespace KLFServer
 
 		private void sendOutgoingMessages()
 		{
-			outgoingMessageMutex.WaitOne();
-
-			try
-			{
+			lock (outgoingMessageLock) {
 
 				if (queuedOutMessages.Count > 0)
 				{
 
-					tcpClientMutex.WaitOne();
-
-					try
-					{
+					lock (tcpClientLock) {
 
 						while (queuedOutMessages.Count > 0)
 						{
@@ -289,31 +271,18 @@ namespace KLFServer
 						}
 
 					}
-					finally
-					{
-						tcpClientMutex.ReleaseMutex();
-					}
 
 				}
 
-			}
-			finally
-			{
-				outgoingMessageMutex.ReleaseMutex();
 			}
 			
 		}
 
 		public void queueOutgoingMessage(KLFCommon.ServerMessageID id, byte[] data)
 		{
-			outgoingMessageMutex.WaitOne();
-			try
+			lock (outgoingMessageLock)
 			{
 				queuedOutMessages.Enqueue(new OutMessage(id, data));
-			}
-			finally
-			{
-				outgoingMessageMutex.ReleaseMutex();
 			}
 		}
 
