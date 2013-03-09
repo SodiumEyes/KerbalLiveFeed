@@ -585,7 +585,7 @@ namespace KLF
 					default:
 
 						//If the apoapsis of the orbit is above the atmosphere, vessel is aerobraking
-						if ((float)vessel.orbit.ApA > vessel.orbit.referenceBody.maxAtmosphereAltitude)
+						if (vessel.situation == Vessel.Situations.ESCAPING || (float)vessel.orbit.ApA > vessel.orbit.referenceBody.maxAtmosphereAltitude)
 							detail.activity = Activity.AEROBRAKING;
 
 						break;
