@@ -22,9 +22,36 @@ namespace KLFClient
 			public String message;
 		}
 
+		//Constants
+
 		public const String USERNAME_LABEL = "username";
 		public const String IP_LABEL = "ip";
 		public const String PORT_LABEL = "port";
+		public const String AUTO_RECONNECT_LABEL = "reconnect";
+
+		public const String OUT_FILENAME = "PluginData/kerballivefeed/out.txt";
+		public const String IN_FILENAME = "PluginData/kerballivefeed/in.txt";
+		public const String CLIENT_DATA_FILENAME = "PluginData/kerballivefeed/clientdata.txt";
+		public const String PLUGIN_DATA_FILENAME = "PluginData/kerballivefeed/plugindata.txt";
+		public const String SCREENSHOT_OUT_FILENAME = "PluginData/kerballivefeed/screenout.png";
+		public const String SCREENSHOT_IN_FILENAME = "PluginData/kerballivefeed/screenin.png";
+		public const String CHAT_IN_FILENAME = "PluginData/kerballivefeed/chatin.txt";
+		public const String CHAT_OUT_FILENAME = "PluginData/kerballivefeed/chatout.txt";
+		public const String CLIENT_CONFIG_FILENAME = "KLFClientConfig.txt";
+		
+		public const int MAX_USERNAME_LENGTH = 16;
+		public const int MAX_TEXT_MESSAGE_QUEUE = 128;
+		public const long KEEPALIVE_DELAY = 2000;
+		public const int SLEEP_TIME = 15;
+		public const int CHAT_IN_WRITE_INTERVAL = 500;
+		public const int RECONNECT_DELAY = 1000;
+		public const int MAX_RECONNECT_ATTEMPTS = 3;
+
+		public const int MAX_QUEUED_CHAT_LINES = 8;
+
+		public const String PLUGIN_DIRECTORY = "PluginData/kerballivefeed/";
+
+		//Settings
 
 		private static String mUsername = "username";
 		public static String username
@@ -47,30 +74,17 @@ namespace KLFClient
 		public static int updateInterval = 500;
 		public static int screenshotInterval = 1000;
 		public static int maxQueuedUpdates = 32;
+		public static bool autoReconnect = true;
 
-		public const String OUT_FILENAME = "PluginData/kerballivefeed/out.txt";
-		public const String IN_FILENAME = "PluginData/kerballivefeed/in.txt";
-		public const String CLIENT_DATA_FILENAME = "PluginData/kerballivefeed/clientdata.txt";
-		public const String PLUGIN_DATA_FILENAME = "PluginData/kerballivefeed/plugindata.txt";
-		public const String SCREENSHOT_OUT_FILENAME = "PluginData/kerballivefeed/screenout.png";
-		public const String SCREENSHOT_IN_FILENAME = "PluginData/kerballivefeed/screenin.png";
-		public const String CHAT_IN_FILENAME = "PluginData/kerballivefeed/chatin.txt";
-		public const String CHAT_OUT_FILENAME = "PluginData/kerballivefeed/chatout.txt";
-		public const String CLIENT_CONFIG_FILENAME = "KLFClientConfig.txt";
-		
-		public const int MAX_USERNAME_LENGTH = 16;
-		public const int MAX_TEXT_MESSAGE_QUEUE = 128;
-		public const long KEEPALIVE_DELAY = 2000;
-		public const int SLEEP_TIME = 15;
-		public const int CHAT_IN_WRITE_INTERVAL = 500;
-
-		public const int MAX_QUEUED_CHAT_LINES = 8;
-
-		public const String PLUGIN_DIRECTORY = "PluginData/kerballivefeed/";
-
+		//Connection
 		public static bool endSession;
 		public static bool intentionalConnectionEnd;
 		public static TcpClient tcpClient;
+		public static long lastMessageSendTime;
+		public static bool quitHelperMessageShow;
+		public static int reconnectAttempts;
+
+		//Plugin Interop
 
 		public static Queue<byte[]> pluginUpdateInQueue;
 		public static Queue<InTextMessage> textMessageQueue;
@@ -80,9 +94,6 @@ namespace KLFClient
 		public static byte[] queuedInScreenshot;
 		public static byte[] lastSharedScreenshot;
 		public static String watchPlayerName;
-
-		public static long lastMessageSendTime;
-		public static bool quitHelperMessageShow;
 
 		//Messages
 
@@ -147,9 +158,16 @@ namespace KLFClient
 				Console.ResetColor();
 				Console.WriteLine(port);
 
+				Console.ForegroundColor = ConsoleColor.Green;
+				Console.Write("Auto-Reconnect: ");
+
+				Console.ResetColor();
+				Console.WriteLine(autoReconnect);
+
 				Console.ResetColor();
 				Console.WriteLine();
-				Console.WriteLine("Enter N to change name, IP to change IP, P to change port");
+				Console.WriteLine("Enter N to change name, A to toggle auto-reconnect");
+				Console.WriteLine("IP to change IP, P to change port");
 				Console.WriteLine("C to connect, Q to quit");
 
 				String in_string = Console.ReadLine().ToLower();
@@ -188,50 +206,84 @@ namespace KLFClient
 					else
 						Console.WriteLine("Invalid port");
 				}
-				else if (in_string == "c") {
+				else if (in_string == "a")
+				{
+					autoReconnect = !autoReconnect;
+					writeConfigFile();
+				}
+				else if (in_string == "c")
+				{
 
-					try
+					bool allow_reconnect = false;
+
+					do
 					{
-						connectionLoop();
-					}
-					catch (Exception e)
-					{
 
-						//Write an error log
-						TextWriter writer = File.CreateText("KLFClientlog.txt");
-						writer.WriteLine(e.ToString());
-						if (threadExceptionStackTrace != null && threadExceptionStackTrace.Length > 0)
+						allow_reconnect = false;
+
+						try
 						{
-							writer.Write("Stacktrace: ");
-							writer.WriteLine(threadExceptionStackTrace);
+							//Run the connection loop then determine if a reconnect attempt should be made
+							if (connectionLoop())
+							{
+								reconnectAttempts = 0;
+								allow_reconnect = autoReconnect && !intentionalConnectionEnd;
+							}
+							else
+								allow_reconnect = autoReconnect && !intentionalConnectionEnd && reconnectAttempts < MAX_RECONNECT_ATTEMPTS;
 						}
-						writer.Close();
-
-						clearConnectionState();
-
-						Console.ForegroundColor = ConsoleColor.Red;
-
-						Console.WriteLine();
-						Console.WriteLine(e.ToString());
-						if (threadExceptionStackTrace != null && threadExceptionStackTrace.Length > 0)
+						catch (Exception e)
 						{
-							Console.Write("Stacktrace: ");
-							Console.WriteLine(threadExceptionStackTrace);
-						}
-						
-						Console.WriteLine();
-						Console.WriteLine("Unexpected exception encountered! Crash report written to KLFClientlog.txt");
-						Console.WriteLine();
 
-						Console.ResetColor();
-					}
+							//Write an error log
+							TextWriter writer = File.CreateText("KLFClientlog.txt");
+							writer.WriteLine(e.ToString());
+							if (threadExceptionStackTrace != null && threadExceptionStackTrace.Length > 0)
+							{
+								writer.Write("Stacktrace: ");
+								writer.WriteLine(threadExceptionStackTrace);
+							}
+							writer.Close();
+
+							clearConnectionState();
+
+							Console.ForegroundColor = ConsoleColor.Red;
+
+							Console.WriteLine();
+							Console.WriteLine(e.ToString());
+							if (threadExceptionStackTrace != null && threadExceptionStackTrace.Length > 0)
+							{
+								Console.Write("Stacktrace: ");
+								Console.WriteLine(threadExceptionStackTrace);
+							}
+
+							Console.WriteLine();
+							Console.WriteLine("Unexpected exception encountered! Crash report written to KLFClientlog.txt");
+							Console.WriteLine();
+
+							Console.ResetColor();
+						}
+
+						if (allow_reconnect)
+						{
+							//Attempt a reconnect after a delay
+							Console.WriteLine("Attempting to reconnect...");
+							Thread.Sleep(RECONNECT_DELAY);
+							reconnectAttempts++;
+						}
+
+					} while (allow_reconnect);
 				}
 
 			}
 			
 		}
 
-		static void connectionLoop()
+		/// <summary>
+		/// Connect to the server and run a session until the connection ends
+		/// </summary>
+		/// <returns>True iff a connection was successfully established with the server</returns>
+		static bool connectionLoop()
 		{
 			tcpClient = new TcpClient();
 
@@ -257,7 +309,7 @@ namespace KLFClient
 
 			if (address == null) {
 				Console.WriteLine("Invalid server address.");
-				return;
+				return false;
 			}
 
 			IPEndPoint endpoint = new IPEndPoint(address, port);
@@ -369,10 +421,9 @@ namespace KLFClient
 					Console.ResetColor();
 
 					//Delete the client data file
-					if (File.Exists(CLIENT_DATA_FILENAME))
-						File.Delete(CLIENT_DATA_FILENAME);
+					safeDelete(CLIENT_DATA_FILENAME);
 
-					return;
+					return true;
 				}
 
 			}
@@ -388,6 +439,8 @@ namespace KLFClient
 			Console.WriteLine("Unable to connect to server");
 
 			clearConnectionState();
+
+			return false;
 
 		}
 
@@ -408,8 +461,9 @@ namespace KLFClient
 					//End the session if the protocol versions don't match
 					if (protocol_version != KLFCommon.NET_PROTOCOL_VERSION)
 					{
-						Console.WriteLine("Server version is incompatible with client version. Ending session.");
+						Console.WriteLine("Server version is incompatible with client version.");
 						endSession = true;
+						intentionalConnectionEnd = true;
 					}
 					else
 					{
@@ -423,6 +477,7 @@ namespace KLFClient
 					String refusal_message = encoder.GetString(data, 0, data.Length);
 
 					endSession = true;
+					intentionalConnectionEnd = true;
 
 					pluginChatInMutex.WaitOne();
 					try
@@ -1257,6 +1312,8 @@ namespace KLFClient
 							if (int.TryParse(line, out new_port) && new_port >= IPEndPoint.MinPort && new_port <= IPEndPoint.MaxPort)
 								port = new_port;
 						}
+						else if (label == AUTO_RECONNECT_LABEL)
+							bool.TryParse(line, out autoReconnect);
 
 					}
 
@@ -1286,6 +1343,10 @@ namespace KLFClient
 			//port
 			writer.WriteLine(PORT_LABEL);
 			writer.WriteLine(port);
+
+			//port
+			writer.WriteLine(AUTO_RECONNECT_LABEL);
+			writer.WriteLine(autoReconnect);
 
 			writer.Close();
 		}
@@ -1350,8 +1411,8 @@ namespace KLFClient
 					}
 					else
 					{
-						beginAsyncRead(); //Begin the read for the next packet
 						handleMessage(currentMessageID, null);
+						beginAsyncRead(); //Begin the read for the next packet
 					}
 				}
 				else
@@ -1392,8 +1453,8 @@ namespace KLFClient
 				currentMessageDataIndex += read;
 				if (currentMessageDataIndex >= currentMessageData.Length)
 				{
-					beginAsyncRead(); //Begin the read for the next packet
 					handleMessage(currentMessageID, currentMessageData);
+					beginAsyncRead(); //Begin the read for the next packet
 				}
 				else
 				{

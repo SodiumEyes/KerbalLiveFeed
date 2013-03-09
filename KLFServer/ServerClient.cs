@@ -138,8 +138,8 @@ namespace KLFServer
 					}
 					else
 					{
-						beginAsyncRead(); //Begin the read for the next packet
 						messageReceived(currentMessageID, null);
+						beginAsyncRead(); //Begin the read for the next packet
 					}
 				}
 				else
@@ -180,8 +180,8 @@ namespace KLFServer
 				currentMessageDataIndex += read;
 				if (currentMessageDataIndex >= currentMessageData.Length)
 				{
-					beginAsyncRead(); //Begin the read for the next packet
 					messageReceived(currentMessageID, currentMessageData);
+					beginAsyncRead(); //Begin the read for the next packet
 				}
 				else
 				{
@@ -256,53 +256,50 @@ namespace KLFServer
 			try
 			{
 
-				tcpClientMutex.WaitOne();
-
-				try
+				if (queuedOutMessages.Count > 0)
 				{
 
-					while (queuedOutMessages.Count > 0)
-					{
-						OutMessage out_message = queuedOutMessages.Dequeue();
-
-						try
-						{
-							int msg_length = 0;
-							if (out_message.data != null)
-								msg_length = out_message.data.Length;
-
-							//Send message header
-							tcpClient.GetStream().Write(KLFCommon.intToBytes((int)out_message.id), 0, 4);
-							tcpClient.GetStream().Write(KLFCommon.intToBytes(msg_length), 0, 4);
-
-							//Send message data
-							if (out_message.data != null)
-								tcpClient.GetStream().Write(out_message.data, 0, out_message.data.Length);
-
-						}
-						catch (System.IO.IOException)
-						{
-							break;
-						}
-						catch (System.InvalidOperationException)
-						{
-							break;
-						}
-
-					}
+					tcpClientMutex.WaitOne();
 
 					try
 					{
-						tcpClient.GetStream().Flush();
+
+						while (queuedOutMessages.Count > 0)
+						{
+							OutMessage out_message = queuedOutMessages.Dequeue();
+
+							Server.debugConsoleWriteLine("Sending message: " + out_message.id.ToString());
+
+							try
+							{
+								int msg_length = 0;
+								if (out_message.data != null)
+									msg_length = out_message.data.Length;
+
+								//Send message header
+								tcpClient.GetStream().Write(KLFCommon.intToBytes((int)out_message.id), 0, 4);
+								tcpClient.GetStream().Write(KLFCommon.intToBytes(msg_length), 0, 4);
+
+								//Send message data
+								if (out_message.data != null)
+									tcpClient.GetStream().Write(out_message.data, 0, out_message.data.Length);
+
+							}
+							catch (System.IO.IOException)
+							{
+							}
+							catch (System.InvalidOperationException)
+							{
+							}
+
+						}
+
 					}
-					catch (System.InvalidOperationException)
+					finally
 					{
+						tcpClientMutex.ReleaseMutex();
 					}
 
-				}
-				finally
-				{
-					tcpClientMutex.ReleaseMutex();
 				}
 
 			}
@@ -328,13 +325,15 @@ namespace KLFServer
 			beginAsyncRead();
 		}
 
-		internal void abortMessageThreads()
+		internal void abortMessageThreads(bool join)
 		{
 			if (messageThread != null)
 			{
 				try
 				{
 					messageThread.Abort();
+					if (join)
+						messageThread.Join();
 				}
 				catch (ThreadStateException) { }
 			}

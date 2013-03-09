@@ -128,6 +128,11 @@ namespace KLFServer
 							if (input == "/quit")
 							{
 								quit = true;
+
+								//Disconnect all clients
+								for (int i = 0; i < clients.Length; i++)
+									disconnectClient(i, "Server is shutting down");
+
 								break;
 							}
 							else if (input == "/crash")
@@ -362,7 +367,7 @@ namespace KLFServer
 			if (!clientIsValid(client_index))
 				return;
 
-			debugConsoleWriteLine("Message id: " + id.ToString() + " data: " + (data != null ? data.Length : '0'));
+			debugConsoleWriteLine("Message id: " + id.ToString() + " data: " + (data != null ? data.Length.ToString() : "0"));
 
 			ASCIIEncoding encoder = new ASCIIEncoding();
 
@@ -652,14 +657,14 @@ namespace KLFServer
 		{
 
 			safeAbort(listenThread, true);
-			safeAbort(commandThread);
-			safeAbort(disconnectThread);
+			safeAbort(commandThread, true);
+			safeAbort(disconnectThread, true);
 
 			if (clients != null)
 			{
 				for (int i = 0; i < clients.Length; i++)
 				{
-					clients[i].abortMessageThreads();
+					clients[i].abortMessageThreads(true);
 
 					if (clients[i].tcpClient != null)
 						clients[i].tcpClient.Close();
@@ -681,7 +686,7 @@ namespace KLFServer
 
 		public void disconnectClient(int index, String message)
 		{
-			clients[index].abortMessageThreads();
+			clients[index].abortMessageThreads(false);
 
 			//Send a message to client informing them why they were disconnected
 			if (clients[index].tcpClient.Connected)
