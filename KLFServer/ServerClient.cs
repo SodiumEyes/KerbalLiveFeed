@@ -104,10 +104,7 @@ namespace KLFServer
 			}
 			catch (Exception e)
 			{
-				parent.threadExceptionMutex.WaitOne();
-				if (parent.threadException == null)
-					parent.threadException = e; //Pass exception to parent
-				parent.threadExceptionMutex.ReleaseMutex();
+				parent.passExceptionToMain(e);
 			}
 		}
 
@@ -163,10 +160,7 @@ namespace KLFServer
 			}
 			catch (Exception e)
 			{
-				parent.threadExceptionMutex.WaitOne();
-				if (parent.threadException == null)
-					parent.threadException = e; //Pass exception to parent
-				parent.threadExceptionMutex.ReleaseMutex();
+				parent.passExceptionToMain(e);
 			}
 		}
 
@@ -203,18 +197,21 @@ namespace KLFServer
 			}
 			catch (Exception e)
 			{
-				parent.threadExceptionMutex.WaitOne();
-				if (parent.threadException == null)
-					parent.threadException = e; //Pass exception to parent
-				parent.threadExceptionMutex.ReleaseMutex();
+				parent.passExceptionToMain(e);
 			}
 		}
 
 		private void messageReceived(KLFCommon.ClientMessageID id, byte[] data)
 		{
 			propertyMutex.WaitOne();
-			lastMessageTime = parent.currentMillisecond;
-			propertyMutex.ReleaseMutex();
+			try
+			{
+				lastMessageTime = parent.currentMillisecond;
+			}
+			finally
+			{
+				propertyMutex.ReleaseMutex();
+			}
 
 			parent.handleMessage(clientIndex, id, data);
 		}
@@ -242,10 +239,7 @@ namespace KLFServer
 			}
 			catch (Exception e)
 			{
-				parent.threadExceptionMutex.WaitOne();
-				if (parent.threadException == null)
-					parent.threadException = e; //Pass exception to parent
-				parent.threadExceptionMutex.ReleaseMutex();
+				parent.passExceptionToMain(e);
 			}
 		}
 
@@ -313,8 +307,14 @@ namespace KLFServer
 		public void queueOutgoingMessage(KLFCommon.ServerMessageID id, byte[] data)
 		{
 			outgoingMessageMutex.WaitOne();
-			queuedOutMessages.Enqueue(new OutMessage(id, data));
-			outgoingMessageMutex.ReleaseMutex();
+			try
+			{
+				queuedOutMessages.Enqueue(new OutMessage(id, data));
+			}
+			finally
+			{
+				outgoingMessageMutex.ReleaseMutex();
+			}
 		}
 
 		internal void startMessageThread()

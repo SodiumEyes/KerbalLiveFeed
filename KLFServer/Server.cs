@@ -41,11 +41,6 @@ namespace KLFServer
 
 		public ServerSettings settings;
 
-		public Server(ServerSettings settings)
-		{
-			this.settings = settings;
-		}
-
 		public Stopwatch stopwatch = new Stopwatch();
 
 		public long currentMillisecond
@@ -55,6 +50,148 @@ namespace KLFServer
 				return stopwatch.ElapsedMilliseconds;
 			}
 		}
+
+		//Methods
+
+		public Server(ServerSettings settings)
+		{
+			this.settings = settings;
+		}
+
+		public static void stampedConsoleWriteLine(String message)
+		{
+			ConsoleColor default_color = Console.ForegroundColor;
+			Console.ForegroundColor = ConsoleColor.DarkGreen;
+
+			try
+			{
+				Console.Write('[');
+				Console.Write(DateTime.Now.ToString("HH:mm:ss"));
+				Console.Write("] ");
+
+				Console.ForegroundColor = default_color;
+				Console.WriteLine(message);
+			}
+			catch (IOException)
+			{
+				Console.ForegroundColor = default_color;
+			}
+		}
+
+		public static void debugConsoleWriteLine(String message)
+		{
+#if DEBUG_OUT
+			stampedConsoleWriteLine(message);
+#endif
+		}
+
+		public void clearState()
+		{
+
+			safeAbort(listenThread, true);
+			safeAbort(commandThread, true);
+			safeAbort(disconnectThread, true);
+
+			if (clients != null)
+			{
+				for (int i = 0; i < clients.Length; i++)
+				{
+					clients[i].abortMessageThreads(true);
+
+					if (clients[i].tcpClient != null)
+						clients[i].tcpClient.Close();
+				}
+			}
+
+			if (tcpListener != null)
+			{
+				try
+				{
+					tcpListener.Stop();
+				}
+				catch (System.Net.Sockets.SocketException)
+				{
+				}
+			}
+
+		}
+
+		public void saveScreenshot(byte[] bytes, String player)
+		{
+			if (!Directory.Exists(SCREENSHOT_DIR))
+			{
+				//Create the screenshot directory
+				try
+				{
+					if (!Directory.CreateDirectory(SCREENSHOT_DIR).Exists)
+						return;
+				}
+				catch (Exception)
+				{
+					return;
+				}
+			}
+
+			//Build the filename
+			const String illegal = "\\/:*?\"<>|";
+
+			StringBuilder sb = new StringBuilder();
+			sb.Append(SCREENSHOT_DIR);
+			sb.Append('/');
+			foreach (char c in player)
+			{
+				//Filter illegal characters out of the player name
+				if (!illegal.Contains(c))
+					sb.Append(c);
+			}
+			sb.Append(' ');
+			sb.Append(System.DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss"));
+			sb.Append(".png");
+
+			//Write the screenshot to file
+			String filename = sb.ToString();
+			if (!File.Exists(filename))
+			{
+				try
+				{
+					File.WriteAllBytes(filename, bytes);
+				}
+				catch (Exception)
+				{
+				}
+			}
+		}
+
+		private void safeAbort(Thread thread, bool join = false)
+		{
+			if (thread != null)
+			{
+				try
+				{
+					thread.Abort();
+					if (join)
+						thread.Join();
+				}
+				catch (ThreadStateException) { }
+				catch (ThreadInterruptedException) { }
+			}
+		}
+
+		public void passExceptionToMain(Exception e)
+		{
+			threadExceptionMutex.WaitOne();
+			try
+			{
+				if (threadException == null)
+					threadException = e; //Pass exception to main thread
+			}
+			finally
+			{
+				threadExceptionMutex.ReleaseMutex();
+			}
+		}
+
+		//Threads
 
 		public void hostingLoop()
 		{
@@ -94,14 +231,20 @@ namespace KLFServer
 			{
 				//Check for exceptions that occur in threads
 				threadExceptionMutex.WaitOne();
-				if (threadException != null)
+				try
 				{
-					Exception e = threadException;
-					threadExceptionMutex.ReleaseMutex();
-					threadExceptionStackTrace = e.StackTrace;
-					throw e;
+					if (threadException != null)
+					{
+						Exception e = threadException;
+						threadExceptionMutex.ReleaseMutex();
+						threadExceptionStackTrace = e.StackTrace;
+						throw e;
+					}
 				}
-				threadExceptionMutex.ReleaseMutex();
+				finally
+				{
+					threadExceptionMutex.ReleaseMutex();
+				}
 
 				Thread.Sleep(SLEEP_TIME);
 			}
@@ -167,10 +310,7 @@ namespace KLFServer
 			}
 			catch (Exception e)
 			{
-				threadExceptionMutex.WaitOne();
-				if (threadException == null)
-					threadException = e; //Pass exception to main thread
-				threadExceptionMutex.ReleaseMutex();
+				passExceptionToMain(e);
 			}
 		}
 
@@ -254,10 +394,7 @@ namespace KLFServer
 			}
 			catch (Exception e)
 			{
-				threadExceptionMutex.WaitOne();
-				if (threadException == null)
-					threadException = e; //Pass exception to main thread
-				threadExceptionMutex.ReleaseMutex();
+				passExceptionToMain(e);
 			}
 		}
 
@@ -279,12 +416,17 @@ namespace KLFServer
 							bool handshook = false;
 
 							clients[i].propertyMutex.WaitOne();
+							try
+							{
+								last_message_receive_time = clients[i].lastMessageTime;
+								connection_start_time = clients[i].connectionStartTime;
+								handshook = clients[i].receivedHandshake;
 
-							last_message_receive_time = clients[i].lastMessageTime;
-							connection_start_time = clients[i].connectionStartTime;
-							handshook = clients[i].receivedHandshake;
-
-							clients[i].propertyMutex.ReleaseMutex();
+							}
+							finally
+							{
+								clients[i].propertyMutex.ReleaseMutex();
+							}
 
 							if (currentMillisecond - last_message_receive_time > CLIENT_TIMEOUT_DELAY
 								|| (!handshook && (currentMillisecond - connection_start_time) > CLIENT_HANDSHAKE_TIMEOUT_DELAY))
@@ -309,14 +451,13 @@ namespace KLFServer
 			}
 			catch (Exception e)
 			{
-				threadExceptionMutex.WaitOne();
-				if (threadException == null)
-					threadException = e; //Pass exception to main thread
-				threadExceptionMutex.ReleaseMutex();
+				passExceptionToMain(e);
 			}
 
 			debugConsoleWriteLine("Ending disconnect thread.");
 		}
+
+		//Clients
 
 		private int addClient(TcpClient tcp_client)
 		{
@@ -330,7 +471,6 @@ namespace KLFServer
 				ServerClient client = clients[i];
 
 				//Check if the client is valid
-				client.tcpClientMutex.WaitOne();
 				if (client.canBeReplaced && !clientIsValid(i))
 				{
 
@@ -338,18 +478,22 @@ namespace KLFServer
 					client.tcpClient = tcp_client;
 
 					client.propertyMutex.WaitOne();
+					try
+					{
 
-					client.username = "new user";
-					client.screenshot = null;
-					client.watchPlayerName = String.Empty;
-					client.canBeReplaced = false;
-					client.lastMessageTime = currentMillisecond;
-					client.connectionStartTime = currentMillisecond;
-					client.receivedHandshake = false;
+						client.username = "new user";
+						client.screenshot = null;
+						client.watchPlayerName = String.Empty;
+						client.canBeReplaced = false;
+						client.lastMessageTime = currentMillisecond;
+						client.connectionStartTime = currentMillisecond;
+						client.receivedHandshake = false;
 
-					client.propertyMutex.ReleaseMutex();
-
-					client.tcpClientMutex.ReleaseMutex();
+					}
+					finally
+					{
+						client.propertyMutex.ReleaseMutex();
+					}
 
 					client.startMessageThread();
 					numClients++;
@@ -357,11 +501,75 @@ namespace KLFServer
 					return i;
 				}
 
-				client.tcpClientMutex.ReleaseMutex();
 			}
 
 			return -1;
 		}
+
+		public bool clientIsValid(int index)
+		{
+			return index >= 0 && index < clients.Length && clients[index].tcpClient != null && clients[index].tcpClient.Connected;
+		}
+
+		public bool clientIsReady(int index)
+		{
+			return clientIsValid(index) && clients[index].receivedHandshake;
+		}
+
+		public void disconnectClient(int index, String message)
+		{
+			clients[index].abortMessageThreads(false);
+
+			//Send a message to client informing them why they were disconnected
+			if (clients[index].tcpClient.Connected)
+				sendConnectionEndMessageDirect(clients[index].tcpClient, message);
+
+			//Close the socket
+			clients[index].tcpClientMutex.WaitOne();
+			try
+			{
+				clients[index].tcpClient.Close();
+			}
+			finally
+			{
+				clients[index].tcpClientMutex.ReleaseMutex();
+			}
+
+			if (clients[index].canBeReplaced)
+				return;
+
+			numClients--;
+			clients[index].canBeReplaced = true;
+			clients[index].screenshot = null;
+			clients[index].watchPlayerName = String.Empty;
+
+			//Only send the disconnect message if the client performed handshake successfully
+			if (clients[index].receivedHandshake)
+			{
+				stampedConsoleWriteLine("Client #" + index + " " + clients[index].username + " has disconnected: " + message);
+
+				StringBuilder sb = new StringBuilder();
+
+				//Build disconnect message
+				sb.Clear();
+				sb.Append("User ");
+				sb.Append(clients[index].username);
+				sb.Append(" has disconnected : " + message);
+
+				//Send the disconnect message to all other clients
+				sendServerMessageToAll(sb.ToString());
+			}
+			else
+			{
+				stampedConsoleWriteLine("Client failed to handshake successfully: " + message);
+			}
+
+			clients[index].receivedHandshake = false;
+
+			sendServerSettingsToAll();
+		}
+
+		//Messages
 
 		public void handleMessage(int client_index, KLFCommon.ClientMessageID id, byte[] data)
 		{
@@ -438,7 +646,7 @@ namespace KLFServer
 
 						sendServerMessage(client_index, sb.ToString());
 
-						stampedConsoleWriteLine(username + " has joined the server using client version "+version);
+						stampedConsoleWriteLine(username + " has joined the server using client version " + version);
 
 						//Build join message
 						sb.Clear();
@@ -531,35 +739,43 @@ namespace KLFServer
 						watch_name = encoder.GetString(data);
 
 					clients[client_index].propertyMutex.WaitOne();
-
-					if (watch_name != clients[client_index].watchPlayerName)
+					try
 					{
-						//Set the watch player name
-						clients[client_index].watchPlayerName = watch_name;
-
-						//Try to find the player the client is watching and send the current screenshot
-						if (clients[client_index].watchPlayerName.Length > 0
-							&& clients[client_index].watchPlayerName != clients[client_index].username)
+						if (watch_name != clients[client_index].watchPlayerName)
 						{
-							for (int i = 0; i < clients.Length; i++)
+							//Set the watch player name
+							clients[client_index].watchPlayerName = watch_name;
+
+							//Try to find the player the client is watching and send the current screenshot
+							if (clients[client_index].watchPlayerName.Length > 0
+								&& clients[client_index].watchPlayerName != clients[client_index].username)
 							{
-								if (i != client_index && clientIsReady(i) && clients[i].username == clients[client_index].watchPlayerName)
+								for (int i = 0; i < clients.Length; i++)
 								{
+									if (i != client_index && clientIsReady(i) && clients[i].username == clients[client_index].watchPlayerName)
+									{
 
-									clients[i].propertyMutex.WaitOne();
+										clients[i].propertyMutex.WaitOne();
+										try
+										{
+											if (clients[i].screenshot != null)
+												sendScreenshot(client_index, clients[i].screenshot);
+										}
+										finally
+										{
+											clients[i].propertyMutex.ReleaseMutex();
+										}
 
-									if (clients[i].screenshot != null)
-										sendScreenshot(client_index, clients[i].screenshot);
-
-									clients[i].propertyMutex.ReleaseMutex();
-
-									break;
+										break;
+									}
 								}
 							}
 						}
 					}
-
-					clients[client_index].propertyMutex.ReleaseMutex();
+					finally
+					{
+						clients[client_index].propertyMutex.ReleaseMutex();
+					}
 
 					break;
 
@@ -569,8 +785,14 @@ namespace KLFServer
 					{
 						//Set the screenshot for the player
 						clients[client_index].propertyMutex.WaitOne();
-						clients[client_index].screenshot = data;
-						clients[client_index].propertyMutex.ReleaseMutex();
+						try
+						{
+							clients[client_index].screenshot = data;
+						}
+						finally
+						{
+							clients[client_index].propertyMutex.ReleaseMutex();
+						}
 
 						StringBuilder sb = new StringBuilder();
 						sb.Append(clients[client_index].username);
@@ -584,17 +806,25 @@ namespace KLFServer
 						{
 							if (i != client_index && clientIsReady(i))
 							{
-	
+
+								bool match = false;
+
 								clients[i].propertyMutex.WaitOne();
-								bool match = clients[i].watchPlayerName == clients[client_index].username;
-								clients[i].propertyMutex.ReleaseMutex();
+								try
+								{
+									match = clients[i].watchPlayerName == clients[client_index].username;
+								}
+								finally
+								{
+									clients[i].propertyMutex.ReleaseMutex();
+								}
 
 								if (match)
 								{
 									sendScreenshot(i, data);
 									break;
 								}
-								
+
 							}
 						}
 
@@ -617,184 +847,6 @@ namespace KLFServer
 
 			debugConsoleWriteLine("Handled message");
 		}
-
-		public bool clientIsValid(int index)
-		{
-			return index >= 0 && index < clients.Length && clients[index].tcpClient != null && clients[index].tcpClient.Connected;
-		}
-
-		public bool clientIsReady(int index)
-		{
-			return clientIsValid(index) && clients[index].receivedHandshake;
-		}
-
-		public static void stampedConsoleWriteLine(String message)
-		{
-			ConsoleColor default_color = Console.ForegroundColor;
-			Console.ForegroundColor = ConsoleColor.DarkGreen;
-
-			try
-			{
-				Console.Write('[');
-				Console.Write(DateTime.Now.ToString("HH:mm:ss"));
-				Console.Write("] ");
-
-				Console.ForegroundColor = default_color;
-				Console.WriteLine(message);
-			}
-			catch (IOException)
-			{
-				Console.ForegroundColor = default_color;
-			}
-		}
-
-		public static void debugConsoleWriteLine(String message)
-		{
-#if DEBUG_OUT
-			stampedConsoleWriteLine(message);
-#endif
-		}
-
-		public void clearState()
-		{
-
-			safeAbort(listenThread, true);
-			safeAbort(commandThread, true);
-			safeAbort(disconnectThread, true);
-
-			if (clients != null)
-			{
-				for (int i = 0; i < clients.Length; i++)
-				{
-					clients[i].abortMessageThreads(true);
-
-					if (clients[i].tcpClient != null)
-						clients[i].tcpClient.Close();
-				}
-			}
-
-			if (tcpListener != null)
-			{
-				try
-				{
-					tcpListener.Stop();
-				}
-				catch (System.Net.Sockets.SocketException)
-				{
-				}
-			}
-			
-		}
-
-		public void disconnectClient(int index, String message)
-		{
-			clients[index].abortMessageThreads(false);
-
-			//Send a message to client informing them why they were disconnected
-			if (clients[index].tcpClient.Connected)
-				sendConnectionEndMessageDirect(clients[index].tcpClient, message);
-
-			//Close the socket
-			clients[index].tcpClientMutex.WaitOne();
-			clients[index].tcpClient.Close();
-			clients[index].tcpClientMutex.ReleaseMutex();
-
-			if (clients[index].canBeReplaced)
-				return;
-
-			numClients--;
-			clients[index].canBeReplaced = true;
-			clients[index].screenshot = null;
-			clients[index].watchPlayerName = String.Empty;
-
-			//Only send the disconnect message if the client performed handshake successfully
-			if (clients[index].receivedHandshake)
-			{
-				stampedConsoleWriteLine("Client #" + index + " " + clients[index].username + " has disconnected: " + message);
-
-				StringBuilder sb = new StringBuilder();
-
-				//Build disconnect message
-				sb.Clear();
-				sb.Append("User ");
-				sb.Append(clients[index].username);
-				sb.Append(" has disconnected : " + message);
-
-				//Send the disconnect message to all other clients
-				sendServerMessageToAll(sb.ToString());
-			}
-			else
-			{
-				stampedConsoleWriteLine("Client failed to handshake successfully: " + message);
-			}
-
-			clients[index].receivedHandshake = false;
-
-			sendServerSettingsToAll();
-		}
-
-		public void saveScreenshot(byte[] bytes, String player)
-		{
-			if (!Directory.Exists(SCREENSHOT_DIR))
-			{
-				//Create the screenshot directory
-				try
-				{
-					if (!Directory.CreateDirectory(SCREENSHOT_DIR).Exists)
-						return;
-				}
-				catch (Exception)
-				{
-					return;
-				}
-			}
-
-			//Build the filename
-			const String illegal = "\\/:*?\"<>|";
-
-			StringBuilder sb = new StringBuilder();
-			sb.Append(SCREENSHOT_DIR);
-			sb.Append('/');
-			foreach (char c in player)
-			{
-				//Filter illegal characters out of the player name
-				if (!illegal.Contains(c))
-					sb.Append(c);
-			}
-			sb.Append(' ');
-			sb.Append(System.DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss"));
-			sb.Append(".png");
-
-			//Write the screenshot to file
-			String filename = sb.ToString();
-			if (!File.Exists(filename))
-			{
-				try
-				{
-					File.WriteAllBytes(filename, bytes);
-				}
-				catch (Exception)
-				{
-				}
-			}
-		}
-
-		private void safeAbort(Thread thread, bool join = false)
-		{
-			if (thread != null)
-			{
-				try
-				{
-					thread.Abort();
-					if (join)
-						thread.Join();
-				}
-				catch (ThreadStateException) { }
-				catch (ThreadInterruptedException) { }
-			}
-		}
-
-		//Messages
 
 		private void sendMessageHeaderDirect(TcpClient client, KLFCommon.ServerMessageID id, int msg_length)
 		{
