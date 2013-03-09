@@ -565,8 +565,6 @@ namespace KLF
 			if (parachutes_open)
 				detail.activity = Activity.PARACHUTING;
 
-			Debug.Log("A");
-
 			//Check if the vessel is aerobraking
 			if (vessel.orbit != null && vessel.orbit.referenceBody != null
 				&& vessel.orbit.referenceBody.atmosphere && vessel.orbit.altitude < vessel.orbit.referenceBody.maxAtmosphereAltitude)
@@ -614,14 +612,10 @@ namespace KLF
 					KSP.IO.File.Delete<KLFManager>(IN_FILENAME);
 
 				}
-				catch (KSP.IO.IOException)
+				catch
 				{
 					in_bytes = null;
-				}
-				catch (UnauthorizedAccessException)
-				{
-					in_bytes = null;
-					Debug.Log("*** " + IN_FILENAME + " is already being used..");
+					Debug.LogWarning("*** Unable to read file " + IN_FILENAME);
 				}
 
 				if (in_bytes != null)
@@ -685,14 +679,10 @@ namespace KLF
 					KSP.IO.File.Delete<KLFManager>(SCREENSHOT_IN_FILENAME);
 
 				}
-				catch (KSP.IO.IOException)
+				catch
 				{
 					in_bytes = null;
-				}
-				catch (UnauthorizedAccessException)
-				{
-					in_bytes = null;
-					Debug.Log("*** " + SCREENSHOT_IN_FILENAME + " is already being used..");
+					Debug.LogWarning("*** Unable to read file " + SCREENSHOT_IN_FILENAME);
 				}
 
 				if (in_bytes != null)
@@ -749,12 +739,7 @@ namespace KLF
 					}
 
 				}
-				catch (KSP.IO.IOException)
-				{
-				}
-				catch (UnauthorizedAccessException)
-				{
-				}
+				catch { }
 			}
 		}
 
@@ -772,14 +757,10 @@ namespace KLF
 					KSP.IO.File.Delete<KLFManager>(CHAT_IN_FILENAME);
 
 				}
-				catch (KSP.IO.IOException)
+				catch
 				{
 					in_bytes = null;
-				}
-				catch (UnauthorizedAccessException)
-				{
-					in_bytes = null;
-					Debug.Log("*** " + CHAT_IN_FILENAME + " is already being used..");
+					Debug.LogWarning("*** Unable to read file " + CHAT_IN_FILENAME);
 				}
 
 				if (in_bytes != null)
@@ -813,15 +794,13 @@ namespace KLF
 						byte[] bytes = encoder.GetBytes(KLFChatDisplay.chatOutQueue.Dequeue() + '\n');
 						out_stream.Write(bytes, 0, bytes.Length);
 					}
-					
+
 					out_stream.Unlock(0, long.MaxValue);
 					out_stream.Flush();
 					out_stream.Dispose();
 
 				}
-				catch (KSP.IO.IOException)
-				{
-				}
+				catch { }
 			}
 		}
 

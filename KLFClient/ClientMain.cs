@@ -215,6 +215,7 @@ namespace KLFClient
 				{
 
 					bool allow_reconnect = false;
+					reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
 
 					do
 					{
