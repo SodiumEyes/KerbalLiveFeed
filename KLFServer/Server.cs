@@ -88,15 +88,15 @@ namespace KLFServer
 		public void clearState()
 		{
 
-			safeAbort(listenThread, true);
-			safeAbort(commandThread, true);
-			safeAbort(disconnectThread, true);
+			safeAbort(listenThread);
+			safeAbort(commandThread);
+			safeAbort(disconnectThread);
 
 			if (clients != null)
 			{
 				for (int i = 0; i < clients.Length; i++)
 				{
-					clients[i].abortMessageThreads(true);
+					clients[i].abortMessageThreads(false);
 
 					if (clients[i].tcpClient != null)
 						clients[i].tcpClient.Close();
@@ -236,7 +236,6 @@ namespace KLFServer
 					if (threadException != null)
 					{
 						Exception e = threadException;
-						threadExceptionMutex.ReleaseMutex();
 						threadExceptionStackTrace = e.StackTrace;
 						throw e;
 					}

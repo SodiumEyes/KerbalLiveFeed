@@ -11,6 +11,8 @@ namespace KLFServer
 	class ServerMain
 	{
 
+		public const int AUTO_RESTART_DELAY = 1000;
+
 		static void Main(string[] args)
 		{
 
@@ -150,6 +152,7 @@ namespace KLFServer
 				{
 					while (hostServer(settings))
 					{
+						System.Threading.Thread.Sleep(AUTO_RESTART_DELAY);
 					}
 
 					Console.WriteLine("Press any key to quit");

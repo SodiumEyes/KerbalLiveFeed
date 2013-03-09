@@ -239,7 +239,7 @@ namespace KLF
 
 				try
 				{
-					
+
 					//Debug.Log("*** Writing vessels to file!");
 
 					KSP.IO.FileStream out_stream = KSP.IO.File.Create<KLFManager>(OUT_FILENAME);
@@ -260,7 +260,8 @@ namespace KLF
 						if (vessel != FlightGlobals.ActiveVessel)
 						{
 							float distance = (float)Vector3d.Distance(vessel.GetWorldPos3D(), FlightGlobals.ActiveVessel.GetWorldPos3D());
-							if (distance < INACTIVE_VESSEL_RANGE) {
+							if (distance < INACTIVE_VESSEL_RANGE)
+							{
 								try
 								{
 									nearest_vessels.Add(distance, vessel);
@@ -271,7 +272,7 @@ namespace KLF
 							}
 						}
 					}
-		
+
 					int num_written_vessels = 0;
 
 					//Write inactive vessels to file in order of distance from active vessel
@@ -295,6 +296,9 @@ namespace KLF
 				{
 					Debug.Log("*** IO Exception?!");
 					Debug.Log(e);
+				}
+				catch (UnauthorizedAccessException)
+				{
 				}
 
 			}
@@ -387,9 +391,7 @@ namespace KLF
 				update.state = State.ACTIVE;
 
 				//Set vessel details since it's the active vessel
-				Debug.Log("1");
 				update.detail = getVesselDetail(vessel);
-				Debug.Log("2");
 			}
 			else if (vessel.isCommandable)
 				update.state = State.INACTIVE;
@@ -456,8 +458,6 @@ namespace KLF
 				}
 			}
 
-			Debug.Log("a");
-
 			if (!is_eva)
 			{
 
@@ -517,8 +517,6 @@ namespace KLF
 
 
 				}
-
-				Debug.Log("b");
 
 				//Determine how much fuel this vessel has and can hold
 				float fuel_capacity = 0.0f;
@@ -593,8 +591,6 @@ namespace KLF
 
 			}
 
-			Debug.Log("B");
-
 			//Check if the vessel is docking
 			if (detail.activity == Activity.NONE && FlightGlobals.fetch.VesselTarget != null && FlightGlobals.fetch.VesselTarget is ModuleDockingNode
 				&& Vector3.Distance(vessel.GetWorldPos3D(), FlightGlobals.fetch.VesselTarget.GetTransform().position) < DOCKING_TARGET_RANGE)
@@ -621,6 +617,11 @@ namespace KLF
 				catch (KSP.IO.IOException)
 				{
 					in_bytes = null;
+				}
+				catch (UnauthorizedAccessException)
+				{
+					in_bytes = null;
+					Debug.Log("*** " + IN_FILENAME + " is already being used..");
 				}
 
 				if (in_bytes != null)
@@ -688,6 +689,11 @@ namespace KLF
 				{
 					in_bytes = null;
 				}
+				catch (UnauthorizedAccessException)
+				{
+					in_bytes = null;
+					Debug.Log("*** " + SCREENSHOT_IN_FILENAME + " is already being used..");
+				}
 
 				if (in_bytes != null)
 				{
@@ -719,23 +725,34 @@ namespace KLF
 				try
 				{
 
-					KSP.IO.FileStream out_stream = KSP.IO.File.Create<KLFManager>(PLUGIN_DATA_FILENAME);
-					out_stream.Lock(0, long.MaxValue);
-
-					//Screenshot watch player
-					if (shouldDrawGUI && KLFScreenshotDisplay.windowEnabled)
+					KSP.IO.FileStream out_stream = null;
+					try
 					{
-						ASCIIEncoding encoder = new ASCIIEncoding();
-						byte[] bytes = encoder.GetBytes(KLFScreenshotDisplay.watchPlayerName);
-						out_stream.Write(bytes, 0, bytes.Length);
-					}
+						out_stream = KSP.IO.File.Create<KLFManager>(PLUGIN_DATA_FILENAME);
 
-					out_stream.Unlock(0, long.MaxValue);
-					out_stream.Flush();
-					out_stream.Dispose();
+						out_stream.Lock(0, long.MaxValue);
+
+						//Screenshot watch player
+						if (shouldDrawGUI && KLFScreenshotDisplay.windowEnabled)
+						{
+							ASCIIEncoding encoder = new ASCIIEncoding();
+							byte[] bytes = encoder.GetBytes(KLFScreenshotDisplay.watchPlayerName);
+							out_stream.Write(bytes, 0, bytes.Length);
+						}
+
+						out_stream.Unlock(0, long.MaxValue);
+						out_stream.Flush();
+					}
+					finally
+					{
+						out_stream.Dispose();
+					}
 
 				}
 				catch (KSP.IO.IOException)
+				{
+				}
+				catch (UnauthorizedAccessException)
 				{
 				}
 			}
@@ -758,6 +775,11 @@ namespace KLF
 				catch (KSP.IO.IOException)
 				{
 					in_bytes = null;
+				}
+				catch (UnauthorizedAccessException)
+				{
+					in_bytes = null;
+					Debug.Log("*** " + CHAT_IN_FILENAME + " is already being used..");
 				}
 
 				if (in_bytes != null)

@@ -245,8 +245,6 @@ namespace KLFClient
 							}
 							writer.Close();
 
-							clearConnectionState();
-
 							Console.ForegroundColor = ConsoleColor.Red;
 
 							Console.WriteLine();
@@ -262,6 +260,8 @@ namespace KLFClient
 							Console.WriteLine();
 
 							Console.ResetColor();
+
+							clearConnectionState();
 						}
 
 						if (allow_reconnect)
@@ -394,14 +394,19 @@ namespace KLFClient
 					{
 						//Check for exceptions thrown by threads
 						threadExceptionMutex.WaitOne();
-						if (threadException != null)
+						try
 						{
-							Exception e = threadException;
-							threadExceptionMutex.ReleaseMutex();
-							threadExceptionStackTrace = e.StackTrace;
-							throw e;
+							if (threadException != null)
+							{
+								Exception e = threadException;
+								threadExceptionStackTrace = e.StackTrace;
+								throw e;
+							}
 						}
-						threadExceptionMutex.ReleaseMutex();
+						finally
+						{
+							threadExceptionMutex.ReleaseMutex();
+						}
 
 						Thread.Sleep(SLEEP_TIME);
 					}
@@ -620,10 +625,10 @@ namespace KLFClient
 		static void clearConnectionState()
 		{
 			//Abort all threads
-			safeAbort(pluginUpdateThread);
-			safeAbort(chatThread);
-			safeAbort(screenshotUpdateThread);
-			safeAbort(disconnectThread);
+			safeAbort(pluginUpdateThread, true);
+			safeAbort(chatThread, true);
+			safeAbort(screenshotUpdateThread, true);
+			safeAbort(disconnectThread, true);
 
 			//Close the socket if it's still open
 			if (tcpClient != null)
@@ -671,6 +676,20 @@ namespace KLFClient
 			}
 		}
 
+		static void passExceptionToMain(Exception e)
+		{
+			threadExceptionMutex.WaitOne();
+			try
+			{
+				if (threadException == null)
+					threadException = e;
+			}
+			finally
+			{
+				threadExceptionMutex.ReleaseMutex();
+			}
+		}
+
 		//Threads
 
 		static void handlePluginUpdates()
@@ -706,10 +725,7 @@ namespace KLFClient
 			}
 			catch (Exception e)
 			{
-				threadExceptionMutex.WaitOne();
-				if (threadException == null)
-					threadException = e;
-				threadExceptionMutex.ReleaseMutex();
+				passExceptionToMain(e);
 			}
 		}
 
@@ -739,10 +755,7 @@ namespace KLFClient
 			}
 			catch (Exception e)
 			{
-				threadExceptionMutex.WaitOne();
-				if (threadException == null)
-					threadException = e;
-				threadExceptionMutex.ReleaseMutex();
+				passExceptionToMain(e);
 			}
 		}
 
@@ -766,10 +779,7 @@ namespace KLFClient
 			}
 			catch (Exception e)
 			{
-				threadExceptionMutex.WaitOne();
-				if (threadException == null)
-					threadException = e;
-				threadExceptionMutex.ReleaseMutex();
+				passExceptionToMain(e);
 			}
 		}
 
@@ -867,10 +877,7 @@ namespace KLFClient
 			}
 			catch (Exception e)
 			{
-				threadExceptionMutex.WaitOne();
-				if (threadException == null)
-					threadException = e;
-				threadExceptionMutex.ReleaseMutex();
+				passExceptionToMain(e);
 			}
 		}
 
@@ -897,7 +904,6 @@ namespace KLFClient
 			if (File.Exists(OUT_FILENAME))
 			{
 
-				FileStream out_stream = null;
 				try
 				{
 
@@ -933,11 +939,6 @@ namespace KLFClient
 				}
 				catch (System.IO.IOException)
 				{
-				}
-
-				if (out_stream != null)
-				{
-					out_stream.Close(); //Close the file in case the other close statement was reached
 				}
 			}
 		}
@@ -984,17 +985,26 @@ namespace KLFClient
 					catch (System.IO.IOException)
 					{
 					}
-
-					if (in_stream != null)
-						in_stream.Close();
+					finally
+					{
+						if (in_stream != null)
+							in_stream.Close();
+					}
 
 				}
 				else
 				{
+					int max_queue_size = 0;
 					//Don't let the update queue get insanely large
 					serverSettingsMutex.WaitOne();
-					int max_queue_size = maxQueuedUpdates;
-					serverSettingsMutex.ReleaseMutex();
+					try
+					{
+						max_queue_size = maxQueuedUpdates;
+					}
+					finally
+					{
+						serverSettingsMutex.ReleaseMutex();
+					}
 
 					while (pluginUpdateInQueue.Count > max_queue_size)
 					{
@@ -1163,13 +1173,20 @@ namespace KLFClient
 				pluginChatInMutex.WaitOne();
 				try
 				{
+					StreamWriter in_stream = null;
 					//Write chat in
-					StreamWriter in_stream = File.CreateText(CHAT_IN_FILENAME);
+					try
+					{
+						in_stream = File.CreateText(CHAT_IN_FILENAME);
 
-					while (pluginChatInQueue.Count > 0)
-						in_stream.WriteLine(pluginChatInQueue.Dequeue());
-
-					in_stream.Close();
+						while (pluginChatInQueue.Count > 0)
+							in_stream.WriteLine(pluginChatInQueue.Dequeue());
+					}
+					finally
+					{
+						if (in_stream != null)
+							in_stream.Close();
+					}
 
 					success = true;
 				}
@@ -1377,10 +1394,7 @@ namespace KLFClient
 			}
 			catch (Exception e)
 			{
-				threadExceptionMutex.WaitOne();
-				if (threadException == null)
-					threadException = e; //Pass exception to parent
-				threadExceptionMutex.ReleaseMutex();
+				passExceptionToMain(e);
 			}
 		}
 
@@ -1436,10 +1450,7 @@ namespace KLFClient
 			}
 			catch (Exception e)
 			{
-				threadExceptionMutex.WaitOne();
-				if (threadException == null)
-					threadException = e; //Pass exception to parent
-				threadExceptionMutex.ReleaseMutex();
+				passExceptionToMain(e);
 			}
 		}
 
@@ -1476,10 +1487,7 @@ namespace KLFClient
 			}
 			catch (Exception e)
 			{
-				threadExceptionMutex.WaitOne();
-				if (threadException == null)
-					threadException = e; //Pass exception to parent
-				threadExceptionMutex.ReleaseMutex();
+				passExceptionToMain(e);
 			}
 		}
 
