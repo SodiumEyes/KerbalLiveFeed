@@ -557,7 +557,9 @@ namespace KLFClient
 					String message = encoder.GetString(data, 0, data.Length);
 
 					endSession = true;
-					intentionalConnectionEnd = true;
+
+					//If the reason is not a timeout, connection end is intentional
+					intentionalConnectionEnd = message.ToLower() != "timeout";
 
 					lock (pluginChatInLock)
 					{

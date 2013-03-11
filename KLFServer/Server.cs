@@ -52,6 +52,27 @@ namespace KLFServer
 			}
 		}
 
+		public int updateInterval
+		{
+			get
+			{
+				if (numClients <= 0)
+					return ServerSettings.MIN_UPDATE_INTERVAL;
+
+				//Calculate the value that satisfies updates per second
+				int val = (int)Math.Round(1.0f / (settings.updatesPerSecond / (float)numClients) * 1000);
+
+				//Bound the values by the minimum and maximum
+				if (val < ServerSettings.MIN_UPDATE_INTERVAL)
+					return ServerSettings.MIN_UPDATE_INTERVAL;
+
+				if (val > ServerSettings.MAX_UPDATE_INTERVAL)
+					return ServerSettings.MAX_UPDATE_INTERVAL;
+
+				return val;
+			}
+		}
+
 		//Methods
 
 		public Server(ServerSettings settings)
@@ -531,13 +552,11 @@ namespace KLFServer
 				sendServerMessageToAll(sb.ToString());
 			}
 			else
-			{
 				stampedConsoleWriteLine("Client failed to handshake successfully: " + message);
-			}
 
 			clients[index].receivedHandshake = false;
 
-			sendServerSettingsToAll();
+			sendServerSettingsToAll(); //Because the number of clients has changed, send everyone the server settings
 		}
 
 		//Messages
@@ -950,7 +969,7 @@ namespace KLFServer
 		private byte[] serverSettingBytes()
 		{
 			byte[] bytes = new byte[12];
-			KLFCommon.intToBytes(settings.updateInterval).CopyTo(bytes, 0); //Update interval
+			KLFCommon.intToBytes(updateInterval).CopyTo(bytes, 0); //Update interval
 			KLFCommon.intToBytes((numClients - 1) * 2).CopyTo(bytes, 4); //Max update queue
 			KLFCommon.intToBytes(settings.screenshotInterval).CopyTo(bytes, 8); //Screenshot interval
 			return bytes;

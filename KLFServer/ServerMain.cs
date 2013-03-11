@@ -47,16 +47,16 @@ namespace KLFServer
 				Console.WriteLine(settings.joinMessage);
 
 				Console.ForegroundColor = ConsoleColor.Green;
-				Console.Write("Update Interval: ");
+				Console.Write("Updates Per Second: ");
 
 				Console.ResetColor();
-				Console.WriteLine(settings.updateInterval);
+				Console.WriteLine(settings.updatesPerSecond);
 
 				Console.ForegroundColor = ConsoleColor.Green;
 				Console.Write("Screenshot Interval: ");
 
 				Console.ResetColor();
-				Console.WriteLine(settings.screenshotInterval);
+				Console.WriteLine(settings.screenshotInterval + "ms");
 
 				Console.ForegroundColor = ConsoleColor.Green;
 				Console.Write("Save Screenshots: ");
@@ -73,7 +73,7 @@ namespace KLFServer
 				Console.ResetColor();
 				Console.WriteLine();
 				Console.WriteLine("P: change port, M: change max clients, J: change join message");
-				Console.WriteLine("U: update interval, SI: screenshot interval, SV: save screenshots");
+				Console.WriteLine("U: updates per second, SI: screenshot interval, SV: save screenshots");
 				Console.WriteLine("A: toggle auto-restart, H: begin hosting, Q: quit");
 
 				String in_string = Console.ReadLine().ToLower();
@@ -93,14 +93,18 @@ namespace KLFServer
 						settings.writeConfigFile();
 					}
 					else
-						Console.WriteLine("Invalid port");
+					{
+						Console.WriteLine("Invalid port ["
+							+ IPEndPoint.MinPort + '-'
+							+ IPEndPoint.MaxPort + ']');
+					}
 				}
 				else if (in_string == "m")
 				{
 					Console.Write("Enter the max number of clients: ");
 
 					int new_value;
-					if (int.TryParse(Console.ReadLine(), out new_value) && new_value >= 0)
+					if (int.TryParse(Console.ReadLine(), out new_value) && new_value > 0)
 					{
 						settings.maxClients = new_value;
 						settings.writeConfigFile();
@@ -116,15 +120,19 @@ namespace KLFServer
 				}
 				else if (in_string == "u")
 				{
-					Console.Write("Enter the update interval: ");
-					int new_value;
-					if (int.TryParse(Console.ReadLine(), out new_value) && ServerSettings.validUpdateInterval(new_value))
+					Console.Write("Enter the number of updates to receive per second: ");
+					float new_value;
+					if (float.TryParse(Console.ReadLine(), out new_value) && ServerSettings.validUpdatesPerSecond(new_value))
 					{
-						settings.updateInterval = new_value;
+						settings.updatesPerSecond = new_value;
 						settings.writeConfigFile();
 					}
 					else
-						Console.WriteLine("Invalid update interval");
+					{
+						Console.WriteLine("Invalid updates per second ["
+							+ ServerSettings.MIN_UPDATES_PER_SECOND + '-'
+							+ ServerSettings.MAX_UPDATES_PER_SECOND + ']');
+					}
 				}
 				else if (in_string == "si")
 				{
@@ -136,7 +144,11 @@ namespace KLFServer
 						settings.writeConfigFile();
 					}
 					else
-						Console.WriteLine("Invalid update interval");
+					{
+						Console.WriteLine("Invalid screenshot interval ["
+							+ ServerSettings.MIN_SCREENSHOT_INTERVAL + '-'
+							+ ServerSettings.MAX_SCREENSHOT_INTERVAL + ']');
+					}
 				}
 				else if (in_string == "sv")
 				{

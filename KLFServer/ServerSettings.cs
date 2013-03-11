@@ -14,7 +14,7 @@ namespace KLFServer
 		public const String PORT_LABEL = "port";
 		public const String MAX_CLIENTS_LABEL = "maxClients";
 		public const String JOIN_MESSAGE_LABEL = "joinMessage";
-		public const String UPDATE_INTERVAL_LABEL = "updateInterval";
+		public const String UPDATES_PER_SECOND_LABEL = "updatesPerSecond";
 		public const String SCREENTSHOT_INTERVAL_LABEL = "screenshotInterval";
 		public const String SAVE_SCREENSHOTS = "saveScreenshots";
 		public const String AUTO_RESTART_LABEL = "autoRestart";
@@ -22,15 +22,18 @@ namespace KLFServer
 
 		public int port = 2075;
 		public int maxClients = 32;
-		public int updateInterval = 500;
+		public float updatesPerSecond = 5;
 		public int screenshotInterval = 3000;
 		public bool autoRestart = false;
 		public bool useUpnp = false;
 		public bool saveScreenshots = false;
 		public String joinMessage = String.Empty;
 
-		public const int MIN_UPDATE_INTERVAL = 20;
+		public const int MIN_UPDATE_INTERVAL = 200;
 		public const int MAX_UPDATE_INTERVAL = 5000;
+
+		public const float MIN_UPDATES_PER_SECOND = 0.5f;
+		public const float MAX_UPDATES_PER_SECOND = 1000.0f;
 
 		public const int MIN_SCREENSHOT_INTERVAL = 500;
 		public const int MAX_SCREENSHOT_INTERVAL = 10000;
@@ -38,6 +41,11 @@ namespace KLFServer
 		public static bool validUpdateInterval(int val)
 		{
 			return val >= MIN_UPDATE_INTERVAL && val <= MAX_UPDATE_INTERVAL;
+		}
+
+		public static bool validUpdatesPerSecond(float val)
+		{
+			return val >= MIN_UPDATES_PER_SECOND && val <= MAX_UPDATES_PER_SECOND;
 		}
 
 		public static bool validScreenshotInterval(int val)
@@ -79,11 +87,11 @@ namespace KLFServer
 						{
 							joinMessage = line;
 						}
-						else if (label == UPDATE_INTERVAL_LABEL)
+						else if (label == UPDATES_PER_SECOND_LABEL)
 						{
 							int new_val;
-							if (int.TryParse(line, out new_val) && validUpdateInterval(new_val))
-								updateInterval = new_val;
+							if (int.TryParse(line, out new_val))
+								updatesPerSecond = new_val;
 						}
 						else if (label == SCREENTSHOT_INTERVAL_LABEL)
 						{
@@ -143,8 +151,8 @@ namespace KLFServer
 			writer.WriteLine(joinMessage);
 
 			//update interval
-			writer.WriteLine(UPDATE_INTERVAL_LABEL);
-			writer.WriteLine(updateInterval);
+			writer.WriteLine(UPDATES_PER_SECOND_LABEL);
+			writer.WriteLine(updatesPerSecond);
 
 			//screenshot interval
 			writer.WriteLine(SCREENTSHOT_INTERVAL_LABEL);
