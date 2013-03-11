@@ -62,6 +62,7 @@ namespace KLF
 		private Queue<KLFVesselUpdate> vesselUpdateQueue = new Queue<KLFVesselUpdate>();
 
 		GUIStyle playerNameStyle, vesselNameStyle, stateTextStyle, chatLineStyle;
+		private bool isEditorLocked = false;
 
 		public bool shouldDrawGUI
 		{
@@ -1170,6 +1171,9 @@ namespace KLF
 
 			if (Input.GetKeyDown(KeyCode.F8))
 				shareScreenshot();
+
+			if (!KLFInfoDisplay.globalUIEnabled && !HighLogic.LoadedSceneIsFlight)
+				KLFInfoDisplay.globalUIEnabled = true; //If game has left a flight, global ui should be re-enabled
 		}
 
 		public void OnGUI()
@@ -1212,6 +1216,8 @@ namespace KLF
 						KLFInfoDisplay.layoutOptions[3] = GUILayout.MaxHeight(KLFInfoDisplay.WINDOW_HEIGHT);
 					}
 				}
+
+				CheckEditorLock();
 
 				//Init chat display options
 				if (KLFChatDisplay.layoutOptions == null)
@@ -1544,6 +1550,30 @@ namespace KLF
 			bool player_selected = GUILayout.Toggle(KLFScreenshotDisplay.watchPlayerName == name, name, GUI.skin.button);
 			if (player_selected && KLFScreenshotDisplay.watchPlayerName != name)
 				KLFScreenshotDisplay.watchPlayerName = name;
+		}
+
+		//This code adapted from Kerbal Engineer Redux source
+		private void CheckEditorLock()
+		{
+			Vector2 mousePos = Input.mousePosition;
+			mousePos.y = Screen.height - mousePos.y;
+
+			bool should_lock = HighLogic.LoadedSceneIsEditor && shouldDrawGUI && (
+					KLFInfoDisplay.infoWindowPos.Contains(mousePos)
+					|| (KLFScreenshotDisplay.windowEnabled && KLFScreenshotDisplay.windowPos.Contains(mousePos))
+					|| (KLFChatDisplay.windowEnabled && KLFChatDisplay.windowPos.Contains(mousePos))
+					);
+
+			if (should_lock && !isEditorLocked && !EditorLogic.editorLocked)
+			{
+				EditorLogic.fetch.Lock(true, true, true);
+				isEditorLocked = true;
+			}
+			else if (!should_lock && isEditorLocked && EditorLogic.editorLocked)
+			{
+				EditorLogic.fetch.Unlock();
+				isEditorLocked = false;
+			}
 		}
         
 	}
