@@ -23,6 +23,13 @@ namespace KLFServer
 			}
 		}
 
+		public enum ActivityLevel
+		{
+			INACTIVE,
+			IN_GAME,
+			IN_FLIGHT
+		}
+
 		//Constants
 
 		public const int SLEEP_TIME = 15;
@@ -46,10 +53,13 @@ namespace KLFServer
 
 		public byte[] screenshot;
 		public String watchPlayerName;
-		
-		//Protected by propertyMutex
+
 		public long connectionStartTime;
 		public long lastMessageTime;
+
+		public long lastInGameActivityTime;
+		public long lastInFlightActivityTime;
+		public ActivityLevel activityLevel;
 
 		public TcpClient tcpClient;
 		public Thread messageThread;
@@ -57,6 +67,7 @@ namespace KLFServer
 		public object tcpClientLock = new object();
 		public object outgoingMessageLock = new object();
 		public object timestampLock = new object();
+		public object activityLevelLock = new object();
 		public object screenshotLock = new object();
 		public object watchPlayerNameLock = new object();
 
@@ -306,6 +317,37 @@ namespace KLFServer
 				}
 				catch (ThreadStateException) { }
 			}
+		}
+
+		//Activity Level
+
+		public void updateActivityLevel(ActivityLevel level)
+		{
+			bool changed = false;
+
+			lock (activityLevelLock)
+			{
+				switch (level)
+				{
+					case ActivityLevel.IN_GAME:
+						lastInGameActivityTime = parent.currentMillisecond;
+						break;
+
+					case ActivityLevel.IN_FLIGHT:
+						lastInFlightActivityTime = parent.currentMillisecond;
+						lastInGameActivityTime = parent.currentMillisecond;
+						break;
+				}
+
+				if (level > activityLevel)
+				{
+					activityLevel = level;
+					changed = true;
+				}
+			}
+
+			if (changed)
+				parent.clientActivityLevelChanged(clientIndex);
 		}
 	}
 }

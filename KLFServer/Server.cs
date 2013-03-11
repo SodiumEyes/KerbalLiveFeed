@@ -22,9 +22,29 @@ namespace KLFServer
 		public const int SLEEP_TIME = 15;
 		public const int MAX_SCREENSHOT_COUNT = 10000;
 
+		public const int IN_FLIGHT_UPDATE_SIZE_THRESHOLD = 200;
+		public const float NOT_IN_FLIGHT_UPDATE_WEIGHT = 1.0f/4.0f;
+		public const int ACTIVITY_RESET_DELAY = 10000;
+
 		public const String SCREENSHOT_DIR = "klfScreenshots";
 
-		public int numClients;
+		public int numClients
+		{
+			private set;
+			get;
+		}
+
+		public int numInGameClients
+		{
+			private set;
+			get;
+		}
+
+		public int numInFlightClients
+		{
+			private set;
+			get;
+		}
 		
 		public bool quit = false;
 
@@ -32,6 +52,7 @@ namespace KLFServer
 		public Exception threadException;
 
 		public object threadExceptionLock = new object();
+		public object clientActivityCountLock = new object();
 
 		public Thread listenThread;
 		public Thread commandThread;
@@ -56,11 +77,19 @@ namespace KLFServer
 		{
 			get
 			{
-				if (numClients <= 0)
+				float relevant_player_count = 0;
+
+				lock (clientActivityCountLock)
+				{
+					//Create a weighted count of clients in-flight and not in-flight to estimate the amount of update traffic
+					relevant_player_count = numInFlightClients + (numInGameClients - numInFlightClients) * NOT_IN_FLIGHT_UPDATE_WEIGHT;
+				}
+
+				if (relevant_player_count <= 0)
 					return ServerSettings.MIN_UPDATE_INTERVAL;
 
 				//Calculate the value that satisfies updates per second
-				int val = (int)Math.Round(1.0f / (settings.updatesPerSecond / (float)numClients) * 1000);
+				int val = (int)Math.Round(1.0f / (settings.updatesPerSecond / relevant_player_count) * 1000);
 
 				//Bound the values by the minimum and maximum
 				if (val < ServerSettings.MIN_UPDATE_INTERVAL)
@@ -226,6 +255,8 @@ namespace KLFServer
 			}
 
 			numClients = 0;
+			numInGameClients = 0;
+			numInFlightClients = 0;
 
 			listenThread = new Thread(new ThreadStart(listenForClients));
 			commandThread = new Thread(new ThreadStart(handleCommands));
@@ -438,6 +469,35 @@ namespace KLFServer
 								//Disconnect the client
 								disconnectClient(i, "Timeout");
 							}
+							else
+							{
+
+								//Reset the client's activity level if the time since last update was too long
+								lock (clients[i].activityLevelLock)
+								{
+
+									bool changed = false;
+
+									if (clients[i].activityLevel == ServerClient.ActivityLevel.IN_FLIGHT
+										&& (currentMillisecond - clients[i].lastInFlightActivityTime) > ACTIVITY_RESET_DELAY)
+									{
+										clients[i].activityLevel = ServerClient.ActivityLevel.IN_GAME;
+										changed = true;
+									}
+
+									if (clients[i].activityLevel == ServerClient.ActivityLevel.IN_GAME
+										&& (currentMillisecond - clients[i].lastInGameActivityTime) > ACTIVITY_RESET_DELAY)
+									{
+										clients[i].activityLevel = ServerClient.ActivityLevel.INACTIVE;
+										changed = true;
+									}
+
+									if (changed)
+										clientActivityLevelChanged(i);
+
+								}
+
+							}
 						}
 						else if (!clients[i].canBeReplaced)
 						{
@@ -483,6 +543,7 @@ namespace KLFServer
 
 					lock (clients[i].timestampLock)
 					{
+						//Reset client properties
 						client.username = "new user";
 						client.screenshot = null;
 						client.watchPlayerName = String.Empty;
@@ -490,6 +551,13 @@ namespace KLFServer
 						client.lastMessageTime = currentMillisecond;
 						client.connectionStartTime = currentMillisecond;
 						client.receivedHandshake = false;
+
+						lock (clients[i].activityLevelLock)
+						{
+							client.activityLevel = ServerClient.ActivityLevel.INACTIVE;
+							client.lastInGameActivityTime = currentMillisecond;
+							client.lastInFlightActivityTime = currentMillisecond;
+						}
 					}
 
 					client.startMessageThread();
@@ -556,7 +624,45 @@ namespace KLFServer
 
 			clients[index].receivedHandshake = false;
 
-			sendServerSettingsToAll(); //Because the number of clients has changed, send everyone the server settings
+			if (clients[index].activityLevel != ServerClient.ActivityLevel.INACTIVE)
+				clientActivityLevelChanged(index);
+			else
+				sendServerSettingsToAll();
+		}
+
+		public void clientActivityLevelChanged(int index)
+		{
+			debugConsoleWriteLine(clients[index].username + " activity level is now " + clients[index].activityLevel);
+
+			//Count the number of in-game/in-flight clients
+			int num_in_game = 0;
+			int num_in_flight = 0;
+
+			for (int i = 0; i < clients.Length; i++)
+			{
+				if (clientIsValid(i))
+				{
+					switch (clients[i].activityLevel)
+					{
+						case ServerClient.ActivityLevel.IN_GAME:
+							num_in_game++;
+							break;
+
+						case ServerClient.ActivityLevel.IN_FLIGHT:
+							num_in_game++;
+							num_in_flight++;
+							break;
+					}
+				}
+			}
+
+			lock (clientActivityCountLock)
+			{
+				numInGameClients = num_in_game;
+				numInFlightClients = num_in_flight;
+			}
+
+			sendServerSettingsToAll();
 		}
 
 		//Messages
@@ -659,9 +765,18 @@ namespace KLFServer
 						//Send the update to all other clients
 						for (int i = 0; i < clients.Length; i++)
 						{
-							if ((i != client_index || SEND_UPDATES_TO_SENDER) && clientIsReady(i))
+							//Make sure the client is valid and in-game
+							if ((i != client_index || SEND_UPDATES_TO_SENDER)
+								&& clientIsReady(i)
+								&& clients[i].activityLevel != ServerClient.ActivityLevel.INACTIVE)
 								sendPluginUpdate(i, data);
 						}
+
+						//Update the sending client's activity level
+						if (data.Length >= IN_FLIGHT_UPDATE_SIZE_THRESHOLD)
+							clients[client_index].updateActivityLevel(ServerClient.ActivityLevel.IN_FLIGHT);
+						else
+							clients[client_index].updateActivityLevel(ServerClient.ActivityLevel.IN_GAME);
 
 					}
 
@@ -783,7 +898,7 @@ namespace KLFServer
 						//Send the screenshot to every client watching the player
 						for (int i = 0; i < clients.Length; i++)
 						{
-							if (i != client_index && clientIsReady(i))
+							if (i != client_index && clientIsReady(i) && clients[i].activityLevel != ServerClient.ActivityLevel.INACTIVE)
 							{
 
 								bool match = false;
