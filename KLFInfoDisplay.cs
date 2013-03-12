@@ -33,7 +33,6 @@ namespace KLF
 		public const float WINDOW_HEIGHT_BIG = 560;
 		public const float WINDOW_HEIGHT_MINIMIZED = 64;
 
-		public static bool globalUIEnabled = true;
 		public static bool infoDisplayActive = true;
 		public static bool infoDisplayMinimized = false;
 		public static bool infoDisplayDetailed = false;

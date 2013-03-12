@@ -65,6 +65,8 @@ namespace KLF
 		GUIStyle playerNameStyle, vesselNameStyle, stateTextStyle, chatLineStyle;
 		private bool isEditorLocked = false;
 
+		private bool addedToPostDrawQueue = false;
+
 		public bool shouldDrawGUI
 		{
 			get
@@ -77,7 +79,7 @@ namespace KLF
 					case GameScenes.SPH:
 					case GameScenes.TRACKSTATION:
 					case GameScenes.QUICKFLIGHT:
-						return KLFInfoDisplay.globalUIEnabled && KLFInfoDisplay.infoDisplayActive;
+						return KLFInfoDisplay.infoDisplayActive;
 
 					default:
 						return false;
@@ -1184,9 +1186,6 @@ namespace KLF
 
 		public void Update()
 		{
-			//Detect if the user has toggled the ui
-			if (isInFlight && Input.GetKeyDown(GameSettings.TOGGLE_UI.primary))
-				KLFInfoDisplay.globalUIEnabled = !KLFInfoDisplay.globalUIEnabled;
 
 			if (Input.GetKeyDown(KeyCode.F7))
 				KLFInfoDisplay.infoDisplayActive = !KLFInfoDisplay.infoDisplayActive;
@@ -1194,11 +1193,13 @@ namespace KLF
 			if (Input.GetKeyDown(KeyCode.F8))
 				shareScreenshot();
 
-			if (!KLFInfoDisplay.globalUIEnabled && (!HighLogic.LoadedSceneIsFlight || PauseMenu.isOpen))
-				KLFInfoDisplay.globalUIEnabled = true; //If game has left a flight or is paused, global ui should be re-enabled
+			if (shouldDrawGUI && !addedToPostDrawQueue)
+				RenderingManager.AddToPostDrawQueue(0, drawGUI);
 		}
 
-		public void OnGUI()
+		//GUI
+
+		public void drawGUI()
 		{
 			if (shouldDrawGUI)
 			{
@@ -1279,8 +1280,6 @@ namespace KLF
 
 			}
 		}
-
-		//GUI
 
 		private void infoDisplayWindow(int windowID)
 		{
