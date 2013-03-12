@@ -739,64 +739,74 @@ namespace KLFServer
 
 		private void asyncUDPReceive(IAsyncResult result)
 		{
-			IPEndPoint endpoint = new IPEndPoint(IPAddress.Any, settings.port);
-			byte[] received = udpClient.EndReceive(result, ref endpoint);
-
-			if (received.Length >= KLFCommon.MSG_HEADER_LENGTH)
+			try
 			{
-				//Get the message header data
-				KLFCommon.ClientMessageID id = (KLFCommon.ClientMessageID)KLFCommon.intFromBytes(received, 0);
 
-				//Get the data
-				byte[] data = new byte[received.Length - KLFCommon.MSG_HEADER_LENGTH];
-				Array.Copy(received, KLFCommon.MSG_HEADER_LENGTH, data, 0, data.Length);
+				IPEndPoint endpoint = new IPEndPoint(IPAddress.Any, settings.port);
+				byte[] received = udpClient.EndReceive(result, ref endpoint);
 
-				//Determine the sender
-				int sender_index = -1;
-
-				String address_key = endpoint.ToString();
-
-				if (id == KLFCommon.ClientMessageID.UDP_PROBE && data.Length >= 4)
+				if (received.Length >= KLFCommon.MSG_HEADER_LENGTH)
 				{
-					//Read the sender index from the data
-					sender_index = KLFCommon.intFromBytes(data);
+					//Get the message header data
+					KLFCommon.ClientMessageID id = (KLFCommon.ClientMessageID)KLFCommon.intFromBytes(received, 0);
 
-					if (clientIsValid(sender_index))
+					//Get the data
+					byte[] data = new byte[received.Length - KLFCommon.MSG_HEADER_LENGTH];
+					Array.Copy(received, KLFCommon.MSG_HEADER_LENGTH, data, 0, data.Length);
+
+					//Determine the sender
+					int sender_index = -1;
+
+					String address_key = endpoint.ToString();
+
+					if (id == KLFCommon.ClientMessageID.UDP_PROBE && data.Length >= 4)
 					{
-						lock (clientUDPAddressMapLock) {
-							//Map the sender address to the client index
-							if (clientUDPAddressMap.ContainsKey(address_key))
-								clientUDPAddressMap[address_key] = sender_index;
-							else
+						//Read the sender index from the data
+						sender_index = KLFCommon.intFromBytes(data);
+
+						if (clientIsValid(sender_index))
+						{
+							lock (clientUDPAddressMapLock)
 							{
-								stampedConsoleWriteLine("Established UDP connection with client " + clients[sender_index].username);
-								clientUDPAddressMap.Add(address_key, sender_index);
+								//Map the sender address to the client index
+								if (clientUDPAddressMap.ContainsKey(address_key))
+									clientUDPAddressMap[address_key] = sender_index;
+								else
+								{
+									stampedConsoleWriteLine("Established UDP connection with client " + clients[sender_index].username);
+									clientUDPAddressMap.Add(address_key, sender_index);
+								}
 							}
 						}
 					}
-				}
-				else
-				{
-					lock (clientUDPAddressMapLock)
+					else
 					{
-						//Check if the receiver address has already been mapped to a client index
-						if (!clientUDPAddressMap.TryGetValue(address_key, out sender_index))
-							sender_index = -1;
+						lock (clientUDPAddressMapLock)
+						{
+							//Check if the receiver address has already been mapped to a client index
+							if (!clientUDPAddressMap.TryGetValue(address_key, out sender_index))
+								sender_index = -1;
+						}
 					}
+
+					if (clientIsValid(sender_index))
+					{
+						//Acknowledge the client's message with a TCP message
+						clients[sender_index].queueOutgoingMessage(KLFCommon.ServerMessageID.UDP_ACKNOWLEDGE, null);
+
+						//Handle the message
+						handleMessage(sender_index, id, data);
+					}
+
 				}
 
-				if (clientIsValid(sender_index))
-				{
-					//Acknowledge the client's message with a TCP message
-					clients[sender_index].queueOutgoingMessage(KLFCommon.ServerMessageID.UDP_ACKNOWLEDGE, null);
-
-					//Handle the message
-					handleMessage(sender_index, id, data);
-				}
+				udpClient.BeginReceive(asyncUDPReceive, null); //Begin receiving the next message
 
 			}
-
-			udpClient.BeginReceive(asyncUDPReceive, null); //Begin receiving the next message
+			catch (Exception e)
+			{
+				passExceptionToMain(e);
+			}
 		}
 
 		//Messages
