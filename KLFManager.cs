@@ -175,16 +175,17 @@ namespace KLF
 				try
 				{
 					bytes = KSP.IO.File.ReadAllBytes<KLFManager>(CLIENT_DATA_FILENAME);
+
+					//Delete the update file now that it's been read
+					KSP.IO.File.Delete<KLFManager>(CLIENT_DATA_FILENAME);
 				}
 				catch
 				{
 					bytes = null;
-					Debug.LogWarning("*** Unable to read file " + IN_FILENAME);
+					Debug.LogWarning("*** Unable to read file " + CLIENT_DATA_FILENAME);
 				}
 
-				safeDelete(CLIENT_DATA_FILENAME); //Delete the file now that we're done with it
-
-				if (bytes != null && bytes.Length > 0)
+				if (bytes != null && bytes.Length > 1)
 				{
 					//Read inactive vessels per update count
 					inactiveVesselsPerUpdate = bytes[0];

@@ -789,10 +789,13 @@ namespace KLFClient
 
 						if (udpConnected != udp_should_be_connected)
 						{
-							if (udp_should_be_connected)
-								enqueuePluginChatMessage("UDP connection established.", true);
-							else
-								enqueuePluginChatMessage("UDP connection lost.", true);
+							lock (textMessageQueueLock)
+							{
+								if (udp_should_be_connected)
+									enqueueTextMessage("UDP connection established.");
+								else
+									enqueueTextMessage("UDP connection lost.");
+							}
 
 							udpConnected = udp_should_be_connected;
 						}
@@ -1323,6 +1326,14 @@ namespace KLFClient
 				}
 
 			}
+		}
+
+		static void enqueueTextMessage(String message, bool from_server = false)
+		{
+			InTextMessage text_message = new InTextMessage();
+			text_message.message = message;
+			text_message.fromServer = from_server;
+			enqueueTextMessage(text_message);
 		}
 
 		static void enqueueTextMessage(InTextMessage message)
