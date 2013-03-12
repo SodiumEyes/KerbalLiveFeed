@@ -30,7 +30,7 @@ namespace KLF
 		public const float WINDOW_WIDTH_DEFAULT = 250;
 		public const float WINDOW_WIDTH_BIG = 320;
 		public const float WINDOW_HEIGHT = 360;
-		public const float WINDOW_HEIGHT_BIG = 560;
+		public const float WINDOW_HEIGHT_BIG = 480;
 		public const float WINDOW_HEIGHT_MINIMIZED = 64;
 
 		public static bool infoDisplayActive = true;

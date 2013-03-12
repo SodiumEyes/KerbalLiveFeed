@@ -1253,9 +1253,10 @@ namespace KLF
 
 				//Init chat display options
 				if (KLFChatDisplay.layoutOptions == null)
-					KLFChatDisplay.layoutOptions = new GUILayoutOption[1];
+					KLFChatDisplay.layoutOptions = new GUILayoutOption[2];
 
-				KLFChatDisplay.layoutOptions[0] = GUILayout.MaxWidth(KLFChatDisplay.WINDOW_WIDTH);
+				KLFChatDisplay.layoutOptions[0] = GUILayout.MinWidth(KLFChatDisplay.windowWidth);
+				KLFChatDisplay.layoutOptions[1] = GUILayout.MaxWidth(KLFChatDisplay.windowWidth);
 
 				GUI.skin = HighLogic.Skin;
 				KLFInfoDisplay.infoWindowPos = GUILayout.Window(
@@ -1318,10 +1319,13 @@ namespace KLF
 				playerNameStyle.alignment = TextAnchor.MiddleLeft;
 				playerNameStyle.margin = new RectOffset(0, 0, 2, 0);
 				playerNameStyle.padding = new RectOffset(0, 0, 0, 0);
+				playerNameStyle.stretchWidth = true;
+				playerNameStyle.fontStyle = FontStyle.Bold;
 
 				vesselNameStyle = new GUIStyle(GUI.skin.label);
 				vesselNameStyle.normal.textColor = Color.white;
 				vesselNameStyle.stretchWidth = true;
+				vesselNameStyle.fontStyle = FontStyle.Bold;
 				if (big)
 				{
 					vesselNameStyle.margin = new RectOffset(0, 4, 2, 0);
@@ -1339,6 +1343,8 @@ namespace KLF
 				stateTextStyle.normal.textColor = new Color(0.75f, 0.75f, 0.75f);
 				stateTextStyle.margin = new RectOffset(4, 0, 0, 0);
 				stateTextStyle.padding = new RectOffset(0, 0, 0, 0);
+				stateTextStyle.stretchWidth = true;
+				stateTextStyle.fontStyle = FontStyle.Normal;
 
 				//Write vessel's statuses
 				foreach (KeyValuePair<String, VesselStatusInfo> pair in playerStatus)
@@ -1403,39 +1409,55 @@ namespace KLF
 			chatLineStyle.padding = new RectOffset(0, 0, 0, 0);
 			chatLineStyle.alignment = TextAnchor.LowerLeft;
 			chatLineStyle.wordWrap = true;
-			chatLineStyle.stretchWidth = false;
+			chatLineStyle.stretchWidth = true;
+			chatLineStyle.fontStyle = FontStyle.Normal;
 
-			GUILayoutOption[] options = new GUILayoutOption[1];
-			options[0] = GUILayout.MaxWidth(KLFChatDisplay.WINDOW_WIDTH-16);
+			GUILayoutOption[] entry_field_options = new GUILayoutOption[1];
+			entry_field_options[0] = GUILayout.MaxWidth(KLFChatDisplay.windowWidth-58);
 
 			GUIStyle chat_entry_style = new GUIStyle(GUI.skin.textField);
 			chat_entry_style.stretchWidth = true;
 
 			GUILayout.BeginVertical();
+
+			//Mode toggles
+			GUILayout.BeginHorizontal();
+			KLFChatDisplay.windowWide = GUILayout.Toggle(KLFChatDisplay.windowWide, "Wide", GUI.skin.button);
+			KLFChatDisplay.chatColors = GUILayout.Toggle(KLFChatDisplay.chatColors, "Colors", GUI.skin.button);
+			GUILayout.EndHorizontal();
+
 			KLFChatDisplay.scrollPos = GUILayout.BeginScrollView(KLFChatDisplay.scrollPos);
 
 			//Chat text
 			GUILayout.BeginVertical();
 
-			foreach (String line in KLFChatDisplay.chatLineQueue)
-				GUILayout.Label(line, chatLineStyle);
+			foreach (KLFChatDisplay.ChatLine line in KLFChatDisplay.chatLineQueue)
+			{
+				if (KLFChatDisplay.chatColors)
+					chatLineStyle.normal.textColor = line.color;
+				GUILayout.Label(line.message, chatLineStyle);
+			}
 
 			GUILayout.EndVertical();
 
 			GUILayout.EndScrollView();
+
+			GUILayout.BeginHorizontal();
 
 			//Entry text field
 			KLFChatDisplay.chatEntryString = GUILayout.TextField(
 				KLFChatDisplay.chatEntryString,
 				KLFChatDisplay.MAX_CHAT_LINE_LENGTH,
 				chat_entry_style,
-				options);
+				entry_field_options);
 
 			if (KLFChatDisplay.chatEntryString.Contains('\n') || GUILayout.Button("Send"))
 			{
 				enqueueChatOutMessage(KLFChatDisplay.chatEntryString);
 				KLFChatDisplay.chatEntryString = String.Empty;
 			}
+
+			GUILayout.EndHorizontal();
 
 			GUILayout.EndVertical();
 
