@@ -476,11 +476,19 @@ namespace KLFClient
 				case KLFCommon.ServerMessageID.HANDSHAKE:
 
 					Int32 protocol_version = KLFCommon.intFromBytes(data);
-					Int32 server_version_length = KLFCommon.intFromBytes(data, 4);
-					String server_version = encoder.GetString(data, 8, server_version_length);
-					clientID = KLFCommon.intFromBytes(data, 8 + server_version_length);
 
-					Console.WriteLine("Handshake received. Server is running version: "+server_version);
+					if (data.Length >= 8)
+					{
+						Int32 server_version_length = KLFCommon.intFromBytes(data, 4);
+
+						if (data.Length >= 12 + server_version_length)
+						{
+							String server_version = encoder.GetString(data, 8, server_version_length);
+							clientID = KLFCommon.intFromBytes(data, 8 + server_version_length);
+
+							Console.WriteLine("Handshake received. Server is running version: " + server_version);
+						}
+					}
 
 					//End the session if the protocol versions don't match
 					if (protocol_version != KLFCommon.NET_PROTOCOL_VERSION)
