@@ -102,6 +102,36 @@ namespace KLFServer
 			}
 		}
 
+		public int maxQueuedUpdates
+		{
+			get
+			{
+				return Math.Max((numClients - 1) * 2, 4);
+			}
+		}
+
+		public byte inactiveShipsPerClient
+		{
+			get
+			{
+				int relevant_player_count = 0;
+
+				lock (clientActivityCountLock)
+				{
+					relevant_player_count = numInFlightClients;
+				}
+
+				if (relevant_player_count <= 0)
+					return settings.totalInactiveShips;
+
+				if (relevant_player_count > settings.totalInactiveShips)
+					return 0;
+
+				return (byte)(settings.totalInactiveShips / relevant_player_count);
+
+			}
+		}
+
 		//Methods
 
 		public Server(ServerSettings settings)
@@ -1083,10 +1113,14 @@ namespace KLFServer
 
 		private byte[] serverSettingBytes()
 		{
-			byte[] bytes = new byte[12];
+
+			byte[] bytes = new byte[KLFCommon.SERVER_SETTINGS_LENGTH];
+
 			KLFCommon.intToBytes(updateInterval).CopyTo(bytes, 0); //Update interval
-			KLFCommon.intToBytes((numClients - 1) * 2).CopyTo(bytes, 4); //Max update queue
+			KLFCommon.intToBytes(maxQueuedUpdates).CopyTo(bytes, 4); //Max update queue
 			KLFCommon.intToBytes(settings.screenshotInterval).CopyTo(bytes, 8); //Screenshot interval
+			bytes[12] = inactiveShipsPerClient; //Inactive ships per client
+
 			return bytes;
 		}
 

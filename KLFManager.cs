@@ -44,19 +44,20 @@ namespace KLF
 
 		public const float INACTIVE_VESSEL_RANGE = 400000000.0f;
 		public const float DOCKING_TARGET_RANGE = 200.0f;
-		public const int MAX_INACTIVE_VESSELS = 4;
+		public const int MAX_INACTIVE_VESSELS_PER_UPDATE = 8;
 		public const int STATUS_ARRAY_SIZE = 2;
 
 		public const int MAX_VESSEL_NAME_LENGTH = 32;
 
 		public const float TIMEOUT_DELAY = 6.0f;
+		public const float CLIENT_DATA_READ_INTERVAL = 8.0f;
 
 		public String playerName = String.Empty;
+		public byte inactiveVesselsPerUpdate = 0;
 
 		public Dictionary<String, VesselEntry> vessels = new Dictionary<string, VesselEntry>();
 		public Dictionary<String, VesselStatusInfo> playerStatus = new Dictionary<string, VesselStatusInfo>();
 
-		private float lastUsernameReadTime = 0.0f;
 		private float lastGlobalSettingSaveTime = 0.0f;
 
 		private Queue<KLFVesselUpdate> vesselUpdateQueue = new Queue<KLFVesselUpdate>();
@@ -163,17 +164,35 @@ namespace KLF
 
 		private void writePluginUpdate()
 		{
-			if ((UnityEngine.Time.realtimeSinceStartup - lastUsernameReadTime) > 10.0f
-						&& KSP.IO.File.Exists<KLFManager>(CLIENT_DATA_FILENAME))
+			if (KSP.IO.File.Exists<KLFManager>(CLIENT_DATA_FILENAME))
 			{
-				//Read the username from the client data file
-				byte[] bytes = KSP.IO.File.ReadAllBytes<KLFManager>(CLIENT_DATA_FILENAME);
 
-				ASCIIEncoding encoder = new ASCIIEncoding();
-				playerName = encoder.GetString(bytes, 0, bytes.Length);
+				byte[] bytes = null;
 
-				//Keep track of when the name was last read so we don't read it every time
-				lastUsernameReadTime = UnityEngine.Time.realtimeSinceStartup;
+				//Read the client data file
+				try
+				{
+					bytes = KSP.IO.File.ReadAllBytes<KLFManager>(CLIENT_DATA_FILENAME);
+				}
+				catch
+				{
+					bytes = null;
+					Debug.LogWarning("*** Unable to read file " + IN_FILENAME);
+				}
+
+				safeDelete(CLIENT_DATA_FILENAME); //Delete the file now that we're done with it
+
+				if (bytes != null && bytes.Length > 0)
+				{
+					//Read inactive vessels per update count
+					inactiveVesselsPerUpdate = bytes[0];
+
+					//Debug.Log("Inactive vessels per update: " + inactiveVesselsPerUpdate);
+
+					//Read username
+					ASCIIEncoding encoder = new ASCIIEncoding();
+					playerName = encoder.GetString(bytes, 1, bytes.Length - 1);
+				}
 			}
 
 			if (playerName == null || playerName.Length == 0)
@@ -253,35 +272,40 @@ namespace KLF
 					//Write the active vessel to the file
 					writeVesselUpdateToFile(out_stream, FlightGlobals.ActiveVessel);
 
-					//Write the inactive vessels nearest the active vessel to the file
-					SortedList<float, Vessel> nearest_vessels = new SortedList<float, Vessel>();
-
-					foreach (Vessel vessel in FlightGlobals.Vessels)
+					if (inactiveVesselsPerUpdate > 0)
 					{
-						if (vessel != FlightGlobals.ActiveVessel)
+
+						//Write the inactive vessels nearest the active vessel to the file
+						SortedList<float, Vessel> nearest_vessels = new SortedList<float, Vessel>();
+
+						foreach (Vessel vessel in FlightGlobals.Vessels)
 						{
-							float distance = (float)Vector3d.Distance(vessel.GetWorldPos3D(), FlightGlobals.ActiveVessel.GetWorldPos3D());
-							if (distance < INACTIVE_VESSEL_RANGE)
+							if (vessel != FlightGlobals.ActiveVessel)
 							{
-								try
+								float distance = (float)Vector3d.Distance(vessel.GetWorldPos3D(), FlightGlobals.ActiveVessel.GetWorldPos3D());
+								if (distance < INACTIVE_VESSEL_RANGE)
 								{
-									nearest_vessels.Add(distance, vessel);
-								}
-								catch (ArgumentException)
-								{
+									try
+									{
+										nearest_vessels.Add(distance, vessel);
+									}
+									catch (ArgumentException)
+									{
+									}
 								}
 							}
 						}
-					}
 
-					int num_written_vessels = 0;
+						int num_written_vessels = 0;
 
-					//Write inactive vessels to file in order of distance from active vessel
-					IEnumerator<KeyValuePair<float, Vessel>> enumerator = nearest_vessels.GetEnumerator();
-					while (num_written_vessels < MAX_INACTIVE_VESSELS && enumerator.MoveNext())
-					{
-						writeVesselUpdateToFile(out_stream, enumerator.Current.Value);
-						num_written_vessels++;
+						//Write inactive vessels to file in order of distance from active vessel
+						IEnumerator<KeyValuePair<float, Vessel>> enumerator = nearest_vessels.GetEnumerator();
+						while (num_written_vessels < inactiveVesselsPerUpdate
+							&& num_written_vessels < MAX_INACTIVE_VESSELS_PER_UPDATE && enumerator.MoveNext())
+						{
+							writeVesselUpdateToFile(out_stream, enumerator.Current.Value);
+							num_written_vessels++;
+						}
 					}
 
 					out_stream.Flush();
@@ -1069,9 +1093,7 @@ namespace KLF
 				{
 					KSP.IO.File.Delete<KLFManager>(filename);
 				}
-				catch (KSP.IO.IOException)
-				{
-				}
+				catch { }
 			}
 		}
 
@@ -1172,8 +1194,8 @@ namespace KLF
 			if (Input.GetKeyDown(KeyCode.F8))
 				shareScreenshot();
 
-			if (!KLFInfoDisplay.globalUIEnabled && !HighLogic.LoadedSceneIsFlight)
-				KLFInfoDisplay.globalUIEnabled = true; //If game has left a flight, global ui should be re-enabled
+			if (!KLFInfoDisplay.globalUIEnabled && (!HighLogic.LoadedSceneIsFlight || PauseMenu.isOpen))
+				KLFInfoDisplay.globalUIEnabled = true; //If game has left a flight or is paused, global ui should be re-enabled
 		}
 
 		public void OnGUI()

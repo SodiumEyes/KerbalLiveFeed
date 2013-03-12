@@ -6,10 +6,12 @@ using System.Text;
 public class KLFCommon
 {
 
-	public const String PROGRAM_VERSION = "0.3.3";
-	public const Int32 FILE_FORMAT_VERSION = 4;
-	public const Int32 NET_PROTOCOL_VERSION = 5;
+	public const String PROGRAM_VERSION = "0.4.0";
+	public const Int32 FILE_FORMAT_VERSION = 5;
+	public const Int32 NET_PROTOCOL_VERSION = 6;
 	public const int MSG_HEADER_LENGTH = 8;
+
+	public const int SERVER_SETTINGS_LENGTH = 13;
 
 	public const float MAX_SCREENSHOT_WIDTH = 480;
 	public const float MAX_SCREENSHOT_HEIGHT = 270;
@@ -45,7 +47,8 @@ public class KLFCommon
 		SCREEN_WATCH_PLAYER /*Player name*/,
 		SCREENSHOT_SHARE /*Screenshot bytes*/,
 		KEEPALIVE,
-		CONNECTION_END /*Message*/ 
+		CONNECTION_END /*Message*/ ,
+		UDP_PROBE /*ClientID*/
 	}
 
 	public enum ServerMessageID
@@ -55,10 +58,11 @@ public class KLFCommon
 		SERVER_MESSAGE /*Message text*/,
 		TEXT_MESSAGE /*Message text*/,
 		PLUGIN_UPDATE /*data*/,
-		SERVER_SETTINGS /*UpdateInterval : MaxQueueSize : Screenshot Interval*/,
+		SERVER_SETTINGS /*UpdateInterval (4) : MaxQueueSize (4) : Screenshot Interval (4) : InactiveShips (1)*/,
 		SCREENSHOT_SHARE /*Screenshot bytes*/,
 		KEEPALIVE,
-		CONNECTION_END /*Message*/
+		CONNECTION_END /*Message*/,
+		UDP_ACKNOWLEDGE
 	}
 }
 

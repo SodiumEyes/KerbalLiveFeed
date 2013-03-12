@@ -53,6 +53,12 @@ namespace KLFServer
 				Console.WriteLine(settings.updatesPerSecond);
 
 				Console.ForegroundColor = ConsoleColor.Green;
+				Console.Write("Total Inactive Ships: ");
+
+				Console.ResetColor();
+				Console.WriteLine(settings.totalInactiveShips);
+
+				Console.ForegroundColor = ConsoleColor.Green;
 				Console.Write("Screenshot Interval: ");
 
 				Console.ResetColor();
@@ -73,7 +79,8 @@ namespace KLFServer
 				Console.ResetColor();
 				Console.WriteLine();
 				Console.WriteLine("P: change port, M: change max clients, J: change join message");
-				Console.WriteLine("U: updates per second, SI: screenshot interval, SV: save screenshots");
+				Console.WriteLine("U: updates per second, IS: total inactive ship");
+				Console.WriteLine("SI: screenshot interval, SV: save screenshots");
 				Console.WriteLine("A: toggle auto-restart, H: begin hosting, Q: quit");
 
 				String in_string = Console.ReadLine().ToLower();
@@ -148,6 +155,22 @@ namespace KLFServer
 						Console.WriteLine("Invalid screenshot interval ["
 							+ ServerSettings.MIN_SCREENSHOT_INTERVAL + '-'
 							+ ServerSettings.MAX_SCREENSHOT_INTERVAL + ']');
+					}
+				}
+				else if (in_string == "is")
+				{
+					Console.Write("Enter the total number of inactive ships: ");
+					byte new_value;
+					if (byte.TryParse(Console.ReadLine(), out new_value))
+					{
+						settings.totalInactiveShips = new_value;
+						settings.writeConfigFile();
+					}
+					else
+					{
+						Console.WriteLine("Invalid total inactive ships ["
+							+ Byte.MinValue + '-'
+							+ Byte.MaxValue + ']');
 					}
 				}
 				else if (in_string == "sv")

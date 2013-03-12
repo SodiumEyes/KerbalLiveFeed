@@ -44,6 +44,7 @@ namespace KLFClient
 		public const long KEEPALIVE_DELAY = 2000;
 		public const int SLEEP_TIME = 15;
 		public const int CHAT_IN_WRITE_INTERVAL = 500;
+		public const int CLIENT_DATA_FORCE_WRITE_INTERVAL = 10000;
 		public const int RECONNECT_DELAY = 1000;
 		public const int MAX_RECONNECT_ATTEMPTS = 3;
 
@@ -75,6 +76,7 @@ namespace KLFClient
 		public static int screenshotInterval = 1000;
 		public static int maxQueuedUpdates = 32;
 		public static bool autoReconnect = true;
+		public static byte inactiveShipsPerUpdate = 0;
 
 		//Connection
 		public static bool endSession;
@@ -95,6 +97,9 @@ namespace KLFClient
 		public static byte[] lastSharedScreenshot;
 		public static String watchPlayerName;
 
+		public static long lastClientDataWriteTime;
+		public static long lastClientDataChangeTime;
+
 		//Messages
 
 		public static byte[] currentMessageHeader = new byte[KLFCommon.MSG_HEADER_LENGTH];
@@ -112,6 +117,7 @@ namespace KLFClient
 		public static object screenshotInLock = new object();
 		public static object pluginChatInLock = new object();
 		public static object threadExceptionLock = new object();
+		public static object clientDataLock = new object();
 
 		public static String threadExceptionStackTrace;
 		public static Exception threadException;
@@ -339,8 +345,17 @@ namespace KLFClient
 					lastScreenshotShareTime = 0;
 					lastChatInWriteTime = 0;
 					lastMessageSendTime = 0;
+					lastClientDataWriteTime = 0;
+					lastClientDataChangeTime = stopwatch.ElapsedMilliseconds;
 
 					quitHelperMessageShow = true;
+
+					//Delete and in/out files, because they are probably remnants from another session
+					safeDelete(IN_FILENAME);
+					safeDelete(OUT_FILENAME);
+					safeDelete(CHAT_IN_FILENAME);
+					safeDelete(CHAT_OUT_FILENAME);
+					safeDelete(CLIENT_DATA_FILENAME);
 
 					//Create a thread to handle plugin updates
 					pluginUpdateThread = new Thread(new ThreadStart(handlePluginUpdates));
@@ -365,21 +380,6 @@ namespace KLFClient
 					{
 						Directory.CreateDirectory(PLUGIN_DIRECTORY);
 					}
-
-					//Delete and in/out files, because they are probably remnants from another session
-					safeDelete(IN_FILENAME);
-					safeDelete(OUT_FILENAME);
-					safeDelete(CHAT_IN_FILENAME);
-					safeDelete(CHAT_OUT_FILENAME);
-					safeDelete(CLIENT_DATA_FILENAME);
-
-					//Create a file to pass the username to the plugin
-					FileStream client_data_stream = File.Open(CLIENT_DATA_FILENAME, FileMode.OpenOrCreate);
-
-					ASCIIEncoding encoder = new ASCIIEncoding();
-					byte[] username_bytes = encoder.GetBytes(username);
-					client_data_stream.Write(username_bytes, 0, username_bytes.Length);
-					client_data_stream.Close();
 
 					Console.WriteLine("Connected to server! Handshaking...");
 
@@ -533,9 +533,29 @@ namespace KLFClient
 
 					lock (serverSettingsLock)
 					{
-						updateInterval = KLFCommon.intFromBytes(data, 0);
-						maxQueuedUpdates = KLFCommon.intFromBytes(data, 4);
-						screenshotInterval = KLFCommon.intFromBytes(data, 8);
+						if (data != null && data.Length >= KLFCommon.SERVER_SETTINGS_LENGTH)
+						{
+
+							updateInterval = KLFCommon.intFromBytes(data, 0);
+							maxQueuedUpdates = KLFCommon.intFromBytes(data, 4);
+							screenshotInterval = KLFCommon.intFromBytes(data, 8);
+
+							lock (clientDataLock)
+							{
+								if (inactiveShipsPerUpdate != data[12])
+								{
+									inactiveShipsPerUpdate = data[12];
+									lastClientDataChangeTime = stopwatch.ElapsedMilliseconds;
+								}
+							}
+
+							/*
+							Console.WriteLine("Update interval: " + updateInterval);
+							Console.WriteLine("Max queued updates: " + maxQueuedUpdates);
+							Console.WriteLine("Screenshot interval: " + screenshotInterval);
+							Console.WriteLine("Inactive ships per update: " + inactiveShipsPerUpdate);
+							 */
+						}
 					}
 
 					break;
@@ -637,6 +657,8 @@ namespace KLFClient
 
 				while (true)
 				{
+					writeClientData();
+
 					readPluginUpdates();
 
 					writeQueuedUpdates();
@@ -829,6 +851,59 @@ namespace KLFClient
 		}
 
 		//Plugin Interop
+
+		static void writeClientData()
+		{
+
+			lock (clientDataLock)
+			{
+
+				if (lastClientDataChangeTime > lastClientDataWriteTime
+					|| (stopwatch.ElapsedMilliseconds - lastClientDataWriteTime) > CLIENT_DATA_FORCE_WRITE_INTERVAL)
+				{
+
+					try
+					{
+
+						safeDelete(CLIENT_DATA_FILENAME); //Delete the previous client data file
+
+						//Create a file to pass the client data to the plugin
+						FileStream client_data_stream = File.Open(CLIENT_DATA_FILENAME, FileMode.OpenOrCreate);
+
+						//Write num inactive ships per update
+						client_data_stream.WriteByte(inactiveShipsPerUpdate);
+
+						//Write username
+						ASCIIEncoding encoder = new ASCIIEncoding();
+						byte[] username_bytes = encoder.GetBytes(username);
+						client_data_stream.Write(username_bytes, 0, username_bytes.Length);
+
+						client_data_stream.Close();
+
+						lastClientDataWriteTime = stopwatch.ElapsedMilliseconds;
+
+					}
+					catch (System.IO.FileNotFoundException)
+					{
+					}
+					catch (System.UnauthorizedAccessException)
+					{
+					}
+					catch (System.IO.DirectoryNotFoundException)
+					{
+					}
+					catch (System.InvalidOperationException)
+					{
+					}
+					catch (System.IO.IOException)
+					{
+					}
+
+				}
+
+			}
+
+		}
 
 		static void readPluginUpdates()
 		{
