@@ -53,7 +53,7 @@ public class KLFCommon
 
 	public enum ServerMessageID
 	{
-		HANDSHAKE /*Protocol Version : Protocol String*/,
+		HANDSHAKE /*Protocol Version : Version String Length : Version String : ClientID*/,
 		HANDSHAKE_REFUSAL /*Refusal message*/,
 		SERVER_MESSAGE /*Message text*/,
 		TEXT_MESSAGE /*Message text*/,

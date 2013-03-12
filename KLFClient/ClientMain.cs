@@ -42,6 +42,8 @@ namespace KLFClient
 		public const int MAX_USERNAME_LENGTH = 16;
 		public const int MAX_TEXT_MESSAGE_QUEUE = 128;
 		public const long KEEPALIVE_DELAY = 2000;
+		public const long UDP_PROBE_DELAY = 2000;
+		public const long UDP_TIMEOUT_DELAY = 5000;
 		public const int SLEEP_TIME = 15;
 		public const int CHAT_IN_WRITE_INTERVAL = 500;
 		public const int CLIENT_DATA_FORCE_WRITE_INTERVAL = 10000;
@@ -79,12 +81,18 @@ namespace KLFClient
 		public static byte inactiveShipsPerUpdate = 0;
 
 		//Connection
+		public static int clientID;
 		public static bool endSession;
 		public static bool intentionalConnectionEnd;
+		public static bool handshakeCompleted;
 		public static TcpClient tcpClient;
-		public static long lastMessageSendTime;
+		public static long lastTCPMessageSendTime;
 		public static bool quitHelperMessageShow;
 		public static int reconnectAttempts;
+		public static Socket udpSocket;
+		public static bool udpConnected;
+		public static long lastUDPMessageSendTime;
+		public static long lastUDPAckReceiveTime;
 
 		//Plugin Interop
 
@@ -118,6 +126,7 @@ namespace KLFClient
 		public static object pluginChatInLock = new object();
 		public static object threadExceptionLock = new object();
 		public static object clientDataLock = new object();
+		public static object udpTimestampLock = new object();
 
 		public static String threadExceptionStackTrace;
 		public static Exception threadException;
@@ -125,7 +134,7 @@ namespace KLFClient
 		public static Thread pluginUpdateThread;
 		public static Thread screenshotUpdateThread;
 		public static Thread chatThread;
-		public static Thread disconnectThread;
+		public static Thread connectionThread;
 
 		public static Stopwatch stopwatch;
 
@@ -330,8 +339,10 @@ namespace KLFClient
 				if (tcpClient.Connected)
 				{
 
+					clientID = -1;
 					endSession = false;
 					intentionalConnectionEnd = false;
+					handshakeCompleted = false;
 
 					pluginUpdateInQueue = new Queue<byte[]>();
 					textMessageQueue = new Queue<InTextMessage>();
@@ -344,11 +355,29 @@ namespace KLFClient
 					lastSharedScreenshot = null;
 					lastScreenshotShareTime = 0;
 					lastChatInWriteTime = 0;
-					lastMessageSendTime = 0;
+					lastTCPMessageSendTime = 0;
 					lastClientDataWriteTime = 0;
 					lastClientDataChangeTime = stopwatch.ElapsedMilliseconds;
 
 					quitHelperMessageShow = true;
+
+					//Init udp socket
+					try
+					{
+						udpSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+						udpSocket.Connect(endpoint);
+					}
+					catch
+					{
+						if (udpSocket != null)
+							udpSocket.Close();
+
+						udpSocket = null;
+					}
+
+					udpConnected = false;
+					lastUDPAckReceiveTime = 0;
+					lastUDPMessageSendTime = stopwatch.ElapsedMilliseconds;
 
 					//Delete and in/out files, because they are probably remnants from another session
 					safeDelete(IN_FILENAME);
@@ -370,8 +399,8 @@ namespace KLFClient
 					chatThread.Start();
 
 					//Create a thread to handle disconnection
-					disconnectThread = new Thread(new ThreadStart(handleDisconnect));
-					disconnectThread.Start();
+					connectionThread = new Thread(new ThreadStart(handleConnection));
+					connectionThread.Start();
 
 					beginAsyncRead();
 
@@ -447,7 +476,9 @@ namespace KLFClient
 				case KLFCommon.ServerMessageID.HANDSHAKE:
 
 					Int32 protocol_version = KLFCommon.intFromBytes(data);
-					String server_version = encoder.GetString(data, 4, data.Length - 4);
+					Int32 server_version_length = KLFCommon.intFromBytes(data, 4);
+					String server_version = encoder.GetString(data, 8, server_version_length);
+					clientID = KLFCommon.intFromBytes(data, 8 + server_version_length);
 
 					Console.WriteLine("Handshake received. Server is running version: "+server_version);
 
@@ -461,6 +492,11 @@ namespace KLFClient
 					else
 					{
 						sendHandshakeMessage(); //Reply to the handshake
+						lock (udpTimestampLock)
+						{
+							lastUDPMessageSendTime = stopwatch.ElapsedMilliseconds;
+						}
+						handshakeCompleted = true;
 					}
 
 					break;
@@ -587,6 +623,13 @@ namespace KLFClient
 					}
 
 					break;
+
+				case KLFCommon.ServerMessageID.UDP_ACKNOWLEDGE:
+					lock (udpTimestampLock)
+					{
+						lastUDPAckReceiveTime = stopwatch.ElapsedMilliseconds;
+					}
+					break;
 			}
 		}
 
@@ -596,11 +639,16 @@ namespace KLFClient
 			safeAbort(pluginUpdateThread, true);
 			safeAbort(chatThread, true);
 			safeAbort(screenshotUpdateThread, true);
-			safeAbort(disconnectThread, true);
+			safeAbort(connectionThread, true);
 
 			//Close the socket if it's still open
 			if (tcpClient != null)
 				tcpClient.Close();
+
+			if (udpSocket != null)
+				udpSocket.Close();
+
+			udpSocket = null;
 		}
 
 		static void handleChatInput(String line)
@@ -714,7 +762,7 @@ namespace KLFClient
 			}
 		}
 
-		static void handleDisconnect()
+		static void handleConnection()
 		{
 			try
 			{
@@ -722,8 +770,38 @@ namespace KLFClient
 				while (true)
 				{
 					//Send a keep-alive message to prevent timeout
-					if (stopwatch.ElapsedMilliseconds - lastMessageSendTime >= KEEPALIVE_DELAY)
-						sendMessage(KLFCommon.ClientMessageID.KEEPALIVE, null);
+					if (stopwatch.ElapsedMilliseconds - lastTCPMessageSendTime >= KEEPALIVE_DELAY)
+						sendMessageTCP(KLFCommon.ClientMessageID.KEEPALIVE, null);
+
+					if (udpSocket != null && handshakeCompleted)
+					{
+
+						//Update the status of the udp connection
+						long last_udp_ack = 0;
+						long last_udp_send = 0;
+						lock (udpTimestampLock) {
+							last_udp_ack = lastUDPAckReceiveTime;
+							last_udp_send = lastUDPMessageSendTime;
+						}
+
+						bool udp_should_be_connected =
+							last_udp_ack > 0 && (stopwatch.ElapsedMilliseconds - last_udp_ack) < UDP_TIMEOUT_DELAY;
+
+						if (udpConnected != udp_should_be_connected)
+						{
+							if (udp_should_be_connected)
+								enqueuePluginChatMessage("UDP connection established.", true);
+							else
+								enqueuePluginChatMessage("UDP connection lost.", true);
+
+							udpConnected = udp_should_be_connected;
+						}
+
+						//Send a probe message to try to establish a udp connection
+						if ((stopwatch.ElapsedMilliseconds - last_udp_send) > UDP_PROBE_DELAY)
+							sendUDPProbeMessage();
+
+					}
 
 					Thread.Sleep(SLEEP_TIME);
 				}
@@ -923,7 +1001,9 @@ namespace KLFClient
 					if (file_format_version == KLFCommon.FILE_FORMAT_VERSION)
 					{
 						//Remove the 4 file format version bytes before sending
-						sendMessage(KLFCommon.ClientMessageID.PLUGIN_UPDATE, update_bytes, 4);
+						byte[] trimmed_update_bytes = new byte[update_bytes.Length - 4];
+						Array.Copy(update_bytes, 4, trimmed_update_bytes, 0, update_bytes.Length - 4);
+						sendPluginUpdate(trimmed_update_bytes);
 					}
 					else
 					{
@@ -1484,7 +1564,7 @@ namespace KLFClient
 			username_bytes.CopyTo(message_data, 4);
 			version_bytes.CopyTo(message_data, 4 + username_bytes.Length);
 
-			sendMessage(KLFCommon.ClientMessageID.HANDSHAKE, message_data);
+			sendMessageTCP(KLFCommon.ClientMessageID.HANDSHAKE, message_data);
 		}
 
 		private static void sendTextMessage(String message)
@@ -1493,12 +1573,20 @@ namespace KLFClient
 			ASCIIEncoding encoder = new ASCIIEncoding();
 			byte[] message_bytes = encoder.GetBytes(message);
 
-			sendMessage(KLFCommon.ClientMessageID.TEXT_MESSAGE, message_bytes);
+			sendMessageTCP(KLFCommon.ClientMessageID.TEXT_MESSAGE, message_bytes);
+		}
+
+		private static void sendPluginUpdate(byte[] data)
+		{
+			if (udpConnected)
+				sendMessageUDP(KLFCommon.ClientMessageID.PLUGIN_UPDATE, data);
+			else
+				sendMessageTCP(KLFCommon.ClientMessageID.PLUGIN_UPDATE, data);
 		}
 
 		private static void sendShareScreenshotMesssage(byte[] data)
 		{
-			sendMessage(KLFCommon.ClientMessageID.SCREENSHOT_SHARE, data);
+			sendMessageTCP(KLFCommon.ClientMessageID.SCREENSHOT_SHARE, data);
 		}
 
 		private static void sendScreenshotWatchPlayerMessage(String name)
@@ -1507,7 +1595,7 @@ namespace KLFClient
 			ASCIIEncoding encoder = new ASCIIEncoding();
 			byte[] bytes = encoder.GetBytes(name);
 
-			sendMessage(KLFCommon.ClientMessageID.SCREEN_WATCH_PLAYER, bytes);
+			sendMessageTCP(KLFCommon.ClientMessageID.SCREEN_WATCH_PLAYER, bytes);
 		}
 
 		private static void sendConnectionEndMessage(String message)
@@ -1516,10 +1604,10 @@ namespace KLFClient
 			ASCIIEncoding encoder = new ASCIIEncoding();
 			byte[] message_bytes = encoder.GetBytes(message);
 
-			sendMessage(KLFCommon.ClientMessageID.CONNECTION_END, message_bytes);
+			sendMessageTCP(KLFCommon.ClientMessageID.CONNECTION_END, message_bytes);
 		}
 
-		private static void sendMessage(KLFCommon.ClientMessageID id, byte[] data, int offset = 0, int length = -1)
+		private static void sendMessageTCP(KLFCommon.ClientMessageID id, byte[] data, int offset = 0, int length = -1)
 		{
 			lock (tcpSendLock)
 			{
@@ -1547,7 +1635,46 @@ namespace KLFClient
 
 			}
 
-			lastMessageSendTime = stopwatch.ElapsedMilliseconds;
+			lastTCPMessageSendTime = stopwatch.ElapsedMilliseconds;
+		}
+
+		private static void sendUDPProbeMessage()
+		{
+			sendMessageUDP(KLFCommon.ClientMessageID.UDP_PROBE, KLFCommon.intToBytes(clientID));
+		}
+
+		private static void sendMessageUDP(KLFCommon.ClientMessageID id, byte[] data)
+		{
+			if (udpSocket != null)
+			{
+
+				int length = 0;
+				if (data != null)
+					length = data.Length;
+
+				byte[] bytes = new byte[KLFCommon.MSG_HEADER_LENGTH + length];
+				
+				//Copy header
+				KLFCommon.intToBytes((int)id).CopyTo(bytes, 0);
+				KLFCommon.intToBytes(length).CopyTo(bytes, 4);
+
+				//Copy data
+				if (length > 0)
+					data.CopyTo(bytes, KLFCommon.MSG_HEADER_LENGTH);
+
+				//Send the packet
+				try
+				{
+					udpSocket.Send(bytes);
+				}
+				catch { }
+
+				lock (udpTimestampLock)
+				{
+					lastUDPMessageSendTime = stopwatch.ElapsedMilliseconds;
+				}
+
+			}
 		}
 
 	}
