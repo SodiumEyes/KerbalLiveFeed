@@ -58,6 +58,7 @@ namespace KLF
 
 		public Dictionary<String, VesselEntry> vessels = new Dictionary<string, VesselEntry>();
 		public Dictionary<String, VesselStatusInfo> playerStatus = new Dictionary<string, VesselStatusInfo>();
+		public RenderingManager renderManager;
 
 		private float lastGlobalSettingSaveTime = 0.0f;
 
@@ -78,7 +79,8 @@ namespace KLF
 					case GameScenes.SPH:
 					case GameScenes.TRACKSTATION:
 					case GameScenes.QUICKFLIGHT:
-						return KLFInfoDisplay.infoDisplayActive;
+						return KLFInfoDisplay.infoDisplayActive
+							&& (renderManager == null || renderManager.uiElementsToDisable.Length < 1 || renderManager.uiElementsToDisable[0].active);
 
 					default:
 						return false;
@@ -1187,18 +1189,15 @@ namespace KLF
 		public void Update()
 		{
 
-			//Detect if the user has toggled the ui
-			if (isInFlight && Input.GetKeyDown(GameSettings.TOGGLE_UI.primary))
-				KLFInfoDisplay.globalUIEnabled = !KLFInfoDisplay.globalUIEnabled;
+			//Find an instance of the game's RenderingManager
+			if (renderManager == null)
+				renderManager = (RenderingManager) FindObjectOfType(typeof(RenderingManager));
 
 			if (Input.GetKeyDown(KeyCode.F7))
 				KLFInfoDisplay.infoDisplayActive = !KLFInfoDisplay.infoDisplayActive;
 
 			if (Input.GetKeyDown(KeyCode.F8))
 				shareScreenshot();
-
-			if (!KLFInfoDisplay.globalUIEnabled && (!HighLogic.LoadedSceneIsFlight || PauseMenu.isOpen))
-				KLFInfoDisplay.globalUIEnabled = true; //If game has left a flight or is paused, global ui should be re-enabled
 		}
 
 		public void OnGUI()
