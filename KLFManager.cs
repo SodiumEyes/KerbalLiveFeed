@@ -19,6 +19,7 @@ namespace KLF
 		{
 			public string ownerName;
 			public string vesselName;
+			public string detailText;
 			public Color color;
 			public KLFVesselInfo info;
 			public Orbit orbit;
@@ -45,7 +46,7 @@ namespace KLF
 		public const float INACTIVE_VESSEL_RANGE = 400000000.0f;
 		public const float DOCKING_TARGET_RANGE = 200.0f;
 		public const int MAX_INACTIVE_VESSELS_PER_UPDATE = 8;
-		public const int STATUS_ARRAY_SIZE = 2;
+		public const int STATUS_ARRAY_MIN_SIZE = 2;
 
 		public const int MAX_VESSEL_NAME_LENGTH = 32;
 
@@ -210,28 +211,55 @@ namespace KLF
 				KSP.IO.FileStream out_stream = KSP.IO.File.Create<KLFManager>(OUT_FILENAME);
 				out_stream.Lock(0, long.MaxValue); //Lock that file so the client won't read it until we're done
 
+				//Check if the player is building a ship
+				bool building_ship = HighLogic.LoadedSceneIsEditor
+					&& EditorLogic.fetch.ship != null && EditorLogic.fetch.ship.Count > 0
+					&& EditorLogic.fetch.shipNameField.text != null && EditorLogic.fetch.shipNameField.text.Length > 0;
+
 				//Write the file format version
 				writeIntToStream(out_stream, KLFCommon.FILE_FORMAT_VERSION);
 
-				String[] status_array = new String[STATUS_ARRAY_SIZE];
+				String[] status_array = null;
+				if (building_ship)
+					status_array = new String[3];
+				else
+					status_array = new String[2];
+
 				status_array[0] = playerName;
-				switch (HighLogic.LoadedScene)
+
+				if (building_ship)
 				{
-					case GameScenes.SPACECENTER:
-						status_array[1] = "At Space Center";
-						break;
-					case GameScenes.EDITOR:
-						status_array[1] = "In Vehicle Assembly Building";
-						break;
-					case GameScenes.SPH:
-						status_array[1] = "In Space Plane Hangar";
-						break;
-					case GameScenes.TRACKSTATION:
-						status_array[1] = "At Tracking Station";
-						break;
-					default:
-						status_array[1] = String.Empty;
-						break;
+					//Vessel name
+					String shipname = EditorLogic.fetch.shipNameField.text;
+
+					if (shipname.Length > MAX_VESSEL_NAME_LENGTH)
+						shipname = shipname.Substring(0, MAX_VESSEL_NAME_LENGTH); //Limit vessel name length
+
+					status_array[1] = "Building " + EditorLogic.fetch.shipNameField.text;
+
+					//Vessel details
+					status_array[2] = "Parts: " + EditorLogic.fetch.ship.Count;
+				}
+				else
+				{
+					switch (HighLogic.LoadedScene)
+					{
+						case GameScenes.SPACECENTER:
+							status_array[1] = "At Space Center";
+							break;
+						case GameScenes.EDITOR:
+							status_array[1] = "In Vehicle Assembly Building";
+							break;
+						case GameScenes.SPH:
+							status_array[1] = "In Space Plane Hangar";
+							break;
+						case GameScenes.TRACKSTATION:
+							status_array[1] = "At Tracking Station";
+							break;
+						default:
+							status_array[1] = String.Empty;
+							break;
+					}
 				}
 				
 
@@ -835,13 +863,17 @@ namespace KLF
 
 		private VesselStatusInfo statusArrayToInfo(String[] status_array)
 		{
-			if (status_array != null && status_array.Length == STATUS_ARRAY_SIZE)
+			if (status_array != null && status_array.Length >= STATUS_ARRAY_MIN_SIZE)
 			{
 				//Read status array
 				VesselStatusInfo status = new VesselStatusInfo();
 				status.info = null;
 				status.ownerName = status_array[0];
 				status.vesselName = status_array[1];
+
+				if (status_array.Length >= 3)
+					status.detailText = status_array[2];
+
 				status.orbit = null;
 				status.lastUpdateTime = UnityEngine.Time.realtimeSinceStartup;
 				status.color = KLFVessel.generateActiveColor(status.ownerName);
@@ -1463,137 +1495,145 @@ namespace KLF
 			GUI.DragWindow();
 		}
 
-		private void vesselStatusLabels(VesselStatusInfo info, bool big)
+		private void vesselStatusLabels(VesselStatusInfo status, bool big)
 		{
-			playerNameStyle.normal.textColor = info.color * 0.75f + Color.white * 0.25f;
+			playerNameStyle.normal.textColor = status.color * 0.75f + Color.white * 0.25f;
 
 			if (big)
 				GUILayout.BeginHorizontal();
 
-			GUILayout.Label(info.ownerName, playerNameStyle);
-			if (info.vesselName.Length > 0)
-				GUILayout.Label(info.vesselName, vesselNameStyle);
+			GUILayout.Label(status.ownerName, playerNameStyle);
+			if (status.vesselName.Length > 0)
+				GUILayout.Label(status.vesselName, vesselNameStyle);
 
 			if (big)
 				GUILayout.EndHorizontal();
 
-			if (info.info == null || info.info.detail == null)
-				return;
-
+			//Build the detail text
 			StringBuilder sb = new StringBuilder();
-			bool exploded = false;
-			bool situation_determined = false;
 
-			if (info.info.situation == Situation.DESTROYED || info.info.detail.mass <= 0.0f)
-			{
-				sb.Append("Exploded at ");
-				exploded = true;
-				situation_determined = true;
-			}
-			else 
+			//Check if the status has specific detail text
+			if (status.detailText != null && status.detailText.Length > 0 && KLFInfoDisplay.infoDisplayDetailed)
+				sb.Append(status.detailText);
+			else if (status.info != null && status.info.detail != null)
 			{
 
-				//Check if the vessel's activity overrides the situation
-				switch (info.info.detail.activity)
+				bool exploded = false;
+				bool situation_determined = false;
+
+				if (status.info.situation == Situation.DESTROYED || status.info.detail.mass <= 0.0f)
 				{
-					case Activity.AEROBRAKING:
-						sb.Append("Aerobraking at ");
-						situation_determined = true;
-						break;
-
-					case Activity.DOCKING:
-						if (KLFVessel.situationIsGrounded(info.info.situation))
-							sb.Append("Docking on ");
-						else
-							sb.Append("Docking above ");
-						situation_determined = true;
-						break;
-
-					case Activity.PARACHUTING:
-						sb.Append("Parachuting to ");
-						situation_determined = true;
-						break;
+					sb.Append("Exploded at ");
+					exploded = true;
+					situation_determined = true;
 				}
-
-				if (!situation_determined)
+				else
 				{
-					switch (info.info.situation)
+
+					//Check if the vessel's activity overrides the situation
+					switch (status.info.detail.activity)
 					{
-						case Situation.DOCKED:
-							sb.Append("Docked at ");
+						case Activity.AEROBRAKING:
+							sb.Append("Aerobraking at ");
+							situation_determined = true;
 							break;
 
-						case Situation.ENCOUNTERING:
-							sb.Append("Encountering ");
+						case Activity.DOCKING:
+							if (KLFVessel.situationIsGrounded(status.info.situation))
+								sb.Append("Docking on ");
+							else
+								sb.Append("Docking above ");
+							situation_determined = true;
 							break;
 
-						case Situation.ESCAPING:
-							sb.Append("Escaping ");
-							break;
-
-						case Situation.FLYING:
-							sb.Append("Flying at ");
-							break;
-
-						case Situation.LANDED:
-							sb.Append("Landed at ");
-							break;
-
-						case Situation.ORBITING:
-							sb.Append("Orbiting ");
-							break;
-
-						case Situation.PRELAUNCH:
-							sb.Append("Prelaunch at ");
-							break;
-
-						case Situation.SPLASHED:
-							sb.Append("Splashed at ");
-							break;
-
-						case Situation.ASCENDING:
-							sb.Append("Ascending from ");
-							break;
-
-						case Situation.DESCENDING:
-							sb.Append("Descending to ");
+						case Activity.PARACHUTING:
+							sb.Append("Parachuting to ");
+							situation_determined = true;
 							break;
 					}
+
+					if (!situation_determined)
+					{
+						switch (status.info.situation)
+						{
+							case Situation.DOCKED:
+								sb.Append("Docked at ");
+								break;
+
+							case Situation.ENCOUNTERING:
+								sb.Append("Encountering ");
+								break;
+
+							case Situation.ESCAPING:
+								sb.Append("Escaping ");
+								break;
+
+							case Situation.FLYING:
+								sb.Append("Flying at ");
+								break;
+
+							case Situation.LANDED:
+								sb.Append("Landed at ");
+								break;
+
+							case Situation.ORBITING:
+								sb.Append("Orbiting ");
+								break;
+
+							case Situation.PRELAUNCH:
+								sb.Append("Prelaunch at ");
+								break;
+
+							case Situation.SPLASHED:
+								sb.Append("Splashed at ");
+								break;
+
+							case Situation.ASCENDING:
+								sb.Append("Ascending from ");
+								break;
+
+							case Situation.DESCENDING:
+								sb.Append("Descending to ");
+								break;
+						}
+					}
+
 				}
-			
+
+				sb.Append(status.info.bodyName);
+
+				if (!exploded && KLFInfoDisplay.infoDisplayDetailed)
+				{
+
+					sb.Append(" - Mass: ");
+					sb.Append(status.info.detail.mass.ToString("0.0"));
+					sb.Append(' ');
+
+					if (status.info.detail.percentFuel < byte.MaxValue)
+					{
+						sb.Append("Fuel: ");
+						sb.Append(status.info.detail.percentFuel);
+						sb.Append("% ");
+					}
+
+					if (status.info.detail.percentRCS < byte.MaxValue)
+					{
+						sb.Append("RCS: ");
+						sb.Append(status.info.detail.percentRCS);
+						sb.Append("% ");
+					}
+
+					if (status.info.detail.numCrew < byte.MaxValue)
+					{
+						sb.Append("Crew: ");
+						sb.Append(status.info.detail.numCrew);
+					}
+				}
+
 			}
- 
-			sb.Append(info.info.bodyName);
 
-			if (!exploded && KLFInfoDisplay.infoDisplayDetailed)
-			{
-
-				sb.Append(" - Mass: ");
-				sb.Append(info.info.detail.mass.ToString("0.0"));
-				sb.Append(' ');
-
-				if (info.info.detail.percentFuel < byte.MaxValue)
-				{
-					sb.Append("Fuel: ");
-					sb.Append(info.info.detail.percentFuel);
-					sb.Append("% ");
-				}
-
-				if (info.info.detail.percentRCS < byte.MaxValue)
-				{
-					sb.Append("RCS: ");
-					sb.Append(info.info.detail.percentRCS);
-					sb.Append("% ");
-				}
-
-				if (info.info.detail.numCrew < byte.MaxValue)
-				{
-					sb.Append("Crew: ");
-					sb.Append(info.info.detail.numCrew);
-				}
-			}
-
-			GUILayout.Label(sb.ToString(), stateTextStyle);
+			if (sb.Length > 0)
+				GUILayout.Label(sb.ToString(), stateTextStyle);
 		}
 
 		private void screenshotWatchButton(String name)
