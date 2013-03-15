@@ -1608,25 +1608,36 @@ namespace KLF
 				if (!exploded && KLFInfoDisplay.infoDisplayDetailed)
 				{
 
-					sb.Append(" - Mass: ");
-					sb.Append(status.info.detail.mass.ToString("0.0"));
-					sb.Append(' ');
+					bool show_mass = status.info.detail.mass >= 0.05f;
+					bool show_fuel = status.info.detail.percentFuel < byte.MaxValue;
+					bool show_rcs = status.info.detail.percentRCS < byte.MaxValue;
+					bool show_crew = status.info.detail.numCrew < byte.MaxValue;
 
-					if (status.info.detail.percentFuel < byte.MaxValue)
+					if (show_mass || show_fuel || show_rcs || show_crew)
+						sb.Append(" - ");
+
+					if (show_mass)
+					{
+						sb.Append("Mass: ");
+						sb.Append(status.info.detail.mass.ToString("0.0"));
+						sb.Append(' ');
+					}
+
+					if (show_fuel)
 					{
 						sb.Append("Fuel: ");
 						sb.Append(status.info.detail.percentFuel);
 						sb.Append("% ");
 					}
 
-					if (status.info.detail.percentRCS < byte.MaxValue)
+					if (show_rcs)
 					{
 						sb.Append("RCS: ");
 						sb.Append(status.info.detail.percentRCS);
 						sb.Append("% ");
 					}
 
-					if (status.info.detail.numCrew < byte.MaxValue)
+					if (show_crew)
 					{
 						sb.Append("Crew: ");
 						sb.Append(status.info.detail.numCrew);
