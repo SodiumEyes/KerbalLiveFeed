@@ -79,7 +79,7 @@ namespace KLFServer
 				Console.ResetColor();
 				Console.WriteLine();
 				Console.WriteLine("P: change port, M: change max clients, J: change join message");
-				Console.WriteLine("U: updates per second, IS: total inactive ship");
+				Console.WriteLine("U: updates per second, IS: total inactive ships");
 				Console.WriteLine("SI: screenshot interval, SV: save screenshots");
 				Console.WriteLine("A: toggle auto-restart, H: begin hosting, Q: quit");
 

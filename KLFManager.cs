@@ -47,19 +47,17 @@ namespace KLF
 		public const float DOCKING_TARGET_RANGE = 200.0f;
 		public const int MAX_INACTIVE_VESSELS_PER_UPDATE = 8;
 		public const int STATUS_ARRAY_MIN_SIZE = 2;
-
 		public const int MAX_VESSEL_NAME_LENGTH = 32;
-
 		public const float TIMEOUT_DELAY = 6.0f;
-		public const float CLIENT_DATA_READ_INTERVAL = 8.0f;
 
 		public String playerName = String.Empty;
 		public byte inactiveVesselsPerUpdate = 0;
 		public static bool globalUIEnabled = true;
 
 		public Dictionary<String, VesselEntry> vessels = new Dictionary<string, VesselEntry>();
-		public Dictionary<String, VesselStatusInfo> playerStatus = new Dictionary<string, VesselStatusInfo>();
+		public SortedDictionary<String, VesselStatusInfo> playerStatus = new SortedDictionary<string, VesselStatusInfo>();
 		public RenderingManager renderManager;
+		public PlanetariumCamera planetariumCam;
 
 		private float lastGlobalSettingSaveTime = 0.0f;
 
@@ -1226,11 +1224,16 @@ namespace KLF
 			if (renderManager == null)
 				renderManager = (RenderingManager) FindObjectOfType(typeof(RenderingManager));
 
+			//Find an instance of the game's PlanetariumCamera
+			if (planetariumCam == null)
+				planetariumCam = (PlanetariumCamera)FindObjectOfType(typeof(PlanetariumCamera));
+
 			if (Input.GetKeyDown(KeyCode.F7))
 				KLFInfoDisplay.infoDisplayActive = !KLFInfoDisplay.infoDisplayActive;
 
 			if (Input.GetKeyDown(KeyCode.F8))
 				shareScreenshot();
+
 		}
 
 		public void OnGUI()
@@ -1401,9 +1404,11 @@ namespace KLF
 
 		private void screenshotWindow(int windowID)
 		{
+
 			GUILayout.BeginHorizontal();
 			GUILayout.BeginVertical();
 
+			//Screenshot
 			if (KLFScreenshotDisplay.texture != null)
 				GUILayout.Box(KLFScreenshotDisplay.texture);
 			else
@@ -1416,15 +1421,45 @@ namespace KLF
 
 			GUILayout.EndVertical();
 
+			GUILayout.BeginVertical();
+
 			//User list
 			KLFScreenshotDisplay.scrollPos = GUILayout.BeginScrollView(KLFScreenshotDisplay.scrollPos);
 			GUILayout.BeginVertical();
 
+			String target_body_name = String.Empty;
+
 			foreach (KeyValuePair<String, VesselStatusInfo> pair in playerStatus)
+			{
 				screenshotWatchButton(pair.Key);
+
+				if (pair.Key == KLFScreenshotDisplay.watchPlayerName)
+				{
+					if (pair.Value.info != null)
+						target_body_name = pair.Value.info.bodyName;
+				}
+			}
 
 			GUILayout.EndVertical();
 			GUILayout.EndScrollView();
+
+			//Body function
+			if (HighLogic.LoadedSceneHasPlanetarium && planetariumCam != null
+				&& KLFScreenshotDisplay.watchPlayerName.Length > 0
+				&& target_body_name.Length > 0
+				&& GUILayout.Button("Focus on " + target_body_name))
+			{
+				foreach (Transform transform in planetariumCam.targets)
+				{
+					if (transform.name == target_body_name)
+					{
+						planetariumCam.setTarget(transform);
+						break;
+					}
+				}
+			}
+
+			GUILayout.EndVertical();
 
 			GUILayout.EndHorizontal();
 
