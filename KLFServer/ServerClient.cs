@@ -128,7 +128,14 @@ namespace KLFServer
 				currentMessageHeaderIndex += read;
 				if (currentMessageHeaderIndex >= currentMessageHeader.Length)
 				{
-					currentMessageID = (KLFCommon.ClientMessageID)KLFCommon.intFromBytes(currentMessageHeader, 0);
+					int id_int = KLFCommon.intFromBytes(currentMessageHeader, 0);
+
+					//Make sure the message id section of the header is a valid value
+					if (id_int >= 0 && id_int < Enum.GetValues(typeof(KLFCommon.ClientMessageID)).Length)
+						currentMessageID = (KLFCommon.ClientMessageID)id_int;
+					else
+						currentMessageID = KLFCommon.ClientMessageID.NULL;
+
 					int data_length = KLFCommon.intFromBytes(currentMessageHeader, 4);
 
 					if (data_length > 0)

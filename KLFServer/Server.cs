@@ -452,6 +452,8 @@ namespace KLFServer
 								stampedConsoleWriteLine("Accepted client. Handshaking...");
 								sendHandshakeMessage(client_index);
 
+								sendMessageHeaderDirect(client, KLFCommon.ServerMessageID.NULL, 0);
+
 								//Send the join message to the client
 								if (settings.joinMessage.Length > 0)
 									sendServerMessage(client_index, settings.joinMessage);
@@ -1180,7 +1182,6 @@ namespace KLFServer
 
 		private void sendServerMessage(int client_index, String message)
 		{
-
 			ASCIIEncoding encoder = new ASCIIEncoding();
 			clients[client_index].queueOutgoingMessage(KLFCommon.ServerMessageID.SERVER_MESSAGE, encoder.GetBytes(message));
 		}

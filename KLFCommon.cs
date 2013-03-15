@@ -48,7 +48,8 @@ public class KLFCommon
 		SCREENSHOT_SHARE /*Screenshot bytes*/,
 		KEEPALIVE,
 		CONNECTION_END /*Message*/ ,
-		UDP_PROBE /*ClientID*/
+		UDP_PROBE /*ClientID*/,
+		NULL
 	}
 
 	public enum ServerMessageID
@@ -62,7 +63,8 @@ public class KLFCommon
 		SCREENSHOT_SHARE /*Screenshot bytes*/,
 		KEEPALIVE,
 		CONNECTION_END /*Message*/,
-		UDP_ACKNOWLEDGE
+		UDP_ACKNOWLEDGE,
+		NULL
 	}
 }
 

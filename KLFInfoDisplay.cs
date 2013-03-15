@@ -37,7 +37,6 @@ namespace KLF
 		public static bool infoDisplayMinimized = false;
 		public static bool infoDisplayDetailed = false;
 		public static bool infoDisplayBig = false;
-		public static bool hideOutsideGame = true;
 		public static Rect infoWindowPos = new Rect(20, Screen.height / 2 - WINDOW_HEIGHT / 2, WINDOW_WIDTH_DEFAULT, WINDOW_HEIGHT);
 		public static GUILayoutOption[] layoutOptions;
 		public static Vector2 infoScrollPos = Vector2.zero;
