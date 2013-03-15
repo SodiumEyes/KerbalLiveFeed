@@ -213,35 +213,35 @@ namespace KLF
 
 				//Check if the player is building a ship
 				bool building_ship = HighLogic.LoadedSceneIsEditor
+					&& EditorLogic.fetch != null
 					&& EditorLogic.fetch.ship != null && EditorLogic.fetch.ship.Count > 0
+					&& EditorLogic.fetch.shipNameField != null
 					&& EditorLogic.fetch.shipNameField.text != null && EditorLogic.fetch.shipNameField.text.Length > 0;
 
 				//Write the file format version
 				writeIntToStream(out_stream, KLFCommon.FILE_FORMAT_VERSION);
 
 				String[] status_array = null;
-				if (building_ship)
-					status_array = new String[3];
-				else
-					status_array = new String[2];
-
-				status_array[0] = playerName;
 
 				if (building_ship)
 				{
+					status_array = new String[3];
+
 					//Vessel name
 					String shipname = EditorLogic.fetch.shipNameField.text;
 
 					if (shipname.Length > MAX_VESSEL_NAME_LENGTH)
 						shipname = shipname.Substring(0, MAX_VESSEL_NAME_LENGTH); //Limit vessel name length
 
-					status_array[1] = "Building " + EditorLogic.fetch.shipNameField.text;
+					status_array[1] = "Building " + shipname;
 
 					//Vessel details
 					status_array[2] = "Parts: " + EditorLogic.fetch.ship.Count;
 				}
 				else
 				{
+					status_array = new String[2];
+
 					switch (HighLogic.LoadedScene)
 					{
 						case GameScenes.SPACECENTER:
@@ -261,7 +261,8 @@ namespace KLF
 							break;
 					}
 				}
-				
+
+				status_array[0] = playerName;				
 
 				//Serialize the update
 				byte[] update_bytes = KSP.IO.IOUtils.SerializeToBinary(status_array);
@@ -1502,8 +1503,10 @@ namespace KLF
 			if (big)
 				GUILayout.BeginHorizontal();
 
-			GUILayout.Label(status.ownerName, playerNameStyle);
-			if (status.vesselName.Length > 0)
+			if (status.ownerName != null)
+				GUILayout.Label(status.ownerName, playerNameStyle);
+
+			if (status.vesselName != null && status.vesselName.Length > 0)
 				GUILayout.Label(status.vesselName, vesselNameStyle);
 
 			if (big)

@@ -565,10 +565,13 @@ namespace KLFClient
 
 				case KLFCommon.ServerMessageID.PLUGIN_UPDATE:
 
-					//Add the update the queue
-					lock (pluginUpdateInLock)
+					if (data != null)
 					{
-						pluginUpdateInQueue.Enqueue(data);
+						//Add the update the queue
+						lock (pluginUpdateInLock)
+						{
+							pluginUpdateInQueue.Enqueue(data);
+						}
 					}
 
 					break;
@@ -1062,7 +1065,8 @@ namespace KLFClient
 						while (pluginUpdateInQueue.Count > 0)
 						{
 							byte[] update = pluginUpdateInQueue.Dequeue();
-							in_stream.Write(update, 0, update.Length);
+							if (update != null)
+								in_stream.Write(update, 0, update.Length);
 						}
 
 					}
@@ -1597,15 +1601,19 @@ namespace KLFClient
 
 		private static void sendPluginUpdate(byte[] data)
 		{
-			if (udpConnected)
-				sendMessageUDP(KLFCommon.ClientMessageID.PLUGIN_UPDATE, data);
-			else
-				sendMessageTCP(KLFCommon.ClientMessageID.PLUGIN_UPDATE, data);
+			if (data != null && data.Length > 0)
+			{
+				if (udpConnected)
+					sendMessageUDP(KLFCommon.ClientMessageID.PLUGIN_UPDATE, data);
+				else
+					sendMessageTCP(KLFCommon.ClientMessageID.PLUGIN_UPDATE, data);
+			}
 		}
 
 		private static void sendShareScreenshotMesssage(byte[] data)
 		{
-			sendMessageTCP(KLFCommon.ClientMessageID.SCREENSHOT_SHARE, data);
+			if (data != null && data.Length > 0)
+				sendMessageTCP(KLFCommon.ClientMessageID.SCREENSHOT_SHARE, data);
 		}
 
 		private static void sendScreenshotWatchPlayerMessage(String name)
