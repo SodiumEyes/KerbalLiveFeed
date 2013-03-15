@@ -52,7 +52,6 @@ namespace KLF
 
 		public String playerName = String.Empty;
 		public byte inactiveVesselsPerUpdate = 0;
-		public static bool globalUIEnabled = true;
 
 		public Dictionary<String, VesselEntry> vessels = new Dictionary<string, VesselEntry>();
 		public SortedDictionary<String, VesselStatusInfo> playerStatus = new SortedDictionary<string, VesselStatusInfo>();
@@ -1449,6 +1448,9 @@ namespace KLF
 				&& target_body_name.Length > 0
 				&& GUILayout.Button("Focus on " + target_body_name))
 			{
+				if (!MapView.MapIsEnabled)
+					MapView.EnterMapView();
+
 				foreach (Transform transform in planetariumCam.targets)
 				{
 					if (transform.name == target_body_name)
