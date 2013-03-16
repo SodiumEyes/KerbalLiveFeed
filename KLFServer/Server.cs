@@ -54,6 +54,7 @@ namespace KLFServer
 		public object threadExceptionLock = new object();
 		public object clientActivityCountLock = new object();
 		public object clientUDPAddressMapLock = new object();
+		public static object consoleWriteLock = new object();
 
 		public Thread listenThread;
 		public Thread commandThread;
@@ -144,21 +145,27 @@ namespace KLFServer
 
 		public static void stampedConsoleWriteLine(String message)
 		{
-			ConsoleColor default_color = Console.ForegroundColor;
-			Console.ForegroundColor = ConsoleColor.DarkGreen;
-
-			try
+			lock (consoleWriteLock)
 			{
-				Console.Write('[');
-				Console.Write(DateTime.Now.ToString("HH:mm:ss"));
-				Console.Write("] ");
 
-				Console.ForegroundColor = default_color;
-				Console.WriteLine(message);
-			}
-			catch (IOException)
-			{
-				Console.ForegroundColor = default_color;
+				ConsoleColor default_color = Console.ForegroundColor;
+				Console.ForegroundColor = ConsoleColor.DarkGreen;
+
+				try
+				{
+					Console.Write('[');
+					Console.Write(DateTime.Now.ToString("HH:mm:ss"));
+					Console.Write("] ");
+
+					Console.ForegroundColor = default_color;
+					Console.WriteLine(message);
+				}
+				catch (IOException) { }
+				finally
+				{
+					Console.ForegroundColor = default_color;
+				}
+
 			}
 		}
 
@@ -324,7 +331,9 @@ namespace KLFServer
 			}
 
 			Console.WriteLine("Commands:");
-			Console.WriteLine("/quit - quit");
+			Console.WriteLine("/quit - close server");
+			Console.WriteLine("/list - list players");
+			Console.WriteLine("/count - display player counts");
 			Console.WriteLine("/kick <username>");
 
 			commandThread.Start();
@@ -381,7 +390,7 @@ namespace KLFServer
 								Object o = null; //You asked for it!
 								o.ToString();
 							}
-							else if (input.Substring(0, 6) == "/kick " && input.Length > 6)
+							else if (input.Length > 6 && input.Substring(0, 6) == "/kick ")
 							{
 								String kick_name = input.Substring(6, input.Length - 6).ToLower();
 								for (int i = 0; i < clients.Length; i++)
@@ -390,6 +399,33 @@ namespace KLFServer
 									{
 										disconnectClient(i, "You were kicked from the server.");
 									}
+								}
+							}
+							if (input == "/list")
+							{
+								//Display player list
+								StringBuilder sb = new StringBuilder();
+								for (int i = 0; i < clients.Length; i++)
+								{
+									if (clientIsReady(i))
+									{
+										sb.Append(clients[i].username);
+										sb.Append(" - ");
+										sb.Append(clients[i].activityLevel.ToString());
+										sb.Append('\n');
+									}
+								}
+
+								stampedConsoleWriteLine(sb.ToString());
+							}
+							if (input == "/count")
+							{
+								stampedConsoleWriteLine("Total clients: " + numClients);
+
+								lock (clientActivityCountLock)
+								{
+									stampedConsoleWriteLine("In-Game Clients: " + numInGameClients);
+									stampedConsoleWriteLine("In-Flight Clients: " + numInFlightClients);
 								}
 							}
 						}
