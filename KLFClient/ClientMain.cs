@@ -38,6 +38,7 @@ namespace KLFClient
 		public const String CHAT_IN_FILENAME = "PluginData/kerballivefeed/chatin.txt";
 		public const String CHAT_OUT_FILENAME = "PluginData/kerballivefeed/chatout.txt";
 		public const String CLIENT_CONFIG_FILENAME = "KLFClientConfig.txt";
+		public const String CRAFT_FILE_EXTENSION = ".craft";
 		
 		public const int MAX_USERNAME_LENGTH = 16;
 		public const int MAX_TEXT_MESSAGE_QUEUE = 128;
@@ -526,41 +527,18 @@ namespace KLFClient
 					break;
 
 				case KLFCommon.ServerMessageID.SERVER_MESSAGE:
-
-					InTextMessage in_message = new InTextMessage();
-
-					in_message.fromServer = true;
-					in_message.message = encoder.GetString(data, 0, data.Length);
-
-					//Queue the message
-					lock (textMessageQueueLock)
-					{
-						enqueueTextMessage(in_message);
-					}
-
-					lock (pluginChatInLock)
-					{
-						enqueuePluginChatMessage("[Server] " + in_message.message);
-					}
-
-					break;
-
 				case KLFCommon.ServerMessageID.TEXT_MESSAGE:
 
-					in_message = new InTextMessage();
-
-					in_message.fromServer = false;
-					in_message.message = encoder.GetString(data, 0, data.Length);
-
-					//Queue the message
-					lock (textMessageQueueLock)
+					if (data != null)
 					{
+
+						InTextMessage in_message = new InTextMessage();
+
+						in_message.fromServer = (id == KLFCommon.ServerMessageID.SERVER_MESSAGE);
+						in_message.message = encoder.GetString(data, 0, data.Length);
+
+						//Queue the message
 						enqueueTextMessage(in_message);
-					}
-
-					lock (pluginChatInLock)
-					{
-						enqueuePluginChatMessage(in_message.message);
 					}
 
 					break;
@@ -643,6 +621,43 @@ namespace KLFClient
 						lastUDPAckReceiveTime = stopwatch.ElapsedMilliseconds;
 					}
 					break;
+
+				case KLFCommon.ServerMessageID.CRAFT_FILE:
+
+					if (data != null && data.Length > 4)
+					{
+						//Read craft name length
+						byte craft_type = data[0];
+						int craft_name_length = KLFCommon.intFromBytes(data, 1);
+						if (craft_name_length < data.Length - 5)
+						{
+							//Read craft name
+							String craft_name = encoder.GetString(data, 5, craft_name_length);
+
+							//Read craft bytes
+							byte[] craft_bytes = new byte[data.Length - craft_name_length - 5];
+							Array.Copy(data, 5 + craft_name_length, craft_bytes, 0, craft_bytes.Length);
+
+							//Write the craft to a file
+							String filename = getCraftFilename(craft_name, craft_type);
+							if (filename != null)
+							{
+								try
+								{
+									File.WriteAllBytes(filename, craft_bytes);
+									enqueueTextMessage("Received craft file: " + craft_name);
+								}
+								catch
+								{
+									enqueueTextMessage("Error saving received craft file: " + craft_name);
+								}
+							}
+							else
+								enqueueTextMessage("Unable to save received craft file.");
+						}
+					}
+
+					break;
 			}
 		}
 
@@ -690,6 +705,29 @@ namespace KLFClient
 					{
 						Object o = null;
 						o.ToString();
+					}
+					else if (line.Length > (KLFCommon.SHARE_CRAFT_COMMAND.Length + 1)
+						&& line.Substring(0, KLFCommon.SHARE_CRAFT_COMMAND.Length) == KLFCommon.SHARE_CRAFT_COMMAND)
+					{
+						//Share a craft file
+						String craft_name = line.Substring(KLFCommon.SHARE_CRAFT_COMMAND.Length + 1);
+						byte craft_type = 0;
+						String filename = findCraftFilename(craft_name, ref craft_type);
+
+						if (filename != null && filename.Length > 0)
+						{
+							try
+							{
+								byte[] craft_bytes = File.ReadAllBytes(filename);
+								sendShareCraftMessage(craft_name, craft_bytes, craft_type);
+							}
+							catch
+							{
+								enqueueTextMessage("Error reading craft file: " + filename);
+							}
+						}
+						else
+							enqueueTextMessage("Craft file not found: " + craft_name);
 					}
 
 				}
@@ -802,13 +840,10 @@ namespace KLFClient
 
 						if (udpConnected != udp_should_be_connected)
 						{
-							lock (textMessageQueueLock)
-							{
-								if (udp_should_be_connected)
-									enqueueTextMessage("UDP connection established.");
-								else
-									enqueueTextMessage("UDP connection lost.");
-							}
+							if (udp_should_be_connected)
+								enqueueTextMessage("UDP connection established.", false, true);
+							else
+								enqueueTextMessage("UDP connection lost.", false, true);
 
 							udpConnected = udp_should_be_connected;
 						}
@@ -1328,7 +1363,7 @@ namespace KLFClient
 								InTextMessage message = new InTextMessage();
 								message.fromServer = false;
 								message.message = "[" + username + "] " + line;
-								enqueueTextMessage(message);
+								enqueueTextMessage(message, false);
 
 								handleChatInput(line);
 							}
@@ -1357,21 +1392,35 @@ namespace KLFClient
 			}
 		}
 
-		static void enqueueTextMessage(String message, bool from_server = false)
+		static void enqueueTextMessage(String message, bool from_server = false, bool to_plugin = true)
 		{
 			InTextMessage text_message = new InTextMessage();
 			text_message.message = message;
 			text_message.fromServer = from_server;
-			enqueueTextMessage(text_message);
+			enqueueTextMessage(text_message, to_plugin);
 		}
 
-		static void enqueueTextMessage(InTextMessage message)
+		static void enqueueTextMessage(InTextMessage message, bool to_plugin = true)
 		{
-			//Dequeue an old text message if there are a lot of messages backed up
-			if (textMessageQueue.Count >= MAX_TEXT_MESSAGE_QUEUE)
-				textMessageQueue.Dequeue();
+			lock (textMessageQueueLock)
+			{
+				//Dequeue an old text message if there are a lot of messages backed up
+				if (textMessageQueue.Count >= MAX_TEXT_MESSAGE_QUEUE)
+					textMessageQueue.Dequeue();
 
-			textMessageQueue.Enqueue(message);
+				textMessageQueue.Enqueue(message);
+			}
+
+			if (to_plugin)
+			{
+				lock (pluginChatInLock)
+				{
+					if (message.fromServer)
+						enqueuePluginChatMessage("[Server] " + message.message);
+					else
+						enqueuePluginChatMessage(message.message);
+				}
+			}
 		}
 
 		static void enqueuePluginChatMessage(String message, bool print = false)
@@ -1399,6 +1448,47 @@ namespace KLFClient
 				{
 				}
 			}
+		}
+
+		static String findCraftFilename(String craft_name, ref byte craft_type)
+		{
+			String vab_filename = getCraftFilename(craft_name, KLFCommon.CRAFT_TYPE_VAB);
+			if (vab_filename != null && File.Exists(vab_filename))
+			{
+				craft_type = KLFCommon.CRAFT_TYPE_VAB;
+				return vab_filename;
+			}
+
+			String sph_filename = getCraftFilename(craft_name, KLFCommon.CRAFT_TYPE_SPH);
+			if (sph_filename != null && File.Exists(sph_filename))
+			{
+				craft_type = KLFCommon.CRAFT_TYPE_SPH;
+				return sph_filename;
+			}
+
+			return null;
+
+		}
+
+		static String getCraftFilename(String craft_name, byte craft_type)
+		{
+			//Filter the craft name for illegal characters
+			String filtered_craft_name = KLFCommon.filteredFileName(craft_name.Replace('.', '_'));
+
+			if (currentGameTitle.Length <= 0 || filtered_craft_name.Length <= 0)
+				return null;
+
+			switch (craft_type)
+			{
+				case KLFCommon.CRAFT_TYPE_VAB:
+					return "saves/" + currentGameTitle + "/Ships/VAB/" + filtered_craft_name + CRAFT_FILE_EXTENSION;
+					
+				case KLFCommon.CRAFT_TYPE_SPH:
+					return "saves/" + currentGameTitle + "/Ships/SPH/" + filtered_craft_name + CRAFT_FILE_EXTENSION;
+			}
+
+			return null;
+
 		}
 
 		//Config
@@ -1657,6 +1747,31 @@ namespace KLFClient
 			byte[] message_bytes = encoder.GetBytes(message);
 
 			sendMessageTCP(KLFCommon.ClientMessageID.CONNECTION_END, message_bytes);
+		}
+
+		private static void sendShareCraftMessage(String craft_name, byte[] data, byte type)
+		{
+			//Encode message
+			UnicodeEncoding encoder = new UnicodeEncoding();
+			byte[] name_bytes = encoder.GetBytes(craft_name);
+
+			byte[] bytes = new byte [5 + name_bytes.Length + data.Length];
+
+			//Check size of data to make sure it's not too large
+			if ((name_bytes.Length + data.Length) <= KLFCommon.MAX_CRAFT_FILE_BYTES)
+			{
+				//Copy data
+				bytes[0] = type;
+				KLFCommon.intToBytes(name_bytes.Length).CopyTo(bytes, 1);
+				name_bytes.CopyTo(bytes, 5);
+				data.CopyTo(bytes, 5 + name_bytes.Length);
+
+				sendMessageTCP(KLFCommon.ClientMessageID.SHARE_CRAFT_FILE, bytes);
+			}
+			else
+				enqueueTextMessage("Craft file is too large to send.", false, true);
+
+			
 		}
 
 		private static void sendMessageTCP(KLFCommon.ClientMessageID id, byte[] data, int offset = 0, int length = -1)

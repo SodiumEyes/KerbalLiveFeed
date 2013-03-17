@@ -22,7 +22,7 @@ namespace KLFServer
 		public const int SLEEP_TIME = 15;
 		public const int MAX_SCREENSHOT_COUNT = 10000;
 
-		public const int IN_FLIGHT_UPDATE_SIZE_THRESHOLD = 200;
+		public const int IN_FLIGHT_UPDATE_SIZE_THRESHOLD = 400;
 		public const float NOT_IN_FLIGHT_UPDATE_WEIGHT = 1.0f/4.0f;
 		public const int ACTIVITY_RESET_DELAY = 10000;
 
@@ -631,20 +631,7 @@ namespace KLFServer
 					lock (clients[i].timestampLock)
 					{
 						//Reset client properties
-						client.username = "new user";
-						client.screenshot = null;
-						client.watchPlayerName = String.Empty;
-						client.canBeReplaced = false;
-						client.lastMessageTime = currentMillisecond;
-						client.connectionStartTime = currentMillisecond;
-						client.receivedHandshake = false;
-
-						lock (clients[i].activityLevelLock)
-						{
-							client.activityLevel = ServerClient.ActivityLevel.INACTIVE;
-							client.lastInGameActivityTime = currentMillisecond;
-							client.lastInFlightActivityTime = currentMillisecond;
-						}
+						client.resetProperties();
 					}
 
 					client.startMessageThread();
@@ -840,6 +827,19 @@ namespace KLFServer
 			}
 		}
 
+		private int getClientIndexByName(String name)
+		{
+			name = name.ToLower(); //Set name to lowercase to make the search case-insensitive
+
+			for (int i = 0; i < clients.Length; i++)
+			{
+				if (clientIsReady(i) && clients[i].username.ToLower() == name)
+					return i;
+			}
+
+			return -1;
+		}
+
 		//Messages
 
 		public void handleMessage(int client_index, KLFCommon.ClientMessageID id, byte[] data)
@@ -960,51 +960,7 @@ namespace KLFServer
 				case KLFCommon.ClientMessageID.TEXT_MESSAGE:
 
 					if (data != null && clientIsReady(client_index))
-					{
-
-						StringBuilder sb = new StringBuilder();
-						String message_text = encoder.GetString(data, 0, data.Length);
-
-						if (message_text.Length > 0 && message_text.First() == '!')
-						{
-							if (message_text == "!list")
-							{
-								//Compile list of usernames
-								sb.Append("Connected users:\n");
-								for (int i = 0; i < clients.Length; i++)
-								{
-									if (clientIsReady(i))
-									{
-										sb.Append(clients[i].username);
-										sb.Append('\n');
-									}
-								}
-
-								sendTextMessage(client_index, sb.ToString());
-								break;
-							}
-							else if (message_text == "!quit")
-							{
-								disconnectClient(client_index, "Requested quit");
-								break;
-							}
-						}
-
-						//Compile full message
-						sb.Append('[');
-						sb.Append(clients[client_index].username);
-						sb.Append("] ");
-						sb.Append(message_text);
-
-						String full_message = sb.ToString();
-
-						//Console.SetCursorPosition(0, Console.CursorTop);
-						stampedConsoleWriteLine(full_message);
-
-						//Send the update to all other clients
-						sendTextMessageToAll(full_message, client_index);
-
-					}
+						handleClientTextMessage(client_index, encoder.GetString(data, 0, data.Length));
 
 					break;
 
@@ -1034,18 +990,13 @@ namespace KLFServer
 						&& watch_name != clients[client_index].username)
 					{
 						//Try to find the player the client is watching and send that player's current screenshot
-						for (int i = 0; i < clients.Length; i++)
+						int watch_index = getClientIndexByName(watch_name);
+						if (clientIsReady(watch_index))
 						{
-							if (i != client_index && clientIsReady(i) && clients[i].username == watch_name)
+							lock (clients[watch_index].screenshotLock)
 							{
-
-								lock (clients[i].screenshotLock)
-								{
-									if (clients[i].screenshot != null)
-										sendScreenshot(client_index, clients[i].screenshot);
-								}
-
-								break;
+								if (clients[watch_index].screenshot != null)
+									sendScreenshot(client_index, clients[watch_index].screenshot);
 							}
 						}
 					}
@@ -1107,9 +1058,134 @@ namespace KLFServer
 					disconnectClient(client_index, message); //Disconnect the client
 					break;
 
+				case KLFCommon.ClientMessageID.SHARE_CRAFT_FILE:
+
+					if (clientIsReady(client_index) && data != null
+						&& data.Length > 5 && (data.Length - 5) <= KLFCommon.MAX_CRAFT_FILE_BYTES)
+					{
+						//Read craft name length
+						byte craft_type = data[0];
+						int craft_name_length = KLFCommon.intFromBytes(data, 1);
+						if (craft_name_length < data.Length - 5)
+						{
+							//Read craft name
+							String craft_name = encoder.GetString(data, 5, craft_name_length);
+
+							//Read craft bytes
+							byte[] craft_bytes = new byte[data.Length - craft_name_length - 5];
+							Array.Copy(data, 5 + craft_name_length, craft_bytes, 0, craft_bytes.Length);
+
+							lock (clients[client_index].sharedCraftLock)
+							{
+								clients[client_index].sharedCraftName = craft_name;
+								clients[client_index].sharedCraftFile = craft_bytes;
+								clients[client_index].sharedCraftType = craft_type;
+							}
+
+							//Send a message to players informing them that a craft has been shared
+							StringBuilder sb = new StringBuilder();
+							sb.Append(clients[client_index].username);
+							sb.Append(" shared craft ");
+							sb.Append(craft_name);
+
+							switch (craft_type)
+							{
+								case KLFCommon.CRAFT_TYPE_VAB:
+									sb.Append(" (VAB)");
+									break;
+
+								case KLFCommon.CRAFT_TYPE_SPH:
+									sb.Append(" (SPH)");
+									break;
+							}
+
+							stampedConsoleWriteLine(sb.ToString());
+			
+							sb.Append(" . Enter !getcraft ");
+							sb.Append(clients[client_index].username);
+							sb.Append(" to get it.");
+							sendTextMessageToAll(sb.ToString());
+						}
+					}
+					break;
+
+
 			}
 
 			debugConsoleWriteLine("Handled message");
+		}
+
+		public void handleClientTextMessage(int client_index, String message_text)
+		{
+			StringBuilder sb = new StringBuilder();
+
+			if (message_text.Length > 0 && message_text.First() == '!')
+			{
+				if (message_text == "!list")
+				{
+					//Compile list of usernames
+					sb.Append("Connected users:\n");
+					for (int i = 0; i < clients.Length; i++)
+					{
+						if (clientIsReady(i))
+						{
+							sb.Append(clients[i].username);
+							sb.Append('\n');
+						}
+					}
+
+					sendTextMessage(client_index, sb.ToString());
+					return;
+				}
+				else if (message_text == "!quit")
+				{
+					disconnectClient(client_index, "Requested quit");
+					return;
+				}
+				else if (message_text.Length > (KLFCommon.GET_CRAFT_COMMAND.Length + 1)
+					&& message_text.Substring(0, KLFCommon.GET_CRAFT_COMMAND.Length) == KLFCommon.GET_CRAFT_COMMAND)
+				{
+					String player_name = message_text.Substring(KLFCommon.GET_CRAFT_COMMAND.Length + 1);
+
+					//Find the player with the given name
+					int target_index = getClientIndexByName(player_name);
+
+					if (clientIsReady(target_index))
+					{
+						//Send the client the craft data
+						lock (clients[target_index].sharedCraftLock)
+						{
+							if (clients[target_index].sharedCraftName.Length > 0
+								&& clients[target_index].sharedCraftFile != null && clients[target_index].sharedCraftFile.Length > 0)
+							{
+								sendCraftFile(client_index,
+									clients[target_index].sharedCraftName,
+									clients[target_index].sharedCraftFile,
+									clients[target_index].sharedCraftType);
+
+								stampedConsoleWriteLine("Sent craft " + clients[target_index].sharedCraftName
+									+ " to client " + clients[client_index].username);
+							}
+						}
+					}
+					
+					return;
+				}
+			}
+
+			//Compile full message
+			sb.Append('[');
+			sb.Append(clients[client_index].username);
+			sb.Append("] ");
+			sb.Append(message_text);
+
+			String full_message = sb.ToString();
+
+			//Console.SetCursorPosition(0, Console.CursorTop);
+			stampedConsoleWriteLine(full_message);
+
+			//Send the update to all other clients
+			sendTextMessageToAll(full_message, client_index);
 		}
 
 		private void sendMessageHeaderDirect(TcpClient client, KLFCommon.ServerMessageID id, int msg_length)
@@ -1242,6 +1318,23 @@ namespace KLFServer
 		private void sendScreenshot(int client_index, byte[] bytes)
 		{
 			clients[client_index].queueOutgoingMessage(KLFCommon.ServerMessageID.SCREENSHOT_SHARE, bytes);
+		}
+
+		private void sendCraftFile(int client_index, String craft_name, byte[] data, byte type)
+		{
+
+			UnicodeEncoding encoder = new UnicodeEncoding();
+			byte[] name_bytes = encoder.GetBytes(craft_name);
+
+			byte[] bytes = new byte[5 + name_bytes.Length + data.Length];
+
+			//Copy data
+			bytes[0] = type;
+			KLFCommon.intToBytes(name_bytes.Length).CopyTo(bytes, 1);
+			name_bytes.CopyTo(bytes, 5);
+			data.CopyTo(bytes, 5 + name_bytes.Length);
+
+			clients[client_index].queueOutgoingMessage(KLFCommon.ServerMessageID.CRAFT_FILE, bytes);
 		}
 
 		private void sendServerSettingsToAll()

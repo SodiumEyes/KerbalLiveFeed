@@ -13,9 +13,17 @@ public class KLFCommon
 
 	public const int SERVER_SETTINGS_LENGTH = 13;
 
-	public const float MAX_SCREENSHOT_WIDTH = 480;
-	public const float MAX_SCREENSHOT_HEIGHT = 270;
-	public const float MAX_SCREENSHOT_BYTES = MAX_SCREENSHOT_WIDTH * MAX_SCREENSHOT_HEIGHT * 3;
+	public const int MAX_SCREENSHOT_WIDTH = 480;
+	public const int MAX_SCREENSHOT_HEIGHT = 270;
+	public const int MAX_SCREENSHOT_BYTES = MAX_SCREENSHOT_WIDTH * MAX_SCREENSHOT_HEIGHT * 3;
+
+	public const int MAX_CRAFT_FILE_BYTES = 1024 * 1024;
+
+	public const String SHARE_CRAFT_COMMAND = "/sharecraft";
+	public const String GET_CRAFT_COMMAND = "!getcraft";
+
+	public const byte CRAFT_TYPE_VAB = 0;
+	public const byte CRAFT_TYPE_SPH = 1;
 
 	/*ClientData format:
 	 * Byte - Inactive Vessels Per Update
@@ -75,7 +83,8 @@ public class KLFCommon
 		KEEPALIVE,
 		CONNECTION_END /*Message*/ ,
 		UDP_PROBE /*ClientID*/,
-		NULL
+		NULL,
+		SHARE_CRAFT_FILE /*Craft Type Byte : Craft name length : Craft Name : File bytes*/
 	}
 
 	public enum ServerMessageID
@@ -90,7 +99,8 @@ public class KLFCommon
 		KEEPALIVE,
 		CONNECTION_END /*Message*/,
 		UDP_ACKNOWLEDGE,
-		NULL
+		NULL,
+		CRAFT_FILE /*Craft Type Byte : Craft name length : Craft Name : File bytes*/
 	}
 
 }

@@ -53,6 +53,9 @@ namespace KLFServer
 
 		public byte[] screenshot;
 		public String watchPlayerName;
+		public byte[] sharedCraftFile;
+		public String sharedCraftName;
+		public byte sharedCraftType;
 
 		public long connectionStartTime;
 		public long lastMessageTime;
@@ -70,6 +73,7 @@ namespace KLFServer
 		public object activityLevelLock = new object();
 		public object screenshotLock = new object();
 		public object watchPlayerNameLock = new object();
+		public object sharedCraftLock = new object();
 
 		public byte[] currentMessageHeader = new byte[KLFCommon.MSG_HEADER_LENGTH];
 		public int currentMessageHeaderIndex;
@@ -87,6 +91,30 @@ namespace KLFServer
 			canBeReplaced = true;
 
 			queuedOutMessages = new Queue<OutMessage>();
+		}
+
+		public void resetProperties()
+		{
+			username = "new user";
+			screenshot = null;
+			watchPlayerName = String.Empty;
+			canBeReplaced = false;
+			lastMessageTime = parent.currentMillisecond;
+			connectionStartTime = parent.currentMillisecond;
+			receivedHandshake = false;
+
+			sharedCraftFile = null;
+			sharedCraftName = String.Empty;
+			sharedCraftType = 0;
+
+			lock (activityLevelLock)
+			{
+				activityLevel = ServerClient.ActivityLevel.INACTIVE;
+				lastInGameActivityTime = parent.currentMillisecond;
+				lastInFlightActivityTime = parent.currentMillisecond;
+			}
+
+
 		}
 
 		//Async read
