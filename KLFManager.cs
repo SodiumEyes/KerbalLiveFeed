@@ -48,7 +48,7 @@ namespace KLF
 		public const int MAX_INACTIVE_VESSELS_PER_UPDATE = 8;
 		public const int STATUS_ARRAY_MIN_SIZE = 2;
 		public const int MAX_VESSEL_NAME_LENGTH = 32;
-		public const float TIMEOUT_DELAY = 6.0f;
+		public const float VESSEL_TIMEOUT_DELAY = 6.0f;
 		public const float PLUGIN_DATA_WRITE_INTERVAL = 5.0f;
 		public const float GLOBAL_SETTINGS_SAVE_INTERVAL = 10.0f;
 
@@ -139,7 +139,7 @@ namespace KLF
 
 				VesselEntry entry = pair.Value;
 
-				if ((UnityEngine.Time.realtimeSinceStartup-entry.lastUpdateTime) <= TIMEOUT_DELAY
+				if ((UnityEngine.Time.realtimeSinceStartup-entry.lastUpdateTime) <= VESSEL_TIMEOUT_DELAY
 					&& entry.vessel != null && entry.vessel.gameObj != null)
 				{
 					entry.vessel.updateRenderProperties();
@@ -163,7 +163,7 @@ namespace KLF
 			//Delete outdated player status entries
 			foreach (KeyValuePair<String, VesselStatusInfo> pair in playerStatus)
 			{
-				if ((UnityEngine.Time.realtimeSinceStartup - pair.Value.lastUpdateTime) > TIMEOUT_DELAY)
+				if ((UnityEngine.Time.realtimeSinceStartup - pair.Value.lastUpdateTime) > VESSEL_TIMEOUT_DELAY)
 					delete_list.Add(pair.Key);
 			}
 
@@ -1169,7 +1169,7 @@ namespace KLF
 
 		private void enqueueChatOutMessage(String message)
 		{
-			String line = message.Replace("\n", "");
+			String line = message.Replace("\n", ""); //Remove line breaks from message
 			if (line.Length > 0)
 			{
 				KLFChatDisplay.chatOutQueue.Enqueue(line);
@@ -1188,12 +1188,15 @@ namespace KLF
 			KLFGlobalSettings global_settings = new KLFGlobalSettings();
 			global_settings.infoDisplayWindowX = KLFInfoDisplay.infoWindowPos.x;
 			global_settings.infoDisplayWindowY = KLFInfoDisplay.infoWindowPos.y;
+			global_settings.infoDisplayBig = KLFInfoDisplay.infoDisplayBig;
 
 			global_settings.screenshotDisplayWindowX = KLFScreenshotDisplay.windowPos.x;
 			global_settings.screenshotDisplayWindowY = KLFScreenshotDisplay.windowPos.y;
 
 			global_settings.chatDisplayWindowX = KLFChatDisplay.windowPos.x;
 			global_settings.chatDisplayWindowY = KLFChatDisplay.windowPos.y;
+			global_settings.chatWindowEnabled = KLFChatDisplay.windowEnabled;
+			global_settings.chatWindowWide = KLFChatDisplay.windowWide;
 
 			//Serialize global settings to file
 			try
@@ -1222,12 +1225,15 @@ namespace KLF
 						//Apply deserialized global settings
 						KLFInfoDisplay.infoWindowPos.x = global_settings.infoDisplayWindowX;
 						KLFInfoDisplay.infoWindowPos.y = global_settings.infoDisplayWindowY;
+						KLFInfoDisplay.infoDisplayBig = global_settings.infoDisplayBig;
 
 						KLFScreenshotDisplay.windowPos.x = global_settings.screenshotDisplayWindowX;
 						KLFScreenshotDisplay.windowPos.y = global_settings.screenshotDisplayWindowY;
 
 						KLFChatDisplay.windowPos.x = global_settings.chatDisplayWindowX;
 						KLFChatDisplay.windowPos.y = global_settings.chatDisplayWindowY;
+						KLFChatDisplay.windowEnabled = global_settings.chatWindowEnabled;
+						KLFChatDisplay.windowWide = global_settings.chatWindowWide;
 					}
 				}
 			}
@@ -1529,7 +1535,19 @@ namespace KLF
 			GUILayout.BeginHorizontal();
 			KLFChatDisplay.windowWide = GUILayout.Toggle(KLFChatDisplay.windowWide, "Wide", GUI.skin.button);
 			KLFChatDisplay.chatColors = GUILayout.Toggle(KLFChatDisplay.chatColors, "Colors", GUI.skin.button);
+			KLFChatDisplay.displayCommands = GUILayout.Toggle(KLFChatDisplay.displayCommands, "Help", GUI.skin.button);
 			GUILayout.EndHorizontal();
+
+			//Commands
+			if (KLFChatDisplay.displayCommands)
+			{
+				chatLineStyle.normal.textColor = Color.white;
+
+				GUILayout.Label("/quit - Leave the server", chatLineStyle);
+				GUILayout.Label(KLFCommon.SHARE_CRAFT_COMMAND + " <craftname> - Share a craft", chatLineStyle);
+				GUILayout.Label(KLFCommon.GET_CRAFT_COMMAND + " <playername> - Get the craft the player last shared", chatLineStyle);
+				GUILayout.Label("!list - View players on the server", chatLineStyle);
+			}
 
 			KLFChatDisplay.scrollPos = GUILayout.BeginScrollView(KLFChatDisplay.scrollPos);
 
