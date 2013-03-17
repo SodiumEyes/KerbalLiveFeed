@@ -235,17 +235,10 @@ namespace KLFServer
 			}
 
 			//Build the filename
-			const String illegal = "\\/:*?\"<>|";
-
 			StringBuilder sb = new StringBuilder();
 			sb.Append(SCREENSHOT_DIR);
 			sb.Append('/');
-			foreach (char c in player)
-			{
-				//Filter illegal characters out of the player name
-				if (!illegal.Contains(c))
-					sb.Append(c);
-			}
+			sb.Append(KLFCommon.filteredFileName(player));
 			sb.Append(' ');
 			sb.Append(System.DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss"));
 			sb.Append(".png");

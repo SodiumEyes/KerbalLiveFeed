@@ -103,6 +103,7 @@ namespace KLFClient
 		public static long lastScreenshotShareTime;
 		public static byte[] queuedInScreenshot;
 		public static byte[] lastSharedScreenshot;
+		public static String currentGameTitle;
 		public static String watchPlayerName;
 
 		public static long lastClientDataWriteTime;
@@ -350,6 +351,7 @@ namespace KLFClient
 
 					threadException = null;
 
+					currentGameTitle = String.Empty;
 					watchPlayerName = String.Empty;
 					queuedInScreenshot = null;
 					lastSharedScreenshot = null;
@@ -1202,11 +1204,17 @@ namespace KLFClient
 
 					File.Delete(PLUGIN_DATA_FILENAME);
 
-					if (bytes != null && bytes.Length > 0)
+					if (bytes != null && bytes.Length >= 8)
 					{
-						//Read the watch player name
 						ASCIIEncoding encoder = new ASCIIEncoding();
-						new_watch_player_name = encoder.GetString(bytes);
+
+						//Read current game title
+						int current_game_title_length = KLFCommon.intFromBytes(bytes, 0);
+						currentGameTitle = encoder.GetString(bytes, 4, current_game_title_length);
+
+						//Read the watch player name
+						int watch_player_name_length = KLFCommon.intFromBytes(bytes, current_game_title_length + 4);
+						new_watch_player_name = encoder.GetString(bytes, current_game_title_length + 8, watch_player_name_length);
 					}
 
 					if (watchPlayerName != new_watch_player_name)

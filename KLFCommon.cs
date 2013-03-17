@@ -6,9 +6,9 @@ using System.Text;
 public class KLFCommon
 {
 
-	public const String PROGRAM_VERSION = "0.4.3";
-	public const Int32 FILE_FORMAT_VERSION = 5;
-	public const Int32 NET_PROTOCOL_VERSION = 6;
+	public const String PROGRAM_VERSION = "0.5.0";
+	public const Int32 FILE_FORMAT_VERSION = 6;
+	public const Int32 NET_PROTOCOL_VERSION = 7;
 	public const int MSG_HEADER_LENGTH = 8;
 
 	public const int SERVER_SETTINGS_LENGTH = 13;
@@ -16,6 +16,32 @@ public class KLFCommon
 	public const float MAX_SCREENSHOT_WIDTH = 480;
 	public const float MAX_SCREENSHOT_HEIGHT = 270;
 	public const float MAX_SCREENSHOT_BYTES = MAX_SCREENSHOT_WIDTH * MAX_SCREENSHOT_HEIGHT * 3;
+
+	/*ClientData format:
+	 * Byte - Inactive Vessels Per Update
+	 * Player Name
+	 */
+
+	/*PluginData format:
+	 * Int32 - Current Game Title length
+	 * Current Game Title
+	 * Int32 - Screenshot watch player name length
+	 * Screenshot watch player name
+	 */
+
+	internal static string filteredFileName(string filename)
+	{
+		const String illegal = "\\/:*?\"<>|";
+ 		StringBuilder sb = new StringBuilder();
+		foreach (char c in filename)
+		{
+			//Filter illegal characters out of the player name
+			if (!illegal.Contains(c))
+				sb.Append(c);
+		}
+
+		return sb.ToString();
+	}
 
 	public static byte[] intToBytes(Int32 val)
 	{
@@ -66,5 +92,6 @@ public class KLFCommon
 		UDP_ACKNOWLEDGE,
 		NULL
 	}
+
 }
 
