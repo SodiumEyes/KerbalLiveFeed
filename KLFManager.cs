@@ -770,7 +770,7 @@ namespace KLF
 					//Debug.Log("Inactive vessels per update: " + inactiveVesselsPerUpdate);
 
 					//Read username
-					ASCIIEncoding encoder = new ASCIIEncoding();
+					UnicodeEncoding encoder = new UnicodeEncoding();
 					playerName = encoder.GetString(bytes, 1, bytes.Length - 1);
 				}
 			}
@@ -790,7 +790,7 @@ namespace KLF
 
 						out_stream.Lock(0, long.MaxValue);
 
-						ASCIIEncoding encoder = new ASCIIEncoding();
+						UnicodeEncoding encoder = new UnicodeEncoding();
 
 						//CurrentGameTitle
 						String current_game_title = String.Empty;
@@ -856,7 +856,7 @@ namespace KLF
 
 				if (in_bytes != null)
 				{
-					ASCIIEncoding encoder = new ASCIIEncoding();
+					UnicodeEncoding encoder = new UnicodeEncoding();
 					String chat_in_string = encoder.GetString(in_bytes);
 					String[] lines = chat_in_string.Split('\n');
 					foreach (String line in lines)
@@ -878,7 +878,7 @@ namespace KLF
 					KSP.IO.FileStream out_stream = KSP.IO.File.Create<KLFManager>(CHAT_OUT_FILENAME);
 					out_stream.Lock(0, long.MaxValue);
 
-					ASCIIEncoding encoder = new ASCIIEncoding();
+					UnicodeEncoding encoder = new UnicodeEncoding();
 
 					while (KLFChatDisplay.chatOutQueue.Count > 0)
 					{

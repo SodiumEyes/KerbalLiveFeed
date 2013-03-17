@@ -471,7 +471,7 @@ namespace KLFClient
 		static void handleMessage(KLFCommon.ServerMessageID id, byte[] data)
 		{
 
-			ASCIIEncoding encoder = new ASCIIEncoding();
+			UnicodeEncoding encoder = new UnicodeEncoding();
 
 			switch (id)
 			{
@@ -968,7 +968,7 @@ namespace KLFClient
 						client_data_stream.WriteByte(inactiveShipsPerUpdate);
 
 						//Write username
-						ASCIIEncoding encoder = new ASCIIEncoding();
+						UnicodeEncoding encoder = new UnicodeEncoding();
 						byte[] username_bytes = encoder.GetBytes(username);
 						client_data_stream.Write(username_bytes, 0, username_bytes.Length);
 
@@ -1206,7 +1206,7 @@ namespace KLFClient
 
 					if (bytes != null && bytes.Length >= 8)
 					{
-						ASCIIEncoding encoder = new ASCIIEncoding();
+						UnicodeEncoding encoder = new UnicodeEncoding();
 
 						//Read current game title
 						int current_game_title_length = KLFCommon.intFromBytes(bytes, 0);
@@ -1260,14 +1260,23 @@ namespace KLFClient
 				lock (pluginChatInLock)
 				{
 
-					StreamWriter in_stream = null;
+					FileStream in_stream = null;
 					//Write chat in
 					try
 					{
-						in_stream = File.CreateText(CHAT_IN_FILENAME);
+						in_stream = File.OpenWrite(CHAT_IN_FILENAME);
+
+						UnicodeEncoding encoder = new UnicodeEncoding();
 
 						while (pluginChatInQueue.Count > 0)
-							in_stream.WriteLine(pluginChatInQueue.Dequeue());
+						{
+							byte[] bytes = encoder.GetBytes(pluginChatInQueue.Dequeue());
+							in_stream.Write(bytes, 0, bytes.Length);
+
+							bytes = encoder.GetBytes("\n");
+							in_stream.Write(bytes, 0, bytes.Length);
+						}
+
 					}
 					catch (System.IO.FileNotFoundException)
 					{
@@ -1309,7 +1318,7 @@ namespace KLFClient
 
 					if (bytes != null && bytes.Length > 0)
 					{
-						ASCIIEncoding encoder = new ASCIIEncoding();
+						UnicodeEncoding encoder = new UnicodeEncoding();
 						String[] lines = encoder.GetString(bytes, 0, bytes.Length).Split('\n');
 
 						foreach (String line in lines)
@@ -1593,7 +1602,7 @@ namespace KLFClient
 		private static void sendHandshakeMessage()
 		{
 			//Encode username
-			ASCIIEncoding encoder = new ASCIIEncoding();
+			UnicodeEncoding encoder = new UnicodeEncoding();
 			byte[] username_bytes = encoder.GetBytes(username);
 			byte[] version_bytes = encoder.GetBytes(KLFCommon.PROGRAM_VERSION);
 
@@ -1609,7 +1618,7 @@ namespace KLFClient
 		private static void sendTextMessage(String message)
 		{
 			//Encode message
-			ASCIIEncoding encoder = new ASCIIEncoding();
+			UnicodeEncoding encoder = new UnicodeEncoding();
 			byte[] message_bytes = encoder.GetBytes(message);
 
 			sendMessageTCP(KLFCommon.ClientMessageID.TEXT_MESSAGE, message_bytes);
@@ -1635,7 +1644,7 @@ namespace KLFClient
 		private static void sendScreenshotWatchPlayerMessage(String name)
 		{
 			//Encode name
-			ASCIIEncoding encoder = new ASCIIEncoding();
+			UnicodeEncoding encoder = new UnicodeEncoding();
 			byte[] bytes = encoder.GetBytes(name);
 
 			sendMessageTCP(KLFCommon.ClientMessageID.SCREEN_WATCH_PLAYER, bytes);
@@ -1644,7 +1653,7 @@ namespace KLFClient
 		private static void sendConnectionEndMessage(String message)
 		{
 			//Encode message
-			ASCIIEncoding encoder = new ASCIIEncoding();
+			UnicodeEncoding encoder = new UnicodeEncoding();
 			byte[] message_bytes = encoder.GetBytes(message);
 
 			sendMessageTCP(KLFCommon.ClientMessageID.CONNECTION_END, message_bytes);

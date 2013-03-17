@@ -849,7 +849,7 @@ namespace KLFServer
 
 			debugConsoleWriteLine("Message id: " + id.ToString() + " data: " + (data != null ? data.Length.ToString() : "0"));
 
-			ASCIIEncoding encoder = new ASCIIEncoding();
+			UnicodeEncoding encoder = new UnicodeEncoding();
 
 			switch (id)
 			{
@@ -1126,7 +1126,7 @@ namespace KLFServer
 			{
 
 				//Encode message
-				ASCIIEncoding encoder = new ASCIIEncoding();
+				UnicodeEncoding encoder = new UnicodeEncoding();
 				byte[] message_bytes = encoder.GetBytes(message);
 
 				sendMessageHeaderDirect(client, KLFCommon.ServerMessageID.HANDSHAKE_REFUSAL, message_bytes.Length);
@@ -1153,7 +1153,7 @@ namespace KLFServer
 			{
 
 				//Encode message
-				ASCIIEncoding encoder = new ASCIIEncoding();
+				UnicodeEncoding encoder = new UnicodeEncoding();
 				byte[] message_bytes = encoder.GetBytes(message);
 
 				sendMessageHeaderDirect(client, KLFCommon.ServerMessageID.CONNECTION_END, message_bytes.Length);
@@ -1177,7 +1177,7 @@ namespace KLFServer
 		private void sendHandshakeMessage(int client_index)
 		{
 			//Encode version string
-			ASCIIEncoding encoder = new ASCIIEncoding();
+			UnicodeEncoding encoder = new UnicodeEncoding();
 			byte[] version_bytes = encoder.GetBytes(KLFCommon.PROGRAM_VERSION);
 
 			byte[] data_bytes = new byte[version_bytes.Length + 12];
@@ -1199,7 +1199,7 @@ namespace KLFServer
 
 		private void sendServerMessageToAll(String message, int exclude_index = -1)
 		{
-			ASCIIEncoding encoder = new ASCIIEncoding();
+			UnicodeEncoding encoder = new UnicodeEncoding();
 			byte[] message_bytes = encoder.GetBytes(message);
 
 			for (int i = 0; i < clients.Length; i++)
@@ -1211,14 +1211,14 @@ namespace KLFServer
 
 		private void sendServerMessage(int client_index, String message)
 		{
-			ASCIIEncoding encoder = new ASCIIEncoding();
+			UnicodeEncoding encoder = new UnicodeEncoding();
 			clients[client_index].queueOutgoingMessage(KLFCommon.ServerMessageID.SERVER_MESSAGE, encoder.GetBytes(message));
 		}
 
 		private void sendTextMessageToAll(String message, int exclude_index = -1)
 		{
 
-			ASCIIEncoding encoder = new ASCIIEncoding();
+			UnicodeEncoding encoder = new UnicodeEncoding();
 			byte[] message_bytes = encoder.GetBytes(message);
 
 			for (int i = 0; i < clients.Length; i++)
@@ -1230,7 +1230,7 @@ namespace KLFServer
 
 		private void sendTextMessage(int client_index, String message)
 		{
-			ASCIIEncoding encoder = new ASCIIEncoding();
+			UnicodeEncoding encoder = new UnicodeEncoding();
 			clients[client_index].queueOutgoingMessage(KLFCommon.ServerMessageID.SERVER_MESSAGE, encoder.GetBytes(message));
 		}
 
