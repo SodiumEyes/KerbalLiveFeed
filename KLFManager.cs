@@ -772,8 +772,8 @@ namespace KLF
 					//Read screenshot height
 					KLFScreenshotDisplay.screenshotSettings.maxHeight = KLFCommon.intFromBytes(bytes, 1);
 
-					Debug.Log("Inactive vessels per update: " + inactiveVesselsPerUpdate);
-					Debug.Log("Screenshot height: " + KLFScreenshotDisplay.screenshotSettings.maxHeight);
+					//Debug.Log("Inactive vessels per update: " + inactiveVesselsPerUpdate);
+					//Debug.Log("Screenshot height: " + KLFScreenshotDisplay.screenshotSettings.maxHeight);
 
 					//Read username
 					UnicodeEncoding encoder = new UnicodeEncoding();

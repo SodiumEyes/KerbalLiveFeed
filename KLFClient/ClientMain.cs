@@ -575,6 +575,7 @@ namespace KLFClient
 								{
 									screenshotSettings.maxHeight = new_screenshot_height;
 									lastClientDataChangeTime = stopwatch.ElapsedMilliseconds;
+									enqueueTextMessage("Screenshot Height has been set to " + screenshotSettings.maxHeight);
 								}
 
 								if (inactiveShipsPerUpdate != data[16])
@@ -589,7 +590,6 @@ namespace KLFClient
 							Console.WriteLine("Max queued updates: " + maxQueuedUpdates);
 							Console.WriteLine("Screenshot interval: " + screenshotInterval);
 							Console.WriteLine("Inactive ships per update: " + inactiveShipsPerUpdate);
-							Console.WriteLine("Screenshot Height: " + screenshotSettings.maxHeight);
 							 */
 						}
 					}
