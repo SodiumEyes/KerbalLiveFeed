@@ -11,28 +11,12 @@ namespace KLFServer
 {
 	class ServerClient
 	{
-		public struct OutMessage
-		{
-			public KLFCommon.ServerMessageID id;
-			public byte[] data;
-
-			public OutMessage(KLFCommon.ServerMessageID id, byte[] data)
-			{
-				this.id = id;
-				this.data = data;
-			}
-		}
-
 		public enum ActivityLevel
 		{
 			INACTIVE,
 			IN_GAME,
 			IN_FLIGHT
 		}
-
-		//Constants
-
-		public const int SLEEP_TIME = 15;
 
 		//Properties
 
@@ -65,7 +49,6 @@ namespace KLFServer
 		public ActivityLevel activityLevel;
 
 		public TcpClient tcpClient;
-		public Thread messageThread;
 
 		public object tcpClientLock = new object();
 		public object outgoingMessageLock = new object();
@@ -81,7 +64,7 @@ namespace KLFServer
 		public int currentMessageDataIndex;
 		public KLFCommon.ClientMessageID currentMessageID;
 
-		public Queue<OutMessage> queuedOutMessages;
+		public Queue<byte[]> queuedOutMessages;
 
 		public ServerClient(Server parent, int index)
 		{
@@ -90,7 +73,7 @@ namespace KLFServer
 
 			canBeReplaced = true;
 
-			queuedOutMessages = new Queue<OutMessage>();
+			queuedOutMessages = new Queue<byte[]>();
 		}
 
 		public void resetProperties()
@@ -254,70 +237,23 @@ namespace KLFServer
 				lastMessageTime = parent.currentMillisecond;
 			}
 
-			parent.handleMessage(clientIndex, id, data);
+			parent.queueClientMessage(clientIndex, id, data);
 		}
 
-		private void handleMessages()
-		{
-			try
-			{
-				while (true)
-				{
-					sendOutgoingMessages();
-					Thread.Sleep(SLEEP_TIME);
-				}
-
-			}
-			catch (ThreadAbortException)
-			{
-			}
-			catch (Exception e)
-			{
-				parent.passExceptionToMain(e);
-			}
-		}
-
-		private void sendOutgoingMessages()
+		public void sendOutgoingMessages()
 		{
 			lock (outgoingMessageLock) {
 
 				if (queuedOutMessages.Count > 0)
 				{
-
+					//Send all the messages to the client
 					lock (tcpClientLock) {
-
 						while (queuedOutMessages.Count > 0)
 						{
-							OutMessage out_message = queuedOutMessages.Dequeue();
-
-							Server.debugConsoleWriteLine("Sending message: " + out_message.id.ToString());
-
-							try
-							{
-								int msg_length = 0;
-								if (out_message.data != null)
-									msg_length = out_message.data.Length;
-
-								//Send message header
-								tcpClient.GetStream().Write(KLFCommon.intToBytes((int)out_message.id), 0, 4);
-								tcpClient.GetStream().Write(KLFCommon.intToBytes(msg_length), 0, 4);
-
-								//Send message data
-								if (out_message.data != null)
-									tcpClient.GetStream().Write(out_message.data, 0, out_message.data.Length);
-
-							}
-							catch (System.IO.IOException)
-							{
-							}
-							catch (System.InvalidOperationException)
-							{
-							}
-
+							byte[] message = queuedOutMessages.Dequeue();
+							tcpClient.GetStream().Write(message, 0, message.Length);
 						}
-
 					}
-
 				}
 
 			}
@@ -326,32 +262,28 @@ namespace KLFServer
 
 		public void queueOutgoingMessage(KLFCommon.ServerMessageID id, byte[] data)
 		{
+			//Construct the byte array for the message
+			int msg_data_length = 0;
+			if (data != null)
+				msg_data_length = data.Length;
+
+			byte[] message_bytes = new byte[KLFCommon.MSG_HEADER_LENGTH + msg_data_length];
+
+			KLFCommon.intToBytes((int)id).CopyTo(message_bytes, 0);
+			KLFCommon.intToBytes(msg_data_length).CopyTo(message_bytes, 4);
+			if (data != null)
+				data.CopyTo(message_bytes, KLFCommon.MSG_HEADER_LENGTH);
+
+			//Queue the message for sending
 			lock (outgoingMessageLock)
 			{
-				queuedOutMessages.Enqueue(new OutMessage(id, data));
+				queuedOutMessages.Enqueue(message_bytes);
 			}
 		}
 
-		internal void startMessageThread()
+		internal void startReceivingMessages()
 		{
-			messageThread = new Thread(new ThreadStart(handleMessages));
-			messageThread.Start();
-
 			beginAsyncRead();
-		}
-
-		internal void abortMessageThreads(bool join)
-		{
-			if (messageThread != null)
-			{
-				try
-				{
-					messageThread.Abort();
-					if (join)
-						messageThread.Join();
-				}
-				catch (ThreadStateException) { }
-			}
 		}
 
 		//Activity Level

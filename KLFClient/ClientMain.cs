@@ -1786,28 +1786,16 @@ namespace KLFClient
 			
 		}
 
-		private static void sendMessageTCP(KLFCommon.ClientMessageID id, byte[] data, int offset = 0, int length = -1)
+		private static void sendMessageTCP(KLFCommon.ClientMessageID id, byte[] data)
 		{
+			byte[] message_bytes = buildMessageByteArray(id, data);
+
 			lock (tcpSendLock)
 			{
-
 				try
 				{
-					//Write header
-					tcpClient.GetStream().Write(KLFCommon.intToBytes((int)id), 0, 4);
-
-					if (data != null)
-					{
-						if (length < 0 || length > (data.Length - offset))
-							length = (data.Length - offset);
-
-						tcpClient.GetStream().Write(KLFCommon.intToBytes(length), 0, 4);
-						tcpClient.GetStream().Write(data, offset, length);
-					}
-					else
-						tcpClient.GetStream().Write(KLFCommon.intToBytes(0), 0, 4);
-
-					tcpClient.GetStream().Flush();
+					//Send message
+					tcpClient.GetStream().Write(message_bytes, 0, message_bytes.Length);
 				}
 				catch (System.InvalidOperationException) { }
 				catch (System.IO.IOException) { }
@@ -1827,24 +1815,10 @@ namespace KLFClient
 			if (udpSocket != null)
 			{
 
-				int length = 0;
-				if (data != null)
-					length = data.Length;
-
-				byte[] bytes = new byte[KLFCommon.MSG_HEADER_LENGTH + length];
-				
-				//Copy header
-				KLFCommon.intToBytes((int)id).CopyTo(bytes, 0);
-				KLFCommon.intToBytes(length).CopyTo(bytes, 4);
-
-				//Copy data
-				if (length > 0)
-					data.CopyTo(bytes, KLFCommon.MSG_HEADER_LENGTH);
-
 				//Send the packet
 				try
 				{
-					udpSocket.Send(bytes);
+					udpSocket.Send(buildMessageByteArray(id, data));
 				}
 				catch { }
 
@@ -1854,6 +1828,22 @@ namespace KLFClient
 				}
 
 			}
+		}
+
+		private static byte[] buildMessageByteArray(KLFCommon.ClientMessageID id, byte[] data)
+		{
+			int msg_data_length = 0;
+			if (data != null)
+				msg_data_length = data.Length;
+
+			byte[] message_bytes = new byte[KLFCommon.MSG_HEADER_LENGTH + msg_data_length];
+
+			KLFCommon.intToBytes((int)id).CopyTo(message_bytes, 0);
+			KLFCommon.intToBytes(msg_data_length).CopyTo(message_bytes, 4);
+			if (data != null)
+				data.CopyTo(message_bytes, KLFCommon.MSG_HEADER_LENGTH);
+
+			return message_bytes;
 		}
 
 	}

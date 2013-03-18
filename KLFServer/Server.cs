@@ -16,9 +16,16 @@ namespace KLFServer
 	class Server
 	{
 
+		public struct ClientMessage
+		{
+			public int clientIndex;
+			public KLFCommon.ClientMessageID id;
+			public byte[] data;
+		}
+
 		public const bool SEND_UPDATES_TO_SENDER = false;
 		public const long CLIENT_TIMEOUT_DELAY = 8000;
-		public const long CLIENT_HANDSHAKE_TIMEOUT_DELAY = 5000;
+		public const long CLIENT_HANDSHAKE_TIMEOUT_DELAY = 6000;
 		public const int SLEEP_TIME = 15;
 		public const int MAX_SCREENSHOT_COUNT = 10000;
 
@@ -54,6 +61,7 @@ namespace KLFServer
 		public object threadExceptionLock = new object();
 		public object clientActivityCountLock = new object();
 		public object clientUDPAddressMapLock = new object();
+		public object clientMessageQueueLock = new object();
 		public static object consoleWriteLock = new object();
 
 		public Thread listenThread;
@@ -64,6 +72,7 @@ namespace KLFServer
 
 		public ServerClient[] clients;
 		public Dictionary<String, int> clientUDPAddressMap;
+		public Queue<ClientMessage> clientMessageQueue;
 
 		public ServerSettings settings;
 
@@ -178,7 +187,6 @@ namespace KLFServer
 
 		public void clearState()
 		{
-
 			safeAbort(listenThread);
 			safeAbort(commandThread);
 			safeAbort(connectionThread);
@@ -187,8 +195,6 @@ namespace KLFServer
 			{
 				for (int i = 0; i < clients.Length; i++)
 				{
-					clients[i].abortMessageThreads(false);
-
 					if (clients[i].tcpClient != null)
 						clients[i].tcpClient.Close();
 				}
@@ -299,6 +305,7 @@ namespace KLFServer
 			}
 
 			clientUDPAddressMap = new Dictionary<string, int>();
+			clientMessageQueue = new Queue<ClientMessage>();
 
 			numClients = 0;
 			numInGameClients = 0;
@@ -534,6 +541,23 @@ namespace KLFServer
 
 				while (true)
 				{
+					//Handle received messages
+					Queue<ClientMessage> handle_queue = null;
+					lock (clientMessageQueueLock)
+					{
+						//Store the old client message queue
+						handle_queue = clientMessageQueue;
+
+						//Replace the client message queue with a new queue so it doesn't change while handling messages
+						clientMessageQueue = new Queue<ClientMessage>();
+					}
+
+					while (handle_queue.Count > 0)
+					{
+						ClientMessage message = handle_queue.Dequeue();
+						handleMessage(message.clientIndex, message.id, message.data);
+					}
+
 					//Check for clients that have not sent messages for too long
 					for (int i = 0; i < clients.Length; i++)
 					{
@@ -583,6 +607,9 @@ namespace KLFServer
 										clientActivityLevelChanged(i);
 
 								}
+
+								//Send out-going messages for the client
+								clients[i].sendOutgoingMessages();
 
 							}
 						}
@@ -634,7 +661,7 @@ namespace KLFServer
 						client.resetProperties();
 					}
 
-					client.startMessageThread();
+					client.startReceivingMessages();
 					numClients++;
 
 					return i;
@@ -657,7 +684,7 @@ namespace KLFServer
 
 		public void disconnectClient(int index, String message)
 		{
-			clients[index].abortMessageThreads(false);
+			//clients[index].abortMessageThreads(false);
 
 			//Send a message to client informing them why they were disconnected
 			if (clients[index].tcpClient.Connected)
@@ -841,6 +868,19 @@ namespace KLFServer
 		}
 
 		//Messages
+
+		public void queueClientMessage(int client_index, KLFCommon.ClientMessageID id, byte[] data)
+		{
+			ClientMessage message = new ClientMessage();
+			message.clientIndex = client_index;
+			message.id = id;
+			message.data = data;
+
+			lock (clientMessageQueueLock)
+			{
+				clientMessageQueue.Enqueue(message);
+			}
+		}
 
 		public void handleMessage(int client_index, KLFCommon.ClientMessageID id, byte[] data)
 		{
