@@ -43,6 +43,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="KLFCommon.cs" />
+    <Compile Include="ScreenshotSettings.cs" />
     <Compile Include="ServerClient.cs" />
     <Compile Include="Server.cs" />
     <Compile Include="ServerMain.cs" />

@@ -720,7 +720,7 @@ namespace KLF
 
 				if (in_bytes != null)
 				{
-					if (in_bytes.Length <= KLFScreenshotDisplay.MAX_IMG_BYTES)
+					if (in_bytes.Length <= KLFScreenshotDisplay.screenshotSettings.maxNumBytes)
 					{
 						if (KLFScreenshotDisplay.texture == null)
 							KLFScreenshotDisplay.texture = new Texture2D(4, 4);
@@ -728,8 +728,10 @@ namespace KLF
 						if (KLFScreenshotDisplay.texture.LoadImage(in_bytes))
 						{
 							KLFScreenshotDisplay.texture.Apply();
-							if (KLFScreenshotDisplay.texture.width > KLFScreenshotDisplay.MAX_IMG_WIDTH
-								&& KLFScreenshotDisplay.texture.height > KLFScreenshotDisplay.MAX_IMG_HEIGHT)
+
+							//Make sure the screenshot texture does not exceed the size limits
+							if (KLFScreenshotDisplay.texture.width > KLFScreenshotDisplay.screenshotSettings.maxWidth
+								|| KLFScreenshotDisplay.texture.height > KLFScreenshotDisplay.screenshotSettings.maxHeight)
 							{
 								KLFScreenshotDisplay.texture = null;
 							}
@@ -762,16 +764,20 @@ namespace KLF
 					Debug.LogWarning("*** Unable to read file " + CLIENT_DATA_FILENAME);
 				}
 
-				if (bytes != null && bytes.Length > 1)
+				if (bytes != null && bytes.Length > 5)
 				{
 					//Read inactive vessels per update count
 					inactiveVesselsPerUpdate = bytes[0];
 
-					//Debug.Log("Inactive vessels per update: " + inactiveVesselsPerUpdate);
+					//Read screenshot height
+					KLFScreenshotDisplay.screenshotSettings.maxHeight = KLFCommon.intFromBytes(bytes, 1);
+
+					Debug.Log("Inactive vessels per update: " + inactiveVesselsPerUpdate);
+					Debug.Log("Screenshot height: " + KLFScreenshotDisplay.screenshotSettings.maxHeight);
 
 					//Read username
 					UnicodeEncoding encoder = new UnicodeEncoding();
-					playerName = encoder.GetString(bytes, 1, bytes.Length - 1);
+					playerName = encoder.GetString(bytes, 5, bytes.Length - 5);
 				}
 			}
 		}
@@ -921,25 +927,11 @@ namespace KLF
 		private void shareScreenshot()
 		{
 
-			//Determine the dimensions of the screenshot
-			float aspect = (float)Screen.width / (float)Screen.height;
-			float ideal_aspect = KLFScreenshotDisplay.MAX_IMG_WIDTH / KLFScreenshotDisplay.MAX_IMG_HEIGHT;
-
+			//Determine the scaled-down dimensions of the screenshot
 			int w = 0;
 			int h = 0;
 
-			if (aspect > ideal_aspect)
-			{
-				//Screen is wider than ideal aspect ratio
-				w = (int)KLFScreenshotDisplay.MAX_IMG_WIDTH;
-				h = (int)(KLFScreenshotDisplay.MAX_IMG_WIDTH / aspect);
-			}
-			else
-			{
-				//Screen is taller than ideal aspect ratio
-				w = (int)(KLFScreenshotDisplay.MAX_IMG_HEIGHT * aspect);
-				h = (int)KLFScreenshotDisplay.MAX_IMG_HEIGHT;
-			}
+			KLFScreenshotDisplay.screenshotSettings.getBoundedDimensions(Screen.width, Screen.height, ref w, ref h);
 
 			//Read the screen pixels into a texture
 			Texture2D full_screen_tex = new Texture2D(Screen.width, Screen.height, TextureFormat.RGB24, false);
@@ -1334,7 +1326,15 @@ namespace KLF
 				KLFChatDisplay.layoutOptions[0] = GUILayout.MinWidth(KLFChatDisplay.windowWidth);
 				KLFChatDisplay.layoutOptions[1] = GUILayout.MaxWidth(KLFChatDisplay.windowWidth);
 
+				//Init screenshot display options
+				if (KLFScreenshotDisplay.layoutOptions == null)
+					KLFScreenshotDisplay.layoutOptions = new GUILayoutOption[2];
+
+				KLFScreenshotDisplay.layoutOptions[0] = GUILayout.MaxHeight(KLFScreenshotDisplay.MIN_WINDOW_WIDTH);
+				KLFScreenshotDisplay.layoutOptions[1] = GUILayout.MaxWidth(KLFScreenshotDisplay.MIN_WINDOW_HEIGHT);
+
 				GUI.skin = HighLogic.Skin;
+
 				KLFInfoDisplay.infoWindowPos = GUILayout.Window(
 					999999,
 					KLFInfoDisplay.infoWindowPos,
@@ -1349,7 +1349,8 @@ namespace KLF
 						999998,
 						KLFScreenshotDisplay.windowPos,
 						screenshotWindow,
-						"Kerbal LiveFeed Viewer"
+						"Kerbal LiveFeed Viewer",
+						KLFScreenshotDisplay.layoutOptions
 						);
 				}
 
@@ -1421,6 +1422,7 @@ namespace KLF
 				stateTextStyle.padding = new RectOffset(0, 0, 0, 0);
 				stateTextStyle.stretchWidth = true;
 				stateTextStyle.fontStyle = FontStyle.Normal;
+				stateTextStyle.fontSize = 12;
 
 				//Write vessel's statuses
 				foreach (KeyValuePair<String, VesselStatusInfo> pair in playerStatus)
@@ -1449,23 +1451,27 @@ namespace KLF
 			GUILayout.BeginHorizontal();
 			GUILayout.BeginVertical();
 
+			GUILayoutOption[] screenshot_box_options = new GUILayoutOption[4];
+			screenshot_box_options[0] = GUILayout.MinWidth(KLFScreenshotDisplay.screenshotSettings.maxWidth);
+			screenshot_box_options[1] = GUILayout.MaxWidth(KLFScreenshotDisplay.screenshotSettings.maxWidth);
+			screenshot_box_options[2] = GUILayout.MinHeight(KLFScreenshotDisplay.screenshotSettings.maxHeight);
+			screenshot_box_options[3] = GUILayout.MaxHeight(KLFScreenshotDisplay.screenshotSettings.maxHeight);
+
 			//Screenshot
 			if (KLFScreenshotDisplay.texture != null)
-				GUILayout.Box(KLFScreenshotDisplay.texture);
+				GUILayout.Box(KLFScreenshotDisplay.texture, screenshot_box_options);
 			else
-			{
-				GUILayoutOption[] options = new GUILayoutOption[2];
-				options[0] = GUILayout.MinWidth(KLFScreenshotDisplay.MAX_IMG_WIDTH);
-				options[1] = GUILayout.MinHeight(KLFScreenshotDisplay.MAX_IMG_HEIGHT);
-				GUILayout.Box(GUIContent.none, options);
-			}
+				GUILayout.Box(GUIContent.none, screenshot_box_options);
+
+			GUILayoutOption[] user_list_options = new GUILayoutOption[1];
+			user_list_options[0] = GUILayout.MinWidth(150);
 
 			GUILayout.EndVertical();
 
 			GUILayout.BeginVertical();
 
 			//User list
-			KLFScreenshotDisplay.scrollPos = GUILayout.BeginScrollView(KLFScreenshotDisplay.scrollPos);
+			KLFScreenshotDisplay.scrollPos = GUILayout.BeginScrollView(KLFScreenshotDisplay.scrollPos, user_list_options);
 			GUILayout.BeginVertical();
 
 			String target_body_name = String.Empty;

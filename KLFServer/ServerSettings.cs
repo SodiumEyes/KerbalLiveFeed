@@ -16,9 +16,10 @@ namespace KLFServer
 		public const String JOIN_MESSAGE_LABEL = "joinMessage";
 		public const String UPDATES_PER_SECOND_LABEL = "updatesPerSecond";
 		public const String SCREENSHOT_INTERVAL_LABEL = "screenshotInterval";
-		public const String SAVE_SCREENSHOTS = "saveScreenshots";
+		public const String SAVE_SCREENSHOTS_LABEL = "saveScreenshots";
 		public const String AUTO_RESTART_LABEL = "autoRestart";
 		public const String TOTAL_INACTIVE_SHIPS_LABEL = "totalInactiveShips";
+		public const String SCREENSHOT_HEIGHT_LABEL = "screenshotHeight";
 
 		public int port = 2075;
 		public int maxClients = 32;
@@ -28,6 +29,7 @@ namespace KLFServer
 		public bool saveScreenshots = false;
 		public String joinMessage = String.Empty;
 		public byte totalInactiveShips = 10;
+		public ScreenshotSettings screenshotSettings = new ScreenshotSettings();
 
 		public const int MIN_UPDATE_INTERVAL = 200;
 		public const int MAX_UPDATE_INTERVAL = 5000;
@@ -105,7 +107,7 @@ namespace KLFServer
 							if (bool.TryParse(line, out new_val))
 								autoRestart = new_val;
 						}
-						else if (label == SAVE_SCREENSHOTS)
+						else if (label == SAVE_SCREENSHOTS_LABEL)
 						{
 							bool new_val;
 							if (bool.TryParse(line, out new_val))
@@ -116,6 +118,12 @@ namespace KLFServer
 							byte new_val;
 							if (byte.TryParse(line, out new_val))
 								totalInactiveShips = new_val;
+						}
+						else if (label == SCREENSHOT_HEIGHT_LABEL)
+						{
+							int new_val;
+							if (int.TryParse(line, out new_val))
+								screenshotSettings.maxHeight = new_val;
 						}
 
 					}
@@ -167,8 +175,12 @@ namespace KLFServer
 			writer.WriteLine(totalInactiveShips);
 
 			//save screenshots
-			writer.WriteLine(SAVE_SCREENSHOTS);
+			writer.WriteLine(SAVE_SCREENSHOTS_LABEL);
 			writer.WriteLine(saveScreenshots);
+
+			//screenshot height
+			writer.WriteLine(SCREENSHOT_HEIGHT_LABEL);
+			writer.WriteLine(screenshotSettings.maxHeight);
 
 			writer.Close();
 		}

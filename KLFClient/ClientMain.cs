@@ -80,6 +80,7 @@ namespace KLFClient
 		public static int maxQueuedUpdates = 32;
 		public static bool autoReconnect = true;
 		public static byte inactiveShipsPerUpdate = 0;
+		public static ScreenshotSettings screenshotSettings = new ScreenshotSettings();
 
 		//Connection
 		public static int clientID;
@@ -569,9 +570,16 @@ namespace KLFClient
 
 							lock (clientDataLock)
 							{
-								if (inactiveShipsPerUpdate != data[12])
+								int new_screenshot_height = KLFCommon.intFromBytes(data, 12);
+								if (screenshotSettings.maxHeight != new_screenshot_height)
 								{
-									inactiveShipsPerUpdate = data[12];
+									screenshotSettings.maxHeight = new_screenshot_height;
+									lastClientDataChangeTime = stopwatch.ElapsedMilliseconds;
+								}
+
+								if (inactiveShipsPerUpdate != data[16])
+								{
+									inactiveShipsPerUpdate = data[16];
 									lastClientDataChangeTime = stopwatch.ElapsedMilliseconds;
 								}
 							}
@@ -582,6 +590,7 @@ namespace KLFClient
 							Console.WriteLine("Screenshot interval: " + screenshotInterval);
 							Console.WriteLine("Inactive ships per update: " + inactiveShipsPerUpdate);
 							 */
+							Console.WriteLine("Screenshot Height: " + screenshotSettings.maxHeight);
 						}
 					}
 
@@ -589,7 +598,7 @@ namespace KLFClient
 
 				case KLFCommon.ServerMessageID.SCREENSHOT_SHARE:
 
-					if (data != null && data.Length > 0 && data.Length < KLFCommon.MAX_SCREENSHOT_BYTES
+					if (data != null && data.Length > 0 && data.Length < screenshotSettings.maxNumBytes
 						&& watchPlayerName.Length > 0 && watchPlayerName != username)
 					{
 						lock (screenshotInLock)
@@ -1002,6 +1011,9 @@ namespace KLFClient
 						//Write num inactive ships per update
 						client_data_stream.WriteByte(inactiveShipsPerUpdate);
 
+						//Write screenshot height
+						client_data_stream.Write(KLFCommon.intToBytes(screenshotSettings.maxHeight), 0, 4);
+
 						//Write username
 						UnicodeEncoding encoder = new UnicodeEncoding();
 						byte[] username_bytes = encoder.GetBytes(username);
@@ -1157,7 +1169,7 @@ namespace KLFClient
 				{
 					byte[] bytes = File.ReadAllBytes(SCREENSHOT_OUT_FILENAME);
 
-					if (bytes != null && bytes.Length > 0 && bytes.Length <= KLFCommon.MAX_SCREENSHOT_BYTES)
+					if (bytes != null && bytes.Length > 0 && bytes.Length <= screenshotSettings.maxNumBytes)
 					{
 						sendShareScreenshotMesssage(bytes);
 

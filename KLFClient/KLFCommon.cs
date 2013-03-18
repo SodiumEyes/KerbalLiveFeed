@@ -11,11 +11,7 @@ public class KLFCommon
 	public const Int32 NET_PROTOCOL_VERSION = 7;
 	public const int MSG_HEADER_LENGTH = 8;
 
-	public const int SERVER_SETTINGS_LENGTH = 13;
-
-	public const int MAX_SCREENSHOT_WIDTH = 480;
-	public const int MAX_SCREENSHOT_HEIGHT = 270;
-	public const int MAX_SCREENSHOT_BYTES = MAX_SCREENSHOT_WIDTH * MAX_SCREENSHOT_HEIGHT * 3;
+	public const int SERVER_SETTINGS_LENGTH = 17;
 
 	public const int MAX_CRAFT_FILE_BYTES = 1024 * 1024;
 
@@ -27,6 +23,7 @@ public class KLFCommon
 
 	/*ClientData format:
 	 * Byte - Inactive Vessels Per Update
+	 * Int32 - Screenshot Height
 	 * Player Name
 	 */
 
@@ -94,7 +91,7 @@ public class KLFCommon
 		SERVER_MESSAGE /*Message text*/,
 		TEXT_MESSAGE /*Message text*/,
 		PLUGIN_UPDATE /*data*/,
-		SERVER_SETTINGS /*UpdateInterval (4) : MaxQueueSize (4) : Screenshot Interval (4) : InactiveShips (1)*/,
+		SERVER_SETTINGS /*UpdateInterval (4) : MaxQueueSize (4) : Screenshot Interval (4) : Screenshot Height (4): InactiveShips (1)*/,
 		SCREENSHOT_SHARE /*Screenshot bytes*/,
 		KEEPALIVE,
 		CONNECTION_END /*Message*/,

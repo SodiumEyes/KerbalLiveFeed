@@ -1,4 +1,4 @@
-KerbalLiveFeed Plugin, Client and Server v0.4.0
+KerbalLiveFeed Plugin, Client and Server v0.5.0
 Created by Alfred Lam
 
 ======= Installation ===========================================
@@ -28,3 +28,5 @@ screenshotInterval: The minimum time a client must wait after sharing a screensh
 autoRestart: If true, the server will attempt to restart after catching an unhandled exception
 
 saveScreenshots: If true, the server will save all screenshots to the klfScreenshots folder
+
+screenshotHeight: The maximum height of the screenshots that players can share. Can range from 135 to 540 (Ideal values: 135, 144, 180, 270, 315, 360, 540)

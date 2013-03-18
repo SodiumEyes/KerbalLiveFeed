@@ -9,18 +9,19 @@ namespace KLF
 {
 	class KLFScreenshotDisplay
 	{
-		public const float MAX_IMG_WIDTH = KLFCommon.MAX_SCREENSHOT_WIDTH;
-		public const float MAX_IMG_HEIGHT = KLFCommon.MAX_SCREENSHOT_HEIGHT;
+		public const float MIN_WINDOW_WIDTH = ScreenshotSettings.MIN_WIDTH + 100;
+		public const float MIN_WINDOW_HEIGHT = ScreenshotSettings.MIN_HEIGHT + 10;
 
-		public const float MAX_IMG_BYTES = KLFCommon.MAX_SCREENSHOT_BYTES;
-
-		public const float WINDOW_WIDTH = MAX_IMG_WIDTH + 180;
-		public const float WINDOW_HEIGHT = MAX_IMG_HEIGHT + 30;
-
+		public static ScreenshotSettings screenshotSettings = new ScreenshotSettings();
 		public static bool windowEnabled = false;
 		public static String watchPlayerName = String.Empty;
 		public static Texture2D texture;
-		public static Rect windowPos = new Rect(Screen.width / 2 - WINDOW_WIDTH / 2, Screen.height / 2 - WINDOW_HEIGHT / 2, WINDOW_WIDTH, WINDOW_HEIGHT);
+
+		public static Rect windowPos = new Rect(
+			Screen.width / 2 - MIN_WINDOW_WIDTH / 2, Screen.height / 2 - MIN_WINDOW_HEIGHT / 2,
+			MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT);
 		public static Vector2 scrollPos = Vector2.zero;
+
+		public static GUILayoutOption[] layoutOptions;
 	}
 }

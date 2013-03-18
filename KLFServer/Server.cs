@@ -1006,7 +1006,7 @@ namespace KLFServer
 
 				case KLFCommon.ClientMessageID.SCREENSHOT_SHARE:
 
-					if (data != null && data.Length <= KLFCommon.MAX_SCREENSHOT_BYTES && clientIsReady(client_index))
+					if (data != null && data.Length <= settings.screenshotSettings.maxNumBytes && clientIsReady(client_index))
 					{
 						//Set the screenshot for the player
 						lock (clients[client_index].screenshotLock)
@@ -1361,7 +1361,8 @@ namespace KLFServer
 			KLFCommon.intToBytes(updateInterval).CopyTo(bytes, 0); //Update interval
 			KLFCommon.intToBytes(maxQueuedUpdates).CopyTo(bytes, 4); //Max update queue
 			KLFCommon.intToBytes(settings.screenshotInterval).CopyTo(bytes, 8); //Screenshot interval
-			bytes[12] = inactiveShipsPerClient; //Inactive ships per client
+			KLFCommon.intToBytes(settings.screenshotSettings.maxHeight).CopyTo(bytes, 12); //Screenshot height
+			bytes[16] = inactiveShipsPerClient; //Inactive ships per client
 
 			return bytes;
 		}

@@ -59,6 +59,12 @@ namespace KLFServer
 				Console.WriteLine(settings.totalInactiveShips);
 
 				Console.ForegroundColor = ConsoleColor.Green;
+				Console.Write("Screenshot Height: ");
+
+				Console.ResetColor();
+				Console.WriteLine(settings.screenshotSettings.maxHeight);
+
+				Console.ForegroundColor = ConsoleColor.Green;
 				Console.Write("Screenshot Interval: ");
 
 				Console.ResetColor();
@@ -80,7 +86,7 @@ namespace KLFServer
 				Console.WriteLine();
 				Console.WriteLine("P: change port, M: change max clients, J: change join message");
 				Console.WriteLine("U: updates per second, IS: total inactive ships");
-				Console.WriteLine("SI: screenshot interval, SV: save screenshots");
+				Console.WriteLine("SH: screenshot height, SI: screenshot interval, SV: save screenshots");
 				Console.WriteLine("A: toggle auto-restart, H: begin hosting, Q: quit");
 
 				String in_string = Console.ReadLine().ToLower();
@@ -139,6 +145,20 @@ namespace KLFServer
 						Console.WriteLine("Invalid updates per second ["
 							+ ServerSettings.MIN_UPDATES_PER_SECOND + '-'
 							+ ServerSettings.MAX_UPDATES_PER_SECOND + ']');
+					}
+				}
+				else if (in_string == "sh")
+				{
+					Console.Write("Enter the screenshot height: ");
+					int new_value;
+					if (int.TryParse(Console.ReadLine(), out new_value))
+					{
+						settings.screenshotSettings.maxHeight = new_value;
+						settings.writeConfigFile();
+					}
+					else
+					{
+						Console.WriteLine("Invalid screenshot height.");
 					}
 				}
 				else if (in_string == "si")
