@@ -1330,8 +1330,8 @@ namespace KLF
 				if (KLFScreenshotDisplay.layoutOptions == null)
 					KLFScreenshotDisplay.layoutOptions = new GUILayoutOption[2];
 
-				KLFScreenshotDisplay.layoutOptions[0] = GUILayout.MaxHeight(KLFScreenshotDisplay.MIN_WINDOW_WIDTH);
-				KLFScreenshotDisplay.layoutOptions[1] = GUILayout.MaxWidth(KLFScreenshotDisplay.MIN_WINDOW_HEIGHT);
+				KLFScreenshotDisplay.layoutOptions[0] = GUILayout.MaxHeight(KLFScreenshotDisplay.MIN_WINDOW_HEIGHT);
+				KLFScreenshotDisplay.layoutOptions[1] = GUILayout.MaxWidth(KLFScreenshotDisplay.MIN_WINDOW_WIDTH);
 
 				GUI.skin = HighLogic.Skin;
 
