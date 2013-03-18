@@ -589,8 +589,8 @@ namespace KLFClient
 							Console.WriteLine("Max queued updates: " + maxQueuedUpdates);
 							Console.WriteLine("Screenshot interval: " + screenshotInterval);
 							Console.WriteLine("Inactive ships per update: " + inactiveShipsPerUpdate);
-							 */
 							Console.WriteLine("Screenshot Height: " + screenshotSettings.maxHeight);
+							 */
 						}
 					}
 
