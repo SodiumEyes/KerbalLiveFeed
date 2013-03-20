@@ -403,7 +403,7 @@ namespace KLFServer
 									}
 								}
 							}
-							if (input == "/list")
+							else if (input == "/list")
 							{
 								//Display player list
 								StringBuilder sb = new StringBuilder();
@@ -420,7 +420,7 @@ namespace KLFServer
 
 								stampedConsoleWriteLine(sb.ToString());
 							}
-							if (input == "/count")
+							else if (input == "/count")
 							{
 								stampedConsoleWriteLine("Total clients: " + numClients);
 

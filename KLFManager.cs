@@ -1365,6 +1365,10 @@ namespace KLF
 						);
 				}
 
+				KLFInfoDisplay.infoWindowPos = enforceWindowBoundaries(KLFInfoDisplay.infoWindowPos);
+				KLFScreenshotDisplay.windowPos = enforceWindowBoundaries(KLFScreenshotDisplay.windowPos);
+				KLFChatDisplay.windowPos = enforceWindowBoundaries(KLFChatDisplay.windowPos);
+
 			}
 		}
 
@@ -1759,6 +1763,25 @@ namespace KLF
 
 				lastPluginDataWriteTime = 0.0f; //Force re-write of plugin data
 			}
+		}
+
+		private Rect enforceWindowBoundaries(Rect window)
+		{
+			const int padding = 20;
+
+			if (window.x < -window.width + padding)
+				window.x = -window.width + padding;
+
+			if (window.x > Screen.width - padding)
+				window.x = Screen.width - padding;
+
+			if (window.y < -window.height + padding)
+				window.y = -window.height + padding;
+
+			if (window.y > Screen.height - padding)
+				window.y = Screen.height - padding;
+
+			return window;
 		}
 
 		//This code adapted from Kerbal Engineer Redux source

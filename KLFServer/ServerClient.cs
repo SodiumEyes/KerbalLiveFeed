@@ -270,27 +270,32 @@ namespace KLFServer
 
 		public void sendOutgoingMessages()
 		{
+			Queue<byte[]> out_queue = null;
+
 			lock (outgoingMessageLock) {
+				out_queue = queuedOutMessages; //Get the outgoing message queue
 
-				if (queuedOutMessages.Count > 0)
-				{
-					//Send all the messages to the client
-					lock (tcpClientLock) {
-						try
-						{
-							while (queuedOutMessages.Count > 0)
-							{
-								byte[] message = queuedOutMessages.Dequeue();
-								tcpClient.GetStream().Write(message, 0, message.Length);
-							}
-						}
-						catch (System.InvalidOperationException) { }
-						catch (System.IO.IOException) { }
-					}
-				}
-
+				//Replace the queue with a new queue so it doesn't change while sending messages
+				queuedOutMessages = new Queue<byte[]>();
 			}
-			
+
+			if (out_queue.Count > 0)
+			{
+				//Send all the messages to the client
+				lock (tcpClientLock) {
+					try
+					{
+						while (out_queue.Count > 0)
+						{
+							byte[] message = out_queue.Dequeue();
+							tcpClient.GetStream().Write(message, 0, message.Length);
+						}
+					}
+					catch (System.InvalidOperationException) { }
+					catch (System.IO.IOException) { }
+				}
+			}
+
 		}
 
 		public void queueOutgoingMessage(KLFCommon.ServerMessageID id, byte[] data)
