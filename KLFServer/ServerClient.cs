@@ -91,6 +91,8 @@ namespace KLFServer
 
 			lastUDPACKTime = 0;
 
+			queuedOutMessages.Clear();
+
 			lock (activityLevelLock)
 			{
 				activityLevel = ServerClient.ActivityLevel.INACTIVE;
@@ -111,6 +113,18 @@ namespace KLFServer
 			{
 				lastReceiveTime = parent.currentMillisecond;
 			}
+		}
+
+		public void disconnected()
+		{
+			canBeReplaced = true;
+			screenshot = null;
+			watchPlayerName = String.Empty;
+
+			sharedCraftFile = null;
+			sharedCraftName = String.Empty;
+
+			queuedOutMessages.Clear();
 		}
 
 		//Async read
@@ -262,11 +276,16 @@ namespace KLFServer
 				{
 					//Send all the messages to the client
 					lock (tcpClientLock) {
-						while (queuedOutMessages.Count > 0)
+						try
 						{
-							byte[] message = queuedOutMessages.Dequeue();
-							tcpClient.GetStream().Write(message, 0, message.Length);
+							while (queuedOutMessages.Count > 0)
+							{
+								byte[] message = queuedOutMessages.Dequeue();
+								tcpClient.GetStream().Write(message, 0, message.Length);
+							}
 						}
+						catch (System.InvalidOperationException) { }
+						catch (System.IO.IOException) { }
 					}
 				}
 

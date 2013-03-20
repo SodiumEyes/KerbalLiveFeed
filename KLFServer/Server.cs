@@ -695,9 +695,6 @@ namespace KLFServer
 				return;
 
 			numClients--;
-			clients[index].canBeReplaced = true;
-			clients[index].screenshot = null;
-			clients[index].watchPlayerName = String.Empty;
 
 			//Only send the disconnect message if the client performed handshake successfully
 			if (clients[index].receivedHandshake)
@@ -740,6 +737,8 @@ namespace KLFServer
 				clientActivityLevelChanged(index);
 			else
 				sendServerSettingsToAll();
+			
+			clients[index].disconnected();
 		}
 
 		public void clientActivityLevelChanged(int index)
