@@ -974,16 +974,7 @@ namespace KLFServer
 
 					if (data != null && clientIsReady(client_index))
 					{
-
-						//Send the update to all other clients
-						for (int i = 0; i < clients.Length; i++)
-						{
-							//Make sure the client is valid and in-game
-							if ((i != client_index || SEND_UPDATES_TO_SENDER)
-								&& clientIsReady(i)
-								&& clients[i].activityLevel != ServerClient.ActivityLevel.INACTIVE)
-								sendPluginUpdate(i, data);
-						}
+						sendPluginUpdateToAll(data, client_index);
 
 						//Update the sending client's activity level
 						if (data.Length >= IN_FLIGHT_UPDATE_SIZE_THRESHOLD)
@@ -1063,26 +1054,7 @@ namespace KLFServer
 						stampedConsoleWriteLine(sb.ToString());
 
 						//Send the screenshot to every client watching the player
-						for (int i = 0; i < clients.Length; i++)
-						{
-							if (i != client_index && clientIsReady(i) && clients[i].activityLevel != ServerClient.ActivityLevel.INACTIVE)
-							{
-
-								bool match = false;
-
-								lock (clients[i].watchPlayerNameLock)
-								{
-									match = clients[i].watchPlayerName == clients[client_index].username;
-								}
-
-								if (match)
-								{
-									sendScreenshot(i, data);
-									break;
-								}
-
-							}
-						}
+						sendScreenshotToWatchers(client_index, data);
 
 						if (settings.saveScreenshots)
 							saveScreenshot(data, clients[client_index].username);
@@ -1229,6 +1201,23 @@ namespace KLFServer
 			sendTextMessageToAll(full_message, client_index);
 		}
 
+		public static byte[] buildMessageArray(KLFCommon.ServerMessageID id, byte[] data)
+		{
+			//Construct the byte array for the message
+			int msg_data_length = 0;
+			if (data != null)
+				msg_data_length = data.Length;
+
+			byte[] message_bytes = new byte[KLFCommon.MSG_HEADER_LENGTH + msg_data_length];
+
+			KLFCommon.intToBytes((int)id).CopyTo(message_bytes, 0);
+			KLFCommon.intToBytes(msg_data_length).CopyTo(message_bytes, 4);
+			if (data != null)
+				data.CopyTo(message_bytes, KLFCommon.MSG_HEADER_LENGTH);
+
+			return message_bytes;
+		}
+
 		private void sendMessageHeaderDirect(TcpClient client, KLFCommon.ServerMessageID id, int msg_length)
 		{
 			client.GetStream().Write(KLFCommon.intToBytes((int)id), 0, 4);
@@ -1317,12 +1306,12 @@ namespace KLFServer
 		private void sendServerMessageToAll(String message, int exclude_index = -1)
 		{
 			UnicodeEncoding encoder = new UnicodeEncoding();
-			byte[] message_bytes = encoder.GetBytes(message);
+			byte[] message_bytes = buildMessageArray(KLFCommon.ServerMessageID.SERVER_MESSAGE, encoder.GetBytes(message));
 
 			for (int i = 0; i < clients.Length; i++)
 			{
 				if ((i != exclude_index) && clientIsReady(i))
-					clients[i].queueOutgoingMessage(KLFCommon.ServerMessageID.SERVER_MESSAGE, message_bytes);
+					clients[i].queueOutgoingMessage(message_bytes);
 			}
 		}
 
@@ -1334,14 +1323,13 @@ namespace KLFServer
 
 		private void sendTextMessageToAll(String message, int exclude_index = -1)
 		{
-
 			UnicodeEncoding encoder = new UnicodeEncoding();
-			byte[] message_bytes = encoder.GetBytes(message);
+			byte[] message_bytes = buildMessageArray(KLFCommon.ServerMessageID.TEXT_MESSAGE, encoder.GetBytes(message));
 
 			for (int i = 0; i < clients.Length; i++)
 			{
 				if ((i != exclude_index) && clientIsReady(i))
-					clients[i].queueOutgoingMessage(KLFCommon.ServerMessageID.TEXT_MESSAGE, message_bytes);
+					clients[i].queueOutgoingMessage(message_bytes);
 			}
 		}
 
@@ -1351,14 +1339,57 @@ namespace KLFServer
 			clients[client_index].queueOutgoingMessage(KLFCommon.ServerMessageID.SERVER_MESSAGE, encoder.GetBytes(message));
 		}
 
-		private void sendPluginUpdate(int client_index, byte[] data)
+		private void sendPluginUpdateToAll(byte[] data, int exclude_index = -1)
 		{
-			clients[client_index].queueOutgoingMessage(KLFCommon.ServerMessageID.PLUGIN_UPDATE, data);
+			//Build the message array
+			byte[] message_bytes = buildMessageArray(KLFCommon.ServerMessageID.PLUGIN_UPDATE, data);
+
+			//Send the update to all other clients
+			for (int i = 0; i < clients.Length; i++)
+			{
+				//Make sure the client is valid and in-game
+				if ((i != exclude_index || SEND_UPDATES_TO_SENDER)
+					&& clientIsReady(i)
+					&& clients[i].activityLevel != ServerClient.ActivityLevel.INACTIVE)
+					clients[i].queueOutgoingMessage(message_bytes);
+			}
 		}
 
 		private void sendScreenshot(int client_index, byte[] bytes)
 		{
 			clients[client_index].queueOutgoingMessage(KLFCommon.ServerMessageID.SCREENSHOT_SHARE, bytes);
+		}
+
+		private void sendScreenshotToWatchers(int client_index, byte[] bytes)
+		{
+			//Create a list of valid watchers
+			List<int> watcher_indices = new List<int>();
+
+			for (int i = 0; i < clients.Length; i++)
+			{
+				if (i != client_index && clientIsReady(i) && clients[i].activityLevel != ServerClient.ActivityLevel.INACTIVE)
+				{
+					bool match = false;
+
+					lock (clients[i].watchPlayerNameLock)
+					{
+						match = clients[i].watchPlayerName == clients[client_index].username;
+					}
+
+					if (match)
+						watcher_indices.Add(i);
+				}
+			}
+
+			if (watcher_indices.Count > 0)
+			{
+				//Build the message and send it to all watchers
+				byte[] message_bytes = buildMessageArray(KLFCommon.ServerMessageID.SCREENSHOT_SHARE, bytes);
+				foreach (int i in watcher_indices)
+				{
+					clients[i].queueOutgoingMessage(message_bytes);
+				}
+			}
 		}
 
 		private void sendCraftFile(int client_index, String craft_name, byte[] data, byte type)
@@ -1380,12 +1411,15 @@ namespace KLFServer
 
 		private void sendServerSettingsToAll()
 		{
+			//Build the message array
 			byte[] setting_bytes = serverSettingBytes();
+			byte[] message_bytes = buildMessageArray(KLFCommon.ServerMessageID.SERVER_SETTINGS, setting_bytes);
 
+			//Send to clients
 			for (int i = 0; i < clients.Length; i++)
 			{
 				if (clientIsValid(i))
-					clients[i].queueOutgoingMessage(KLFCommon.ServerMessageID.SERVER_SETTINGS, setting_bytes);
+					clients[i].queueOutgoingMessage(message_bytes);
 			}
 		}
 

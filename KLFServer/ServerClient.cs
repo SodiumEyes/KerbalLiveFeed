@@ -300,18 +300,11 @@ namespace KLFServer
 
 		public void queueOutgoingMessage(KLFCommon.ServerMessageID id, byte[] data)
 		{
-			//Construct the byte array for the message
-			int msg_data_length = 0;
-			if (data != null)
-				msg_data_length = data.Length;
+			queueOutgoingMessage(Server.buildMessageArray(id, data));
+		}
 
-			byte[] message_bytes = new byte[KLFCommon.MSG_HEADER_LENGTH + msg_data_length];
-
-			KLFCommon.intToBytes((int)id).CopyTo(message_bytes, 0);
-			KLFCommon.intToBytes(msg_data_length).CopyTo(message_bytes, 4);
-			if (data != null)
-				data.CopyTo(message_bytes, KLFCommon.MSG_HEADER_LENGTH);
-
+		public void queueOutgoingMessage(byte[] message_bytes)
+		{
 			//Queue the message for sending
 			lock (outgoingMessageLock)
 			{
