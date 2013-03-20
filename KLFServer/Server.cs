@@ -28,6 +28,7 @@ namespace KLFServer
 		public const long CLIENT_HANDSHAKE_TIMEOUT_DELAY = 6000;
 		public const int SLEEP_TIME = 15;
 		public const int MAX_SCREENSHOT_COUNT = 10000;
+		public const int UDP_ACK_THROTTLE = 1000;
 
 		public const int IN_FLIGHT_UPDATE_SIZE_THRESHOLD = 400;
 		public const float NOT_IN_FLIGHT_UPDATE_WEIGHT = 1.0f/4.0f;
@@ -158,10 +159,10 @@ namespace KLFServer
 			{
 
 				ConsoleColor default_color = Console.ForegroundColor;
-				Console.ForegroundColor = ConsoleColor.DarkGreen;
 
 				try
 				{
+					Console.ForegroundColor = ConsoleColor.DarkGreen;
 					Console.Write('[');
 					Console.Write(DateTime.Now.ToString("HH:mm:ss"));
 					Console.Write("] ");
@@ -195,6 +196,7 @@ namespace KLFServer
 			{
 				for (int i = 0; i < clients.Length; i++)
 				{
+					clients[i].endReceivingMessages();
 					if (clients[i].tcpClient != null)
 						clients[i].tcpClient.Close();
 				}
@@ -563,18 +565,18 @@ namespace KLFServer
 					{
 						if (clientIsValid(i))
 						{
-							long last_message_receive_time = 0;
+							long last_receive_time = 0;
 							long connection_start_time = 0;
 							bool handshook = false;
 
 							lock (clients[i].timestampLock)
 							{
-								last_message_receive_time = clients[i].lastMessageTime;
+								last_receive_time = clients[i].lastReceiveTime;
 								connection_start_time = clients[i].connectionStartTime;
 								handshook = clients[i].receivedHandshake;
 							}
 
-							if (currentMillisecond - last_message_receive_time > CLIENT_TIMEOUT_DELAY
+							if (currentMillisecond - last_receive_time > CLIENT_TIMEOUT_DELAY
 								|| (!handshook && (currentMillisecond - connection_start_time) > CLIENT_HANDSHAKE_TIMEOUT_DELAY))
 							{
 								//Disconnect the client
@@ -582,13 +584,11 @@ namespace KLFServer
 							}
 							else
 							{
+								bool changed = false;
 
 								//Reset the client's activity level if the time since last update was too long
 								lock (clients[i].activityLevelLock)
 								{
-
-									bool changed = false;
-
 									if (clients[i].activityLevel == ServerClient.ActivityLevel.IN_FLIGHT
 										&& (currentMillisecond - clients[i].lastInFlightActivityTime) > ACTIVITY_RESET_DELAY)
 									{
@@ -602,11 +602,10 @@ namespace KLFServer
 										clients[i].activityLevel = ServerClient.ActivityLevel.INACTIVE;
 										changed = true;
 									}
-
-									if (changed)
-										clientActivityLevelChanged(i);
-
 								}
+
+								if (changed)
+									clientActivityLevelChanged(i);
 
 								//Send out-going messages for the client
 								clients[i].sendOutgoingMessages();
@@ -655,11 +654,8 @@ namespace KLFServer
 					//Add the client
 					client.tcpClient = tcp_client;
 
-					lock (clients[i].timestampLock)
-					{
-						//Reset client properties
-						client.resetProperties();
-					}
+					//Reset client properties
+					client.resetProperties();
 
 					client.startReceivingMessages();
 					numClients++;
@@ -684,8 +680,6 @@ namespace KLFServer
 
 		public void disconnectClient(int index, String message)
 		{
-			//clients[index].abortMessageThreads(false);
-
 			//Send a message to client informing them why they were disconnected
 			if (clients[index].tcpClient.Connected)
 				sendConnectionEndMessageDirect(clients[index].tcpClient, message);
@@ -693,6 +687,7 @@ namespace KLFServer
 			//Close the socket
 			lock (clients[index].tcpClientLock)
 			{
+				clients[index].endReceivingMessages();
 				clients[index].tcpClient.Close();
 			}
 
@@ -836,8 +831,12 @@ namespace KLFServer
 
 					if (clientIsValid(sender_index))
 					{
-						//Acknowledge the client's message with a TCP message
-						clients[sender_index].queueOutgoingMessage(KLFCommon.ServerMessageID.UDP_ACKNOWLEDGE, null);
+						if ((currentMillisecond - clients[sender_index].lastUDPACKTime) > UDP_ACK_THROTTLE)
+						{
+							//Acknowledge the client's message with a TCP message
+							clients[sender_index].queueOutgoingMessage(KLFCommon.ServerMessageID.UDP_ACKNOWLEDGE, null);
+							clients[sender_index].lastUDPACKTime = currentMillisecond;
+						}
 
 						//Handle the message
 						handleMessage(sender_index, id, data);
@@ -1033,11 +1032,14 @@ namespace KLFServer
 						int watch_index = getClientIndexByName(watch_name);
 						if (clientIsReady(watch_index))
 						{
+							byte[] screenshot = null;
 							lock (clients[watch_index].screenshotLock)
 							{
-								if (clients[watch_index].screenshot != null)
-									sendScreenshot(client_index, clients[watch_index].screenshot);
+								screenshot = clients[watch_index].screenshot;
 							}
+
+							if (screenshot != null)
+								sendScreenshot(client_index, clients[watch_index].screenshot);
 						}
 					}
 					
@@ -1125,7 +1127,7 @@ namespace KLFServer
 							//Send a message to players informing them that a craft has been shared
 							StringBuilder sb = new StringBuilder();
 							sb.Append(clients[client_index].username);
-							sb.Append(" shared craft ");
+							sb.Append(" shared ");
 							sb.Append(craft_name);
 
 							switch (craft_type)

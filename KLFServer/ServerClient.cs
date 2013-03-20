@@ -42,7 +42,8 @@ namespace KLFServer
 		public byte sharedCraftType;
 
 		public long connectionStartTime;
-		public long lastMessageTime;
+		public long lastReceiveTime;
+		public long lastUDPACKTime;
 
 		public long lastInGameActivityTime;
 		public long lastInFlightActivityTime;
@@ -82,13 +83,13 @@ namespace KLFServer
 			screenshot = null;
 			watchPlayerName = String.Empty;
 			canBeReplaced = false;
-			lastMessageTime = parent.currentMillisecond;
-			connectionStartTime = parent.currentMillisecond;
 			receivedHandshake = false;
 
 			sharedCraftFile = null;
 			sharedCraftName = String.Empty;
 			sharedCraftType = 0;
+
+			lastUDPACKTime = 0;
 
 			lock (activityLevelLock)
 			{
@@ -97,7 +98,19 @@ namespace KLFServer
 				lastInFlightActivityTime = parent.currentMillisecond;
 			}
 
+			lock (timestampLock)
+			{
+				lastReceiveTime = parent.currentMillisecond;
+				connectionStartTime = parent.currentMillisecond;
+			}
+		}
 
+		public void updateReceiveTimestamp()
+		{
+			lock (timestampLock)
+			{
+				lastReceiveTime = parent.currentMillisecond;
+			}
 		}
 
 		//Async read
@@ -136,6 +149,9 @@ namespace KLFServer
 			{
 				int read = tcpClient.GetStream().EndRead(result);
 
+				if (read > 0)
+					updateReceiveTimestamp();
+
 				currentMessageHeaderIndex += read;
 				if (currentMessageHeaderIndex >= currentMessageHeader.Length)
 				{
@@ -154,7 +170,7 @@ namespace KLFServer
 						//Begin the read for the message data
 						currentMessageData = new byte[data_length];
 						currentMessageDataIndex = 0;
-							
+
 						tcpClient.GetStream().BeginRead(
 							currentMessageData,
 							0,
@@ -200,6 +216,9 @@ namespace KLFServer
 
 				int read = tcpClient.GetStream().EndRead(result);
 
+				if (read > 0)
+					updateReceiveTimestamp();
+
 				currentMessageDataIndex += read;
 				if (currentMessageDataIndex >= currentMessageData.Length)
 				{
@@ -232,11 +251,6 @@ namespace KLFServer
 
 		private void messageReceived(KLFCommon.ClientMessageID id, byte[] data)
 		{
-			lock (timestampLock)
-			{
-				lastMessageTime = parent.currentMillisecond;
-			}
-
 			parent.queueClientMessage(clientIndex, id, data);
 		}
 
@@ -286,6 +300,10 @@ namespace KLFServer
 			beginAsyncRead();
 		}
 
+		internal void endReceivingMessages()
+		{
+		}
+
 		//Activity Level
 
 		public void updateActivityLevel(ActivityLevel level)
@@ -316,5 +334,6 @@ namespace KLFServer
 			if (changed)
 				parent.clientActivityLevelChanged(clientIndex);
 		}
+
 	}
 }

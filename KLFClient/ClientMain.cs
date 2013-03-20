@@ -44,7 +44,7 @@ namespace KLFClient
 		public const int MAX_TEXT_MESSAGE_QUEUE = 128;
 		public const long KEEPALIVE_DELAY = 2000;
 		public const long UDP_PROBE_DELAY = 2000;
-		public const long UDP_TIMEOUT_DELAY = 5000;
+		public const long UDP_TIMEOUT_DELAY = 8000;
 		public const int SLEEP_TIME = 15;
 		public const int CHAT_IN_WRITE_INTERVAL = 500;
 		public const int CLIENT_DATA_FORCE_WRITE_INTERVAL = 10000;
