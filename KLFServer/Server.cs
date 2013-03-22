@@ -11,6 +11,8 @@ using System.Net;
 using System.IO;
 using System.Diagnostics;
 
+using System.Collections.Concurrent;
+
 namespace KLFServer
 {
 	class Server
@@ -62,7 +64,6 @@ namespace KLFServer
 		public object threadExceptionLock = new object();
 		public object clientActivityCountLock = new object();
 		public object clientUDPAddressMapLock = new object();
-		public object clientMessageQueueLock = new object();
 		public static object consoleWriteLock = new object();
 
 		public Thread listenThread;
@@ -73,7 +74,7 @@ namespace KLFServer
 
 		public ServerClient[] clients;
 		public Dictionary<String, int> clientUDPAddressMap;
-		public Queue<ClientMessage> clientMessageQueue;
+		public ConcurrentQueue<ClientMessage> clientMessageQueue;
 
 		public ServerSettings settings;
 
@@ -307,7 +308,7 @@ namespace KLFServer
 			}
 
 			clientUDPAddressMap = new Dictionary<string, int>();
-			clientMessageQueue = new Queue<ClientMessage>();
+			clientMessageQueue = new ConcurrentQueue<ClientMessage>();
 
 			numClients = 0;
 			numInGameClients = 0;
@@ -544,21 +545,16 @@ namespace KLFServer
 				while (true)
 				{
 					//Handle received messages
-					Queue<ClientMessage> handle_queue = null;
-					lock (clientMessageQueueLock)
+					while (clientMessageQueue.Count > 0)
 					{
-						//Store the old client message queue
-						handle_queue = clientMessageQueue;
+						ClientMessage message;
 
-						//Replace the client message queue with a new queue so it doesn't change while handling messages
-						clientMessageQueue = new Queue<ClientMessage>();
+						if (clientMessageQueue.TryDequeue(out message))
+							handleMessage(message.clientIndex, message.id, message.data);
+						else
+							break;
 					}
-
-					while (handle_queue.Count > 0)
-					{
-						ClientMessage message = handle_queue.Dequeue();
-						handleMessage(message.clientIndex, message.id, message.data);
-					}
+					
 
 					//Check for clients that have not sent messages for too long
 					for (int i = 0; i < clients.Length; i++)
@@ -874,10 +870,7 @@ namespace KLFServer
 			message.id = id;
 			message.data = data;
 
-			lock (clientMessageQueueLock)
-			{
-				clientMessageQueue.Enqueue(message);
-			}
+			clientMessageQueue.Enqueue(message);
 		}
 
 		public void handleMessage(int client_index, KLFCommon.ClientMessageID id, byte[] data)

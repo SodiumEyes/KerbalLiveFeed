@@ -6,6 +6,7 @@ using System.Text;
 using System.Net.Sockets;
 using System.Threading;
 using System.Net;
+using System.Collections.Concurrent;
 
 namespace KLFServer
 {
@@ -17,6 +18,8 @@ namespace KLFServer
 			IN_GAME,
 			IN_FLIGHT
 		}
+
+		public const int SEND_BUFFER_SIZE = 8192;
 
 		//Properties
 
@@ -52,25 +55,24 @@ namespace KLFServer
 		public TcpClient tcpClient;
 
 		public object tcpClientLock = new object();
-		public object outgoingMessageLock = new object();
 		public object timestampLock = new object();
 		public object activityLevelLock = new object();
 		public object screenshotLock = new object();
 		public object watchPlayerNameLock = new object();
 		public object sharedCraftLock = new object();
 
-		public byte[] receiveBuffer = new byte[8192];
-		public int receiveIndex = 0;
-		public int receiveHandleIndex = 0;
+		private byte[] receiveBuffer = new byte[8192];
+		private int receiveIndex = 0;
+		private int receiveHandleIndex = 0;
 
-		public byte[] currentMessageHeader = new byte[KLFCommon.MSG_HEADER_LENGTH];
-		public int currentMessageHeaderIndex;
-		public byte[] currentMessageData;
-		public int currentMessageDataIndex;
+		private byte[] currentMessageHeader = new byte[KLFCommon.MSG_HEADER_LENGTH];
+		private int currentMessageHeaderIndex;
+		private byte[] currentMessageData;
+		private int currentMessageDataIndex;
 
 		public KLFCommon.ClientMessageID currentMessageID;
 
-		public Queue<byte[]> queuedOutMessages;
+		public ConcurrentQueue<byte[]> queuedOutMessages;
 
 		public ServerClient(Server parent, int index)
 		{
@@ -79,7 +81,7 @@ namespace KLFServer
 
 			canBeReplaced = true;
 
-			queuedOutMessages = new Queue<byte[]>();
+			queuedOutMessages = new ConcurrentQueue<byte[]>();
 		}
 
 		public void resetProperties()
@@ -96,7 +98,7 @@ namespace KLFServer
 
 			lastUDPACKTime = 0;
 
-			queuedOutMessages.Clear();
+			queuedOutMessages = new ConcurrentQueue<byte[]>();
 
 			lock (activityLevelLock)
 			{
@@ -128,8 +130,6 @@ namespace KLFServer
 
 			sharedCraftFile = null;
 			sharedCraftName = String.Empty;
-
-			queuedOutMessages.Clear();
 		}
 
 		//Async read
@@ -285,6 +285,28 @@ namespace KLFServer
 			receiveIndex = 0;
 		}
 
+		//Asyc send
+
+		private void asyncSend(IAsyncResult result)
+		{
+			try
+			{
+				tcpClient.GetStream().EndWrite(result);
+			}
+			catch (InvalidOperationException)
+			{
+			}
+			catch (System.IO.IOException)
+			{
+			}
+			catch (Exception e)
+			{
+				parent.passExceptionToMain(e);
+			}
+		}
+		
+		//Messages
+
 		private void messageReceived(KLFCommon.ClientMessageID id, byte[] data)
 		{
 			parent.queueClientMessage(clientIndex, id, data);
@@ -292,32 +314,74 @@ namespace KLFServer
 
 		public void sendOutgoingMessages()
 		{
-			Queue<byte[]> out_queue = null;
 
-			lock (outgoingMessageLock) {
-				out_queue = queuedOutMessages; //Get the outgoing message queue
-
-				//Replace the queue with a new queue so it doesn't change while sending messages
-				queuedOutMessages = new Queue<byte[]>();
-			}
-
-			if (out_queue.Count > 0)
+			try
 			{
-				//Send all the messages to the client
-				lock (tcpClientLock) {
-					try
+				if (queuedOutMessages.Count > 0)
+				{
+					//Check the size of the next message
+					byte[] next_message = null;
+					int send_buffer_index = 0;
+					byte[] send_buffer = new byte[SEND_BUFFER_SIZE];
+
+					while (queuedOutMessages.TryPeek(out next_message))
 					{
-						while (out_queue.Count > 0)
+						if (send_buffer_index == 0 && next_message.Length >= send_buffer.Length)
 						{
-							byte[] message = out_queue.Dequeue();
-							tcpClient.GetStream().Write(message, 0, message.Length);
+							//If the next message is too large for the send buffer, just send it
+							queuedOutMessages.TryDequeue(out next_message);
+
+							tcpClient.GetStream().BeginWrite(
+								next_message,
+								0,
+								next_message.Length,
+								asyncSend,
+								next_message);
+
+							Console.WriteLine("write single " + next_message.Length);
+						}
+						else if (next_message.Length <= (send_buffer.Length - send_buffer_index))
+						{
+							//If the next message is small enough, copy it to the send buffer
+							queuedOutMessages.TryDequeue(out next_message);
+
+							next_message.CopyTo(send_buffer, send_buffer_index);
+							send_buffer_index += next_message.Length;
+						}
+						else
+						{
+							//If the next message is too big, send the send buffer
+							tcpClient.GetStream().BeginWrite(
+								send_buffer,
+								0,
+								send_buffer_index,
+								asyncSend,
+								next_message);
+
+							Console.WriteLine("write " + send_buffer_index);
+
+							send_buffer_index = 0;
+							send_buffer = new byte[SEND_BUFFER_SIZE];
 						}
 					}
-					catch (System.InvalidOperationException) { }
-					catch (System.IO.IOException) { }
+
+					//Send the send buffer
+					if (send_buffer_index > 0)
+					{
+						tcpClient.GetStream().BeginWrite(
+							send_buffer,
+							0,
+							send_buffer_index,
+							asyncSend,
+							next_message);
+
+						Console.WriteLine("write " + send_buffer_index);
+					}
 				}
 			}
-
+			catch (System.InvalidOperationException) { }
+			catch (System.IO.IOException) { }
+			
 		}
 
 		public void queueOutgoingMessage(KLFCommon.ServerMessageID id, byte[] data)
@@ -327,11 +391,14 @@ namespace KLFServer
 
 		public void queueOutgoingMessage(byte[] message_bytes)
 		{
+			queuedOutMessages.Enqueue(message_bytes);
+			/*
 			//Queue the message for sending
 			lock (outgoingMessageLock)
 			{
 				queuedOutMessages.Enqueue(message_bytes);
 			}
+			 */
 		}
 
 		internal void startReceivingMessages()
