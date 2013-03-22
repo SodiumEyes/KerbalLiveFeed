@@ -70,6 +70,9 @@ namespace KLF
 		GUIStyle playerNameStyle, vesselNameStyle, stateTextStyle, chatLineStyle;
 		private bool isEditorLocked = false;
 
+		private bool mappingGUIToggleKey = false;
+		private bool mappingScreenshotKey = false;
+
 		public bool shouldDrawGUI
 		{
 			get
@@ -108,7 +111,23 @@ namespace KLF
 			}
 		}
 
-		//Methods
+		//Keys
+
+		public bool getAnyKeyDown(ref KeyCode key)
+		{
+			foreach (KeyCode keycode in Enum.GetValues(typeof(KeyCode)))
+			{
+				if (Input.GetKeyDown(keycode))
+				{
+					key = keycode;
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		//Updates
 
 		public void updateStep()
 		{
@@ -1195,9 +1214,11 @@ namespace KLF
 			global_settings.infoDisplayWindowX = KLFInfoDisplay.infoWindowPos.x;
 			global_settings.infoDisplayWindowY = KLFInfoDisplay.infoWindowPos.y;
 			global_settings.infoDisplayBig = KLFInfoDisplay.infoDisplayBig;
+			global_settings.guiToggleKey = KLFInfoDisplay.guiToggleKey;
 
 			global_settings.screenshotDisplayWindowX = KLFScreenshotDisplay.windowPos.x;
 			global_settings.screenshotDisplayWindowY = KLFScreenshotDisplay.windowPos.y;
+			global_settings.screenshotKey = KLFScreenshotDisplay.screenshotKey;
 
 			global_settings.chatDisplayWindowX = KLFChatDisplay.windowPos.x;
 			global_settings.chatDisplayWindowY = KLFChatDisplay.windowPos.y;
@@ -1233,8 +1254,13 @@ namespace KLF
 						KLFInfoDisplay.infoWindowPos.y = global_settings.infoDisplayWindowY;
 						KLFInfoDisplay.infoDisplayBig = global_settings.infoDisplayBig;
 
+						if (global_settings.guiToggleKey != KeyCode.None)
+							KLFInfoDisplay.guiToggleKey = global_settings.guiToggleKey;
+
 						KLFScreenshotDisplay.windowPos.x = global_settings.screenshotDisplayWindowX;
 						KLFScreenshotDisplay.windowPos.y = global_settings.screenshotDisplayWindowY;
+						if (global_settings.screenshotKey != KeyCode.None)
+							KLFScreenshotDisplay.screenshotKey = global_settings.screenshotKey;
 
 						KLFChatDisplay.windowPos.x = global_settings.chatDisplayWindowX;
 						KLFChatDisplay.windowPos.y = global_settings.chatDisplayWindowY;
@@ -1275,14 +1301,35 @@ namespace KLF
 			if (planetariumCam == null)
 				planetariumCam = (PlanetariumCamera)FindObjectOfType(typeof(PlanetariumCamera));
 
-			if (Input.GetKeyDown(KeyCode.F7))
+			if (Input.GetKeyDown(KLFInfoDisplay.guiToggleKey))
 				KLFInfoDisplay.infoDisplayActive = !KLFInfoDisplay.infoDisplayActive;
 
-			if (Input.GetKeyDown(KeyCode.F8))
+			if (Input.GetKeyDown(KLFScreenshotDisplay.screenshotKey))
 				shareScreenshot();
 
 			if (Input.anyKeyDown)
 				lastKeyPressTime = UnityEngine.Time.realtimeSinceStartup;
+
+			//Handle key-binding
+			if (mappingGUIToggleKey)
+			{
+				KeyCode key = KeyCode.F7;
+				if (getAnyKeyDown(ref key))
+				{
+					KLFInfoDisplay.guiToggleKey = key;
+					mappingGUIToggleKey = false;
+				}
+			}
+
+			if (mappingScreenshotKey)
+			{
+				KeyCode key = KeyCode.F8;
+				if (getAnyKeyDown(ref key))
+				{
+					KLFScreenshotDisplay.screenshotKey = key;
+					mappingScreenshotKey = false;
+				}
+			}
 
 		}
 
@@ -1356,7 +1403,7 @@ namespace KLF
 					999999,
 					KLFInfoDisplay.infoWindowPos,
 					infoDisplayWindow,
-					KLFInfoDisplay.infoDisplayMinimized ? "KLF" : "Kerbal LiveFeed v"+KLFCommon.PROGRAM_VERSION+" (F7)",
+					KLFInfoDisplay.infoDisplayMinimized ? "KLF" : "Kerbal LiveFeed v"+KLFCommon.PROGRAM_VERSION+" ("+KLFInfoDisplay.guiToggleKey+")",
 					KLFInfoDisplay.layoutOptions
 					);
 
@@ -1406,6 +1453,7 @@ namespace KLF
 			{
 				KLFInfoDisplay.infoDisplayDetailed = GUILayout.Toggle(KLFInfoDisplay.infoDisplayDetailed, "Detail", GUI.skin.button);
 				KLFInfoDisplay.infoDisplayBig = GUILayout.Toggle(KLFInfoDisplay.infoDisplayBig, "Big", GUI.skin.button);
+				KLFInfoDisplay.infoDisplayKeyMap = GUILayout.Toggle(KLFInfoDisplay.infoDisplayKeyMap, "Keys", GUI.skin.button);
 				GUILayout.EndHorizontal();
 
 				KLFInfoDisplay.infoScrollPos = GUILayout.BeginScrollView(KLFInfoDisplay.infoScrollPos);
@@ -1457,9 +1505,29 @@ namespace KLF
 				GUILayout.BeginHorizontal();
 				KLFChatDisplay.windowEnabled = GUILayout.Toggle(KLFChatDisplay.windowEnabled, "Chat", GUI.skin.button);
 				KLFScreenshotDisplay.windowEnabled = GUILayout.Toggle(KLFScreenshotDisplay.windowEnabled, "Viewer", GUI.skin.button);
-				if (GUILayout.Button("Share Screen (F8)"))
+				if (GUILayout.Button("Share Screen ("+KLFScreenshotDisplay.screenshotKey+")"))
 					shareScreenshot();
 				GUILayout.EndHorizontal();
+
+				if (KLFInfoDisplay.infoDisplayKeyMap)
+				{
+					GUILayout.Label("Key-Bindings");
+
+					//Key mapping
+					GUILayout.BeginHorizontal();
+
+					mappingGUIToggleKey = GUILayout.Toggle(
+						mappingGUIToggleKey,
+						mappingGUIToggleKey ? "Press key" : "Menu Toggle: " + KLFInfoDisplay.guiToggleKey,
+						GUI.skin.button);
+
+					mappingScreenshotKey = GUILayout.Toggle(
+						mappingScreenshotKey,
+						mappingScreenshotKey ? "Press key" : "Screenshot: " + KLFScreenshotDisplay.screenshotKey,
+						GUI.skin.button);
+
+					GUILayout.EndHorizontal();
+				}
 			}
 
 			GUILayout.EndVertical();

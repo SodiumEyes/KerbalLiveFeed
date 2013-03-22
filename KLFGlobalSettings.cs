@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
+using UnityEngine;
+
 namespace KLF
 {
 	[Serializable]
@@ -21,5 +23,8 @@ namespace KLF
 
 		public bool chatWindowEnabled = false;
 		public bool chatWindowWide = false;
+
+		public KeyCode guiToggleKey = KeyCode.F7;
+		public KeyCode screenshotKey = KeyCode.F8;
 	}
 }
