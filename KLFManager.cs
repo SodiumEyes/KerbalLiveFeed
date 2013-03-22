@@ -49,6 +49,7 @@ namespace KLF
 		public const int STATUS_ARRAY_MIN_SIZE = 2;
 		public const int MAX_VESSEL_NAME_LENGTH = 32;
 		public const float VESSEL_TIMEOUT_DELAY = 6.0f;
+		public const float IDLE_DELAY = 120.0f;
 		public const float PLUGIN_DATA_WRITE_INTERVAL = 5.0f;
 		public const float GLOBAL_SETTINGS_SAVE_INTERVAL = 10.0f;
 
@@ -62,6 +63,7 @@ namespace KLF
 
 		private float lastGlobalSettingSaveTime = 0.0f;
 		private float lastPluginDataWriteTime = 0.0f;
+		private float lastKeyPressTime = 0.0f;
 
 		private Queue<KLFVesselUpdate> vesselUpdateQueue = new Queue<KLFVesselUpdate>();
 
@@ -95,6 +97,14 @@ namespace KLF
 			get
 			{
 				return FlightGlobals.ready && FlightGlobals.ActiveVessel != null;
+			}
+		}
+
+		public bool isIdle
+		{
+			get
+			{
+				return lastKeyPressTime > 0.0f && (UnityEngine.Time.realtimeSinceStartup - lastKeyPressTime) > IDLE_DELAY;
 			}
 		}
 
@@ -237,6 +247,10 @@ namespace KLF
 					}
 				}
 
+				//Check if player is idle
+				if (isIdle)
+					status_array[1] = "Idle " + status_array[1];
+
 				status_array[0] = playerName;				
 
 				//Serialize the update
@@ -367,7 +381,7 @@ namespace KLF
 			}
 			
 			//Determine situation
-			if (vessel.GetTotalMass() <= 0.0)
+			if (vessel.loaded && vessel.GetTotalMass() <= 0.0)
 				update.situation = Situation.DESTROYED;
 			else
 			{
@@ -1267,6 +1281,9 @@ namespace KLF
 			if (Input.GetKeyDown(KeyCode.F8))
 				shareScreenshot();
 
+			if (Input.anyKeyDown)
+				lastKeyPressTime = UnityEngine.Time.realtimeSinceStartup;
+
 		}
 
 		public void OnGUI()
@@ -1397,6 +1414,8 @@ namespace KLF
 				//Init label styles
 				playerNameStyle = new GUIStyle(GUI.skin.label);
 				playerNameStyle.normal.textColor = Color.white;
+				playerNameStyle.hover.textColor = Color.white;
+				playerNameStyle.active.textColor = Color.white;
 				playerNameStyle.alignment = TextAnchor.MiddleLeft;
 				playerNameStyle.margin = new RectOffset(0, 0, 2, 0);
 				playerNameStyle.padding = new RectOffset(0, 0, 0, 0);
@@ -1472,8 +1491,6 @@ namespace KLF
 
 			GUILayout.EndVertical();
 
-			GUILayout.BeginVertical();
-
 			//User list
 			KLFScreenshotDisplay.scrollPos = GUILayout.BeginScrollView(KLFScreenshotDisplay.scrollPos, user_list_options);
 			GUILayout.BeginVertical();
@@ -1493,27 +1510,6 @@ namespace KLF
 
 			GUILayout.EndVertical();
 			GUILayout.EndScrollView();
-
-			//Body function
-			if (HighLogic.LoadedSceneHasPlanetarium && planetariumCam != null
-				&& KLFScreenshotDisplay.watchPlayerName.Length > 0
-				&& target_body_name.Length > 0
-				&& GUILayout.Button("Focus on " + target_body_name))
-			{
-				if (!MapView.MapIsEnabled)
-					MapView.EnterMapView();
-
-				foreach (Transform transform in planetariumCam.targets)
-				{
-					if (transform.name == target_body_name)
-					{
-						planetariumCam.setTarget(transform);
-						break;
-					}
-				}
-			}
-
-			GUILayout.EndVertical();
 
 			GUILayout.EndHorizontal();
 
@@ -1599,16 +1595,18 @@ namespace KLF
 
 		private void vesselStatusLabels(VesselStatusInfo status, bool big)
 		{
+			bool name_pressed = false;
+
 			playerNameStyle.normal.textColor = status.color * 0.75f + Color.white * 0.25f;
 
 			if (big)
 				GUILayout.BeginHorizontal();
 
 			if (status.ownerName != null)
-				GUILayout.Label(status.ownerName, playerNameStyle);
+				name_pressed |= GUILayout.Button(status.ownerName, playerNameStyle);
 
 			if (status.vesselName != null && status.vesselName.Length > 0)
-				GUILayout.Label(status.vesselName, vesselNameStyle);
+				name_pressed |=  GUILayout.Button(status.vesselName, vesselNameStyle);
 
 			if (big)
 				GUILayout.EndHorizontal();
@@ -1749,6 +1747,25 @@ namespace KLF
 
 			if (sb.Length > 0)
 				GUILayout.Label(sb.ToString(), stateTextStyle);
+
+			//If the name was pressed, then focus on that players' reference body
+			if (name_pressed
+				&& HighLogic.LoadedSceneHasPlanetarium && planetariumCam != null
+					&& status.info != null
+					&& status.info.bodyName.Length > 0)
+			{
+				if (!MapView.MapIsEnabled)
+					MapView.EnterMapView();
+
+				foreach (Transform transform in planetariumCam.targets)
+				{
+					if (transform.name == status.info.bodyName)
+					{
+						planetariumCam.setTarget(transform);
+						break;
+					}
+				}
+			}
 		}
 
 		private void screenshotWatchButton(String name)
