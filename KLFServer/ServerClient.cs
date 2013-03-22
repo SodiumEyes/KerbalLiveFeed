@@ -59,10 +59,15 @@ namespace KLFServer
 		public object watchPlayerNameLock = new object();
 		public object sharedCraftLock = new object();
 
+		public byte[] receiveBuffer = new byte[8192];
+		public int receiveIndex = 0;
+		public int receiveHandleIndex = 0;
+
 		public byte[] currentMessageHeader = new byte[KLFCommon.MSG_HEADER_LENGTH];
 		public int currentMessageHeaderIndex;
 		public byte[] currentMessageData;
 		public int currentMessageDataIndex;
+
 		public KLFCommon.ClientMessageID currentMessageID;
 
 		public Queue<byte[]> queuedOutMessages;
@@ -136,13 +141,16 @@ namespace KLFServer
 				if (tcpClient != null)
 				{
 					currentMessageHeaderIndex = 0;
+					currentMessageDataIndex = 0;
+					receiveIndex = 0;
+					receiveHandleIndex = 0;
 
 					tcpClient.GetStream().BeginRead(
-						currentMessageHeader,
-						0,
-						currentMessageHeader.Length,
-						asyncReadHeader,
-						currentMessageHeader);
+						receiveBuffer,
+						receiveIndex,
+						receiveBuffer.Length - receiveIndex,
+						asyncReceive,
+						receiveBuffer);
 				}
 			}
 			catch (InvalidOperationException)
@@ -157,59 +165,26 @@ namespace KLFServer
 			}
 		}
 
-		private void asyncReadHeader(IAsyncResult result)
+		private void asyncReceive(IAsyncResult result)
 		{
 			try
 			{
 				int read = tcpClient.GetStream().EndRead(result);
 
 				if (read > 0)
+				{
+					receiveIndex += read;
+
 					updateReceiveTimestamp();
-
-				currentMessageHeaderIndex += read;
-				if (currentMessageHeaderIndex >= currentMessageHeader.Length)
-				{
-					int id_int = KLFCommon.intFromBytes(currentMessageHeader, 0);
-
-					//Make sure the message id section of the header is a valid value
-					if (id_int >= 0 && id_int < Enum.GetValues(typeof(KLFCommon.ClientMessageID)).Length)
-						currentMessageID = (KLFCommon.ClientMessageID)id_int;
-					else
-						currentMessageID = KLFCommon.ClientMessageID.NULL;
-
-					int data_length = KLFCommon.intFromBytes(currentMessageHeader, 4);
-
-					if (data_length > 0)
-					{
-						//Begin the read for the message data
-						currentMessageData = new byte[data_length];
-						currentMessageDataIndex = 0;
-
-						tcpClient.GetStream().BeginRead(
-							currentMessageData,
-							0,
-							currentMessageData.Length,
-							asyncReadData,
-							currentMessageData);
-					}
-					else
-					{
-						messageReceived(currentMessageID, null);
-						beginAsyncRead(); //Begin the read for the next packet
-					}
-				}
-				else
-				{
-					//Begin an async read for the rest of the header
-					tcpClient.GetStream().BeginRead(
-						currentMessageHeader,
-						currentMessageHeaderIndex,
-						currentMessageHeader.Length - currentMessageHeaderIndex,
-						asyncReadHeader,
-						currentMessageHeader);
+					handleReceive();
 				}
 
-					
+				tcpClient.GetStream().BeginRead(
+					receiveBuffer,
+					receiveIndex,
+					receiveBuffer.Length - receiveIndex,
+					asyncReceive,
+					receiveBuffer);
 			}
 			catch (InvalidOperationException)
 			{
@@ -221,46 +196,93 @@ namespace KLFServer
 			{
 				parent.passExceptionToMain(e);
 			}
+
 		}
 
-		private void asyncReadData(IAsyncResult result)
+		private void handleReceive()
 		{
-			try
+	
+			while (receiveHandleIndex < receiveIndex)
 			{
 
-				int read = tcpClient.GetStream().EndRead(result);
-
-				if (read > 0)
-					updateReceiveTimestamp();
-
-				currentMessageDataIndex += read;
-				if (currentMessageDataIndex >= currentMessageData.Length)
+				//Read header bytes
+				if (currentMessageHeaderIndex < KLFCommon.MSG_HEADER_LENGTH)
 				{
-					messageReceived(currentMessageID, currentMessageData);
-					beginAsyncRead(); //Begin the read for the next packet
+					//Determine how many header bytes can be read
+					int bytes_to_read = Math.Min(receiveIndex - receiveHandleIndex, KLFCommon.MSG_HEADER_LENGTH - currentMessageHeaderIndex);
+
+					//Read header bytes
+					Array.Copy(receiveBuffer, receiveHandleIndex, currentMessageHeader, currentMessageHeaderIndex, bytes_to_read);
+
+					//Advance buffer indices
+					currentMessageHeaderIndex += bytes_to_read;
+					receiveHandleIndex += bytes_to_read;
+
+					//Handle header
+					if (currentMessageHeaderIndex >= KLFCommon.MSG_HEADER_LENGTH)
+					{
+						int id_int = KLFCommon.intFromBytes(currentMessageHeader, 0);
+
+						//Make sure the message id section of the header is a valid value
+						if (id_int >= 0 && id_int < Enum.GetValues(typeof(KLFCommon.ClientMessageID)).Length)
+							currentMessageID = (KLFCommon.ClientMessageID)id_int;
+						else
+							currentMessageID = KLFCommon.ClientMessageID.NULL;
+
+						int data_length = KLFCommon.intFromBytes(currentMessageHeader, 4);
+
+						if (data_length > 0)
+						{
+							//Init message data buffer
+							currentMessageData = new byte[data_length];
+							currentMessageDataIndex = 0;
+						}
+						else
+						{
+							currentMessageData = null;
+							//Handle received message
+							messageReceived(currentMessageID, null);
+
+							//Prepare for the next header read
+							currentMessageHeaderIndex = 0;
+						}
+					}
 				}
-				else
+
+				if (currentMessageData != null)
 				{
-					//Begin an async read for the rest of the data
-					tcpClient.GetStream().BeginRead(
-						currentMessageData,
-						currentMessageDataIndex,
-						currentMessageData.Length - currentMessageDataIndex,
-						asyncReadData,
-						currentMessageData);
+					//Read data bytes
+					if (currentMessageDataIndex < currentMessageData.Length)
+					{
+						//Determine how many data bytes can be read
+						int bytes_to_read = Math.Min(receiveIndex - receiveHandleIndex, currentMessageData.Length - currentMessageDataIndex);
+
+						//Read data bytes
+						Array.Copy(receiveBuffer, receiveHandleIndex, currentMessageData, currentMessageDataIndex, bytes_to_read);
+
+						//Advance buffer indices
+						currentMessageDataIndex += bytes_to_read;
+						receiveHandleIndex += bytes_to_read;
+
+						//Handle data
+						if (currentMessageDataIndex >= currentMessageData.Length)
+						{
+							//Handle received message
+							messageReceived(currentMessageID, currentMessageData);
+
+							currentMessageData = null;
+
+							//Prepare for the next header read
+							currentMessageHeaderIndex = 0;
+						}
+					}
 				}
 
 			}
-			catch (InvalidOperationException)
-			{
-			}
-			catch (System.IO.IOException)
-			{
-			}
-			catch (Exception e)
-			{
-				parent.passExceptionToMain(e);
-			}
+
+			//Once all receive bytes have been handled, reset buffer indices to use the whole buffer again
+			receiveHandleIndex = 0;
+			receiveIndex = 0;
 		}
 
 		private void messageReceived(KLFCommon.ClientMessageID id, byte[] data)
