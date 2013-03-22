@@ -337,8 +337,6 @@ namespace KLFServer
 								next_message.Length,
 								asyncSend,
 								next_message);
-
-							Console.WriteLine("write single " + next_message.Length);
 						}
 						else if (next_message.Length <= (send_buffer.Length - send_buffer_index))
 						{
@@ -358,8 +356,6 @@ namespace KLFServer
 								asyncSend,
 								next_message);
 
-							Console.WriteLine("write " + send_buffer_index);
-
 							send_buffer_index = 0;
 							send_buffer = new byte[SEND_BUFFER_SIZE];
 						}
@@ -374,8 +370,6 @@ namespace KLFServer
 							send_buffer_index,
 							asyncSend,
 							next_message);
-
-						Console.WriteLine("write " + send_buffer_index);
 					}
 				}
 			}
