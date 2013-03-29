@@ -192,6 +192,9 @@ namespace KLFServer
 			catch (System.IO.IOException)
 			{
 			}
+			catch (ThreadAbortException)
+			{
+			}
 			catch (Exception e)
 			{
 				parent.passExceptionToMain(e);
@@ -297,6 +300,9 @@ namespace KLFServer
 			{
 			}
 			catch (System.IO.IOException)
+			{
+			}
+			catch (ThreadAbortException)
 			{
 			}
 			catch (Exception e)

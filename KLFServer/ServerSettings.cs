@@ -12,6 +12,7 @@ namespace KLFServer
 	{
 		public const String SERVER_CONFIG_FILENAME = "KLFServerConfig.txt";
 		public const String PORT_LABEL = "port";
+		public const String HTTP_PORT_LABEL = "httpPort";
 		public const String MAX_CLIENTS_LABEL = "maxClients";
 		public const String JOIN_MESSAGE_LABEL = "joinMessage";
 		public const String UPDATES_PER_SECOND_LABEL = "updatesPerSecond";
@@ -22,6 +23,7 @@ namespace KLFServer
 		public const String SCREENSHOT_HEIGHT_LABEL = "screenshotHeight";
 
 		public int port = 2075;
+		public int httpPort = 80;
 		public int maxClients = 32;
 		public float updatesPerSecond = 5;
 		public int screenshotInterval = 3000;
@@ -55,6 +57,11 @@ namespace KLFServer
 			return val >= MIN_SCREENSHOT_INTERVAL && val <= MAX_SCREENSHOT_INTERVAL;
 		}
 
+		public static bool validPort(int port)
+		{
+			return port >= IPEndPoint.MinPort && port <= IPEndPoint.MaxPort;
+		}
+
 		//Config
 
 		public void readConfigFile()
@@ -76,8 +83,14 @@ namespace KLFServer
 						if (label == PORT_LABEL)
 						{
 							int new_port;
-							if (int.TryParse(line, out new_port) && new_port >= IPEndPoint.MinPort && new_port <= IPEndPoint.MaxPort)
+							if (int.TryParse(line, out new_port) && validPort(new_port))
 								port = new_port;
+						}
+						else if (label == HTTP_PORT_LABEL)
+						{
+							int new_port;
+							if (int.TryParse(line, out new_port) && validPort(new_port))
+								httpPort = new_port;
 						}
 						else if (label == MAX_CLIENTS_LABEL)
 						{
@@ -149,6 +162,10 @@ namespace KLFServer
 			//port
 			writer.WriteLine(PORT_LABEL);
 			writer.WriteLine(port);
+
+			//port
+			writer.WriteLine(HTTP_PORT_LABEL);
+			writer.WriteLine(httpPort);
 
 			//max clients
 			writer.WriteLine(MAX_CLIENTS_LABEL);

@@ -69,8 +69,11 @@ namespace KLFServer
 		public Thread listenThread;
 		public Thread commandThread;
 		public Thread connectionThread;
+
 		public TcpListener tcpListener;
 		public UdpClient udpClient;
+
+		public HttpListener httpListener;
 
 		public ServerClient[] clients;
 		public Dictionary<String, int> clientUDPAddressMap;
@@ -214,6 +217,18 @@ namespace KLFServer
 				}
 			}
 
+			if (httpListener != null)
+			{
+				try
+				{
+					httpListener.Stop();
+					httpListener.Close();
+				}
+				catch (ObjectDisposedException)
+				{
+				}
+			}
+
 			if (udpClient != null)
 			{
 				try
@@ -342,6 +357,20 @@ namespace KLFServer
 			commandThread.Start();
 			connectionThread.Start();
 
+			//Begin listening for HTTP requests
+
+			httpListener = new HttpListener();
+			try
+			{
+				httpListener.Prefixes.Add("http://*:" + settings.httpPort + '/');
+				httpListener.Start();
+				httpListener.BeginGetContext(asyncHTTPCallback, httpListener);
+			}
+			catch (Exception e)
+			{
+				stampedConsoleWriteLine("Error starting http server: " + e);
+			}
+
 			while (!quit)
 			{
 				//Check for exceptions that occur in threads
@@ -371,7 +400,7 @@ namespace KLFServer
 			{
 				while (true)
 				{
-					String input = Console.ReadLine();
+					String input = Console.ReadLine().ToLower();
 
 					if (input != null && input.Length > 0)
 					{
@@ -842,6 +871,9 @@ namespace KLFServer
 				udpClient.BeginReceive(asyncUDPReceive, null); //Begin receiving the next message
 
 			}
+			catch (ThreadAbortException)
+			{
+			}
 			catch (Exception e)
 			{
 				passExceptionToMain(e);
@@ -859,6 +891,82 @@ namespace KLFServer
 			}
 
 			return -1;
+		}
+
+		//HTTP
+
+		private void asyncHTTPCallback(IAsyncResult result)
+		{
+			try
+			{
+				HttpListener listener = (HttpListener)result.AsyncState;
+
+				HttpListenerContext context = listener.EndGetContext(result);
+				HttpListenerRequest request = context.Request;
+
+				HttpListenerResponse response = context.Response;
+
+				/*
+				foreach (String key in request.Headers.AllKeys)
+				{
+					stampedConsoleWriteLine("HTTP Request: " + key + " : " + request.Headers[key]);
+				}
+				 */
+
+				//Build response string
+				StringBuilder response_builder = new StringBuilder();
+
+				response_builder.Append("Port: ");
+				response_builder.Append(settings.port);
+				response_builder.Append('\n');
+
+				response_builder.Append("Num Players: ");
+				response_builder.Append(numClients);
+				response_builder.Append('/');
+				response_builder.Append(settings.maxClients);
+				response_builder.Append('\n');
+
+				response_builder.Append("Players: ");
+				for (int i = 0; i < clients.Length; i++)
+				{
+					if (clientIsReady(i))
+						response_builder.Append(clients[i].username);
+				}
+				response_builder.Append('\n');
+
+				response_builder.Append("Updates per Second: ");
+				response_builder.Append(settings.updatesPerSecond);
+				response_builder.Append('\n');
+
+				response_builder.Append("Inactive Ship Limit: ");
+				response_builder.Append(settings.totalInactiveShips);
+				response_builder.Append('\n');
+
+				response_builder.Append("Screenshot Height: ");
+				response_builder.Append(settings.screenshotSettings.maxHeight);
+				response_builder.Append('\n');
+
+				response_builder.Append("Screenshot Save: ");
+				response_builder.Append(settings.saveScreenshots);
+				response_builder.Append('\n');
+
+				//Send response
+				byte[] buffer = System.Text.Encoding.UTF8.GetBytes(response_builder.ToString());
+				response.ContentLength64 = buffer.LongLength;
+				response.OutputStream.Write(buffer, 0, buffer.Length);
+				response.OutputStream.Close();
+
+				//Begin listening for the next http request
+				listener.BeginGetContext(asyncHTTPCallback, listener);
+				
+			}
+			catch (ThreadAbortException)
+			{
+			}
+			catch (Exception e)
+			{
+				passExceptionToMain(e);
+			}
 		}
 
 		//Messages
@@ -1127,7 +1235,9 @@ namespace KLFServer
 
 			if (message_text.Length > 0 && message_text.First() == '!')
 			{
-				if (message_text == "!list")
+				string message_lower = message_text.ToLower();
+
+				if (message_lower == "!list")
 				{
 					//Compile list of usernames
 					sb.Append("Connected users:\n");
@@ -1143,15 +1253,15 @@ namespace KLFServer
 					sendTextMessage(client_index, sb.ToString());
 					return;
 				}
-				else if (message_text == "!quit")
+				else if (message_lower == "!quit")
 				{
 					disconnectClient(client_index, "Requested quit");
 					return;
 				}
-				else if (message_text.Length > (KLFCommon.GET_CRAFT_COMMAND.Length + 1)
-					&& message_text.Substring(0, KLFCommon.GET_CRAFT_COMMAND.Length) == KLFCommon.GET_CRAFT_COMMAND)
+				else if (message_lower.Length > (KLFCommon.GET_CRAFT_COMMAND.Length + 1)
+					&& message_lower.Substring(0, KLFCommon.GET_CRAFT_COMMAND.Length) == KLFCommon.GET_CRAFT_COMMAND)
 				{
-					String player_name = message_text.Substring(KLFCommon.GET_CRAFT_COMMAND.Length + 1);
+					String player_name = message_lower.Substring(KLFCommon.GET_CRAFT_COMMAND.Length + 1);
 
 					//Find the player with the given name
 					int target_index = getClientIndexByName(player_name);

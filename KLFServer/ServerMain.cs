@@ -35,6 +35,12 @@ namespace KLFServer
 				Console.WriteLine(settings.port);
 
 				Console.ForegroundColor = ConsoleColor.Green;
+				Console.Write("HTTP Port: ");
+
+				Console.ResetColor();
+				Console.WriteLine(settings.httpPort);
+
+				Console.ForegroundColor = ConsoleColor.Green;
 				Console.Write("Max Clients: ");
 
 				Console.ResetColor();
@@ -84,8 +90,8 @@ namespace KLFServer
 
 				Console.ResetColor();
 				Console.WriteLine();
-				Console.WriteLine("P: change port, M: change max clients, J: change join message");
-				Console.WriteLine("U: updates per second, IS: total inactive ships");
+				Console.WriteLine("P: change port, HP: change http port, M: change max clients");
+				Console.WriteLine("J: join message, U: updates per second, IS: total inactive ships");
 				Console.WriteLine("SH: screenshot height, SI: screenshot interval, SV: save screenshots");
 				Console.WriteLine("A: toggle auto-restart, H: begin hosting, Q: quit");
 
@@ -100,9 +106,26 @@ namespace KLFServer
 					Console.Write("Enter the Port: ");
 
 					int new_port;
-					if (int.TryParse(Console.ReadLine(), out new_port) && new_port >= IPEndPoint.MinPort && new_port <= IPEndPoint.MaxPort)
+					if (int.TryParse(Console.ReadLine(), out new_port) && ServerSettings.validPort(new_port))
 					{
 						settings.port = new_port;
+						settings.writeConfigFile();
+					}
+					else
+					{
+						Console.WriteLine("Invalid port ["
+							+ IPEndPoint.MinPort + '-'
+							+ IPEndPoint.MaxPort + ']');
+					}
+				}
+				else if (in_string == "hp")
+				{
+					Console.Write("Enter the HTTP Port: ");
+
+					int new_port;
+					if (int.TryParse(Console.ReadLine(), out new_port) && ServerSettings.validPort(new_port))
+					{
+						settings.httpPort = new_port;
 						settings.writeConfigFile();
 					}
 					else
