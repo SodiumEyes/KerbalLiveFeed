@@ -73,6 +73,14 @@ namespace KLF
 		private bool mappingGUIToggleKey = false;
 		private bool mappingScreenshotKey = false;
 
+		public bool globalUIToggle
+		{
+			get
+			{
+				return renderManager == null || renderManager.uiElementsToDisable.Length < 1 || renderManager.uiElementsToDisable[0].active;
+			}
+		}
+
 		public bool shouldDrawGUI
 		{
 			get
@@ -85,8 +93,7 @@ namespace KLF
 					case GameScenes.SPH:
 					case GameScenes.TRACKSTATION:
 					case GameScenes.QUICKFLIGHT:
-						return KLFInfoDisplay.infoDisplayActive
-							&& (renderManager == null || renderManager.uiElementsToDisable.Length < 1 || renderManager.uiElementsToDisable[0].active);
+						return KLFInfoDisplay.infoDisplayActive && globalUIToggle;
 
 					default:
 						return false;
@@ -975,7 +982,7 @@ namespace KLF
 			RenderTexture render_tex = new RenderTexture(w, h, 24);
 			render_tex.useMipMap = false;
 
-			if (Screen.width > w * 2 || Screen.height > h * 2)
+			if (KLFScreenshotDisplay.smoothScreens && (Screen.width > w * 2 || Screen.height > h * 2))
 			{
 				//Blit the full texture to a double-sized texture to improve final quality
 				RenderTexture resize_tex = new RenderTexture(w * 2, h * 2, 24);
@@ -986,6 +993,8 @@ namespace KLF
 			}
 			else
 				Graphics.Blit(full_screen_tex, render_tex); //Blit the screen texture to a render texture
+
+			full_screen_tex = null;
 
 			RenderTexture.active = render_tex;
 			
@@ -1219,6 +1228,7 @@ namespace KLF
 			global_settings.screenshotDisplayWindowX = KLFScreenshotDisplay.windowPos.x;
 			global_settings.screenshotDisplayWindowY = KLFScreenshotDisplay.windowPos.y;
 			global_settings.screenshotKey = KLFScreenshotDisplay.screenshotKey;
+			global_settings.smoothScreens = KLFScreenshotDisplay.smoothScreens;
 
 			global_settings.chatDisplayWindowX = KLFChatDisplay.windowPos.x;
 			global_settings.chatDisplayWindowY = KLFChatDisplay.windowPos.y;
@@ -1261,6 +1271,7 @@ namespace KLF
 						KLFScreenshotDisplay.windowPos.y = global_settings.screenshotDisplayWindowY;
 						if (global_settings.screenshotKey != KeyCode.None)
 							KLFScreenshotDisplay.screenshotKey = global_settings.screenshotKey;
+						KLFScreenshotDisplay.smoothScreens = global_settings.smoothScreens;
 
 						KLFChatDisplay.windowPos.x = global_settings.chatDisplayWindowX;
 						KLFChatDisplay.windowPos.y = global_settings.chatDisplayWindowY;
@@ -1447,13 +1458,16 @@ namespace KLF
 			if (!minimized)
 				GUILayout.BeginHorizontal();
 			
-			KLFInfoDisplay.infoDisplayMinimized = GUILayout.Toggle(KLFInfoDisplay.infoDisplayMinimized, "Minimize", GUI.skin.button);
+			KLFInfoDisplay.infoDisplayMinimized = GUILayout.Toggle(
+				KLFInfoDisplay.infoDisplayMinimized,
+				KLFInfoDisplay.infoDisplayMinimized ? "Max" : "Min",
+				GUI.skin.button);
 
 			if (!minimized)
 			{
 				KLFInfoDisplay.infoDisplayDetailed = GUILayout.Toggle(KLFInfoDisplay.infoDisplayDetailed, "Detail", GUI.skin.button);
 				KLFInfoDisplay.infoDisplayBig = GUILayout.Toggle(KLFInfoDisplay.infoDisplayBig, "Big", GUI.skin.button);
-				KLFInfoDisplay.infoDisplayKeyMap = GUILayout.Toggle(KLFInfoDisplay.infoDisplayKeyMap, "Keys", GUI.skin.button);
+				KLFInfoDisplay.infoDisplayOptions = GUILayout.Toggle(KLFInfoDisplay.infoDisplayOptions, "Options", GUI.skin.button);
 				GUILayout.EndHorizontal();
 
 				KLFInfoDisplay.infoScrollPos = GUILayout.BeginScrollView(KLFInfoDisplay.infoScrollPos);
@@ -1509,11 +1523,23 @@ namespace KLF
 					shareScreenshot();
 				GUILayout.EndHorizontal();
 
-				if (KLFInfoDisplay.infoDisplayKeyMap)
+				if (KLFInfoDisplay.infoDisplayOptions)
 				{
-					GUILayout.Label("Key-Bindings");
+					//Settings
+					GUILayout.Label("Settings");
+
+					GUILayout.BeginHorizontal();
+
+					KLFScreenshotDisplay.smoothScreens = GUILayout.Toggle(
+						KLFScreenshotDisplay.smoothScreens,
+						"Smooth Screenshots",
+						GUI.skin.button);
+
+					GUILayout.EndHorizontal();
 
 					//Key mapping
+					GUILayout.Label("Key-Bindings");
+
 					GUILayout.BeginHorizontal();
 
 					mappingGUIToggleKey = GUILayout.Toggle(

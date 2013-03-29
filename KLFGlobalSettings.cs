@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 
 using UnityEngine;
+using System.Runtime.Serialization;
 
 namespace KLF
 {
@@ -26,5 +27,15 @@ namespace KLF
 
 		public KeyCode guiToggleKey = KeyCode.F7;
 		public KeyCode screenshotKey = KeyCode.F8;
+
+		[OptionalField(VersionAdded = 1)]
+		public bool smoothScreens = true;
+
+		[OnDeserializing]
+		private void SetDefault(StreamingContext sc)
+		{
+			smoothScreens = true;
+		}
+
 	}
 }
