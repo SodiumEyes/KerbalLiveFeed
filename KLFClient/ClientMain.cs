@@ -704,19 +704,21 @@ namespace KLFClient
 
 				if (line.ElementAt(0) == '/')
 				{
-					if (line == "/quit")
+					String line_lower = line.ToLower();
+
+					if (line_lower == "/quit")
 					{
 						intentionalConnectionEnd = true;
 						endSession = true;
 						sendConnectionEndMessage("Quit");
 					}
-					else if (line == "/crash")
+					else if (line_lower == "/crash")
 					{
 						Object o = null;
 						o.ToString();
 					}
-					else if (line.Length > (KLFCommon.SHARE_CRAFT_COMMAND.Length + 1)
-						&& line.Substring(0, KLFCommon.SHARE_CRAFT_COMMAND.Length) == KLFCommon.SHARE_CRAFT_COMMAND)
+					else if (line_lower.Length > (KLFCommon.SHARE_CRAFT_COMMAND.Length + 1)
+						&& line_lower.Substring(0, KLFCommon.SHARE_CRAFT_COMMAND.Length) == KLFCommon.SHARE_CRAFT_COMMAND)
 					{
 						//Share a craft file
 						String craft_name = line.Substring(KLFCommon.SHARE_CRAFT_COMMAND.Length + 1);
