@@ -927,10 +927,19 @@ namespace KLFServer
 				response_builder.Append('\n');
 
 				response_builder.Append("Players: ");
+
+				bool first = true;
 				for (int i = 0; i < clients.Length; i++)
 				{
 					if (clientIsReady(i))
+					{
+						if (first)
+							first = false;
+						else
+							response_builder.Append(", ");
+
 						response_builder.Append(clients[i].username);
+					}
 				}
 				response_builder.Append('\n');
 
