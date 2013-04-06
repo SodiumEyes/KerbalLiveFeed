@@ -763,7 +763,7 @@ namespace KLF
 					if (in_bytes.Length <= KLFScreenshotDisplay.screenshotSettings.maxNumBytes)
 					{
 						if (KLFScreenshotDisplay.texture == null)
-							KLFScreenshotDisplay.texture = new Texture2D(4, 4);
+							KLFScreenshotDisplay.texture = new Texture2D(4, 4, TextureFormat.RGB24, false, true);
 
 						if (KLFScreenshotDisplay.texture.LoadImage(in_bytes))
 						{

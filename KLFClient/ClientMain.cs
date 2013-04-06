@@ -9,7 +9,7 @@ using System.Threading;
 using System.Diagnostics;
 
 using System.IO;
-using System.Runtime.InteropServices;
+using System.Collections.Concurrent;
 
 namespace KLFClient
 {
@@ -98,9 +98,9 @@ namespace KLFClient
 
 		//Plugin Interop
 
-		public static Queue<byte[]> pluginUpdateInQueue;
-		public static Queue<InTextMessage> textMessageQueue;
-		public static Queue<String> pluginChatInQueue;
+		public static ConcurrentQueue<byte[]> pluginUpdateInQueue;
+		public static ConcurrentQueue<InTextMessage> textMessageQueue;
+		public static ConcurrentQueue<String> pluginChatInQueue;
 		public static long lastChatInWriteTime;
 		public static long lastScreenshotShareTime;
 		public static byte[] queuedInScreenshot;
@@ -122,11 +122,8 @@ namespace KLFClient
 		//Threading
 
 		public static object tcpSendLock = new object();
-		public static object pluginUpdateInLock = new object();
-		public static object textMessageQueueLock = new object();
 		public static object serverSettingsLock = new object();
 		public static object screenshotInLock = new object();
-		public static object pluginChatInLock = new object();
 		public static object threadExceptionLock = new object();
 		public static object clientDataLock = new object();
 		public static object udpTimestampLock = new object();
@@ -347,9 +344,9 @@ namespace KLFClient
 					intentionalConnectionEnd = false;
 					handshakeCompleted = false;
 
-					pluginUpdateInQueue = new Queue<byte[]>();
-					textMessageQueue = new Queue<InTextMessage>();
-					pluginChatInQueue = new Queue<string>();
+					pluginUpdateInQueue = new ConcurrentQueue<byte[]>();
+					textMessageQueue = new ConcurrentQueue<InTextMessage>();
+					pluginChatInQueue = new ConcurrentQueue<string>();
 
 					threadException = null;
 
@@ -520,10 +517,7 @@ namespace KLFClient
 					endSession = true;
 					intentionalConnectionEnd = true;
 
-					lock (pluginChatInLock)
-					{
-						enqueuePluginChatMessage("Server refused connection. Reason: " + refusal_message, true);
-					}
+					enqueuePluginChatMessage("Server refused connection. Reason: " + refusal_message, true);
 
 					break;
 
@@ -549,10 +543,7 @@ namespace KLFClient
 					if (data != null)
 					{
 						//Add the update the queue
-						lock (pluginUpdateInLock)
-						{
-							pluginUpdateInQueue.Enqueue(data);
-						}
+						pluginUpdateInQueue.Enqueue(data);
 					}
 
 					break;
@@ -617,10 +608,7 @@ namespace KLFClient
 					//If the reason is not a timeout, connection end is intentional
 					intentionalConnectionEnd = message.ToLower() != "timeout";
 
-					lock (pluginChatInLock)
-					{
-						enqueuePluginChatMessage("Server closed the connection: " + message, true);
-					}
+					enqueuePluginChatMessage("Server closed the connection: " + message, true);
 
 					break;
 
@@ -694,11 +682,8 @@ namespace KLFClient
 			{
 				if (quitHelperMessageShow && (line == "q" || line == "Q"))
 				{
-					lock (pluginChatInLock)
-					{
-						Console.WriteLine();
-						enqueuePluginChatMessage("If you are trying to quit, use the /quit command.", true);
-					}
+					Console.WriteLine();
+					enqueuePluginChatMessage("If you are trying to quit, use the /quit command.", true);
 					quitHelperMessageShow = false;
 				}
 
@@ -931,13 +916,13 @@ namespace KLFClient
 					if (sb.Length == 0)
 					{
 						//Handle incoming messages
-						lock (textMessageQueueLock)
+						try
 						{
-							try
+							while (textMessageQueue.Count > 0)
 							{
-								while (textMessageQueue.Count > 0)
+								InTextMessage message;
+								if (textMessageQueue.TryDequeue(out message))
 								{
-									InTextMessage message = textMessageQueue.Dequeue();
 									if (message.fromServer)
 									{
 										Console.ForegroundColor = ConsoleColor.Green;
@@ -947,10 +932,12 @@ namespace KLFClient
 
 									Console.WriteLine(message.message);
 								}
+								else
+									break;
 							}
-							catch (System.IO.IOException)
-							{
-							}
+						}
+						catch (System.IO.IOException)
+						{
 						}
 					}
 
@@ -1098,66 +1085,66 @@ namespace KLFClient
 		static void writeQueuedUpdates()
 		{
 			//Pass queued updates to plugin
-			lock (pluginUpdateInLock) {
+			if (!File.Exists(IN_FILENAME) && pluginUpdateInQueue.Count > 0)
+			{
 
-				if (!File.Exists(IN_FILENAME) && pluginUpdateInQueue.Count > 0)
+				FileStream in_stream = null;
+
+				try
 				{
+					in_stream = File.Create(IN_FILENAME);
 
-					FileStream in_stream = null;
+					//Write the file format version
+					in_stream.Write(KLFCommon.intToBytes(KLFCommon.FILE_FORMAT_VERSION), 0, 4);
 
-					try
+					//Write the updates to the file
+					while (pluginUpdateInQueue.Count > 0)
 					{
-						in_stream = File.Create(IN_FILENAME);
-
-						//Write the file format version
-						in_stream.Write(KLFCommon.intToBytes(KLFCommon.FILE_FORMAT_VERSION), 0, 4);
-
-						//Write the updates to the file
-						while (pluginUpdateInQueue.Count > 0)
-						{
-							byte[] update = pluginUpdateInQueue.Dequeue();
-							if (update != null)
-								in_stream.Write(update, 0, update.Length);
-						}
-
-					}
-					catch (System.IO.FileNotFoundException)
-					{
-					}
-					catch (System.UnauthorizedAccessException)
-					{
-					}
-					catch (System.IO.DirectoryNotFoundException)
-					{
-					}
-					catch (System.InvalidOperationException)
-					{
-					}
-					catch (System.IO.IOException)
-					{
-					}
-					finally
-					{
-						if (in_stream != null)
-							in_stream.Close();
+						byte[] update;
+						if (!pluginUpdateInQueue.TryDequeue(out update))
+							in_stream.Write(update, 0, update.Length);
+						else
+							break;
 					}
 
 				}
-				else
+				catch (System.IO.FileNotFoundException)
 				{
-					int max_queue_size = 0;
-					//Don't let the update queue get insanely large
-					lock (serverSettingsLock)
-					{
-						max_queue_size = maxQueuedUpdates;
-					}
-
-					while (pluginUpdateInQueue.Count > max_queue_size)
-					{
-						pluginUpdateInQueue.Dequeue();
-					}
+				}
+				catch (System.UnauthorizedAccessException)
+				{
+				}
+				catch (System.IO.DirectoryNotFoundException)
+				{
+				}
+				catch (System.InvalidOperationException)
+				{
+				}
+				catch (System.IO.IOException)
+				{
+				}
+				finally
+				{
+					if (in_stream != null)
+						in_stream.Close();
 				}
 
+			}
+			else
+			{
+				int max_queue_size = 0;
+				//Don't let the update queue get insanely large
+				lock (serverSettingsLock)
+				{
+					max_queue_size = maxQueuedUpdates;
+				}
+
+				while (pluginUpdateInQueue.Count > max_queue_size)
+				{
+					byte[] update;
+					if (!pluginUpdateInQueue.TryDequeue(out update))
+						break;
+				}
 			}
 		}
 
@@ -1306,50 +1293,52 @@ namespace KLFClient
 
 			if (pluginChatInQueue.Count > 0 && !File.Exists(CHAT_IN_FILENAME))
 			{
-				lock (pluginChatInLock)
+				FileStream in_stream = null;
+				//Write chat in
+				try
 				{
+					in_stream = File.OpenWrite(CHAT_IN_FILENAME);
 
-					FileStream in_stream = null;
-					//Write chat in
-					try
+					UnicodeEncoding encoder = new UnicodeEncoding();
+
+					while (pluginChatInQueue.Count > 0)
 					{
-						in_stream = File.OpenWrite(CHAT_IN_FILENAME);
-
-						UnicodeEncoding encoder = new UnicodeEncoding();
-
-						while (pluginChatInQueue.Count > 0)
+						String chat_line;
+						if (pluginChatInQueue.TryDequeue(out chat_line))
 						{
-							byte[] bytes = encoder.GetBytes(pluginChatInQueue.Dequeue());
+							byte[] bytes = encoder.GetBytes(chat_line);
 							in_stream.Write(bytes, 0, bytes.Length);
 
 							bytes = encoder.GetBytes("\n");
 							in_stream.Write(bytes, 0, bytes.Length);
 						}
-
-					}
-					catch (System.IO.FileNotFoundException)
-					{
-					}
-					catch (System.UnauthorizedAccessException)
-					{
-					}
-					catch (System.IO.DirectoryNotFoundException)
-					{
-					}
-					catch (System.InvalidOperationException)
-					{
-					}
-					catch (System.IO.IOException)
-					{
-					}
-					finally
-					{
-						if (in_stream != null)
-							in_stream.Close();
+						else
+							break;
 					}
 
-					success = true;
 				}
+				catch (System.IO.FileNotFoundException)
+				{
+				}
+				catch (System.UnauthorizedAccessException)
+				{
+				}
+				catch (System.IO.DirectoryNotFoundException)
+				{
+				}
+				catch (System.InvalidOperationException)
+				{
+				}
+				catch (System.IO.IOException)
+				{
+				}
+				finally
+				{
+					if (in_stream != null)
+						in_stream.Close();
+				}
+
+				success = true;
 				
 			}
 
@@ -1416,32 +1405,33 @@ namespace KLFClient
 
 		static void enqueueTextMessage(InTextMessage message, bool to_plugin = true)
 		{
-			lock (textMessageQueueLock)
+			//Dequeue an old text message if there are a lot of messages backed up
+			if (textMessageQueue.Count >= MAX_TEXT_MESSAGE_QUEUE)
 			{
-				//Dequeue an old text message if there are a lot of messages backed up
-				if (textMessageQueue.Count >= MAX_TEXT_MESSAGE_QUEUE)
-					textMessageQueue.Dequeue();
-
-				textMessageQueue.Enqueue(message);
+				InTextMessage old_message;
+				textMessageQueue.TryDequeue(out old_message);
 			}
+
+			textMessageQueue.Enqueue(message);
 
 			if (to_plugin)
 			{
-				lock (pluginChatInLock)
-				{
-					if (message.fromServer)
-						enqueuePluginChatMessage("[Server] " + message.message);
-					else
-						enqueuePluginChatMessage(message.message);
-				}
+				if (message.fromServer)
+					enqueuePluginChatMessage("[Server] " + message.message);
+				else
+					enqueuePluginChatMessage(message.message);
 			}
 		}
 
 		static void enqueuePluginChatMessage(String message, bool print = false)
 		{
 			pluginChatInQueue.Enqueue(message);
+
 			while (pluginChatInQueue.Count > MAX_QUEUED_CHAT_LINES)
-				pluginChatInQueue.Dequeue();
+			{
+				String old_message;
+				pluginChatInQueue.TryDequeue(out old_message);
+			}
 
 			if (print)
 				Console.WriteLine(message);
