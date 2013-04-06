@@ -392,13 +392,6 @@ namespace KLFServer
 		public void queueOutgoingMessage(byte[] message_bytes)
 		{
 			queuedOutMessages.Enqueue(message_bytes);
-			/*
-			//Queue the message for sending
-			lock (outgoingMessageLock)
-			{
-				queuedOutMessages.Enqueue(message_bytes);
-			}
-			 */
 		}
 
 		internal void startReceivingMessages()

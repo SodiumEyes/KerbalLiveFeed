@@ -22,6 +22,12 @@ namespace KLFClient
 			public String message;
 		}
 
+		public struct ServerMessage
+		{
+			public KLFCommon.ServerMessageID id;
+			public byte[] data;
+		}
+
 		//Constants
 
 		public const String USERNAME_LABEL = "username";
@@ -43,7 +49,7 @@ namespace KLFClient
 		public const int MAX_USERNAME_LENGTH = 16;
 		public const int MAX_TEXT_MESSAGE_QUEUE = 128;
 		public const long KEEPALIVE_DELAY = 2000;
-		public const long UDP_PROBE_DELAY = 2000;
+		public const long UDP_PROBE_DELAY = 1000;
 		public const long UDP_TIMEOUT_DELAY = 8000;
 		public const int SLEEP_TIME = 15;
 		public const int CHAT_IN_WRITE_INTERVAL = 500;
@@ -113,11 +119,17 @@ namespace KLFClient
 
 		//Messages
 
+		public static ConcurrentQueue<ServerMessage> receivedMessageQueue;
+
 		public static byte[] currentMessageHeader = new byte[KLFCommon.MSG_HEADER_LENGTH];
 		public static int currentMessageHeaderIndex;
 		public static byte[] currentMessageData;
 		public static int currentMessageDataIndex;
 		public static KLFCommon.ServerMessageID currentMessageID;
+
+		private static byte[] receiveBuffer = new byte[8192];
+		private static int receiveIndex = 0;
+		private static int receiveHandleIndex = 0;
 
 		//Threading
 
@@ -347,6 +359,8 @@ namespace KLFClient
 					pluginUpdateInQueue = new ConcurrentQueue<byte[]>();
 					textMessageQueue = new ConcurrentQueue<InTextMessage>();
 					pluginChatInQueue = new ConcurrentQueue<string>();
+
+					receivedMessageQueue = new ConcurrentQueue<ServerMessage>();
 
 					threadException = null;
 
@@ -819,6 +833,16 @@ namespace KLFClient
 					//Send a keep-alive message to prevent timeout
 					if (stopwatch.ElapsedMilliseconds - lastTCPMessageSendTime >= KEEPALIVE_DELAY)
 						sendMessageTCP(KLFCommon.ClientMessageID.KEEPALIVE, null);
+
+					//Handle received messages
+					while (receivedMessageQueue.Count > 0)
+					{
+						ServerMessage message;
+						if (receivedMessageQueue.TryDequeue(out message))
+							handleMessage(message.id, message.data);
+						else
+							break;
+					}
 
 					if (udpSocket != null && handshakeCompleted)
 					{
@@ -1571,13 +1595,16 @@ namespace KLFClient
 				if (tcpClient != null)
 				{
 					currentMessageHeaderIndex = 0;
+					currentMessageDataIndex = 0;
+					receiveIndex = 0;
+					receiveHandleIndex = 0;
 
 					tcpClient.GetStream().BeginRead(
-						currentMessageHeader,
-						0,
-						currentMessageHeader.Length,
-						asyncReadHeader,
-						currentMessageHeader);
+						receiveBuffer,
+						receiveIndex,
+						receiveBuffer.Length - receiveIndex,
+						asyncReceive,
+						receiveBuffer);
 				}
 			}
 			catch (InvalidOperationException)
@@ -1592,6 +1619,138 @@ namespace KLFClient
 			}
 		}
 
+		private static void asyncReceive(IAsyncResult result)
+		{
+			try
+			{
+				int read = tcpClient.GetStream().EndRead(result);
+
+				if (read > 0)
+				{
+					receiveIndex += read;
+
+					handleReceive();
+				}
+
+				tcpClient.GetStream().BeginRead(
+					receiveBuffer,
+					receiveIndex,
+					receiveBuffer.Length - receiveIndex,
+					asyncReceive,
+					receiveBuffer);
+			}
+			catch (InvalidOperationException)
+			{
+			}
+			catch (System.IO.IOException)
+			{
+			}
+			catch (ThreadAbortException)
+			{
+			}
+			catch (Exception e)
+			{
+				passExceptionToMain(e);
+			}
+
+		}
+
+		private static void handleReceive()
+		{
+
+			while (receiveHandleIndex < receiveIndex)
+			{
+
+				//Read header bytes
+				if (currentMessageHeaderIndex < KLFCommon.MSG_HEADER_LENGTH)
+				{
+					//Determine how many header bytes can be read
+					int bytes_to_read = Math.Min(receiveIndex - receiveHandleIndex, KLFCommon.MSG_HEADER_LENGTH - currentMessageHeaderIndex);
+
+					//Read header bytes
+					Array.Copy(receiveBuffer, receiveHandleIndex, currentMessageHeader, currentMessageHeaderIndex, bytes_to_read);
+
+					//Advance buffer indices
+					currentMessageHeaderIndex += bytes_to_read;
+					receiveHandleIndex += bytes_to_read;
+
+					//Handle header
+					if (currentMessageHeaderIndex >= KLFCommon.MSG_HEADER_LENGTH)
+					{
+						int id_int = KLFCommon.intFromBytes(currentMessageHeader, 0);
+
+						//Make sure the message id section of the header is a valid value
+						if (id_int >= 0 && id_int < Enum.GetValues(typeof(KLFCommon.ServerMessageID)).Length)
+							currentMessageID = (KLFCommon.ServerMessageID)id_int;
+						else
+							currentMessageID = KLFCommon.ServerMessageID.NULL;
+
+						int data_length = KLFCommon.intFromBytes(currentMessageHeader, 4);
+
+						if (data_length > 0)
+						{
+							//Init message data buffer
+							currentMessageData = new byte[data_length];
+							currentMessageDataIndex = 0;
+						}
+						else
+						{
+							currentMessageData = null;
+							//Handle received message
+							messageReceived(currentMessageID, null);
+
+							//Prepare for the next header read
+							currentMessageHeaderIndex = 0;
+						}
+					}
+				}
+
+				if (currentMessageData != null)
+				{
+					//Read data bytes
+					if (currentMessageDataIndex < currentMessageData.Length)
+					{
+						//Determine how many data bytes can be read
+						int bytes_to_read = Math.Min(receiveIndex - receiveHandleIndex, currentMessageData.Length - currentMessageDataIndex);
+
+						//Read data bytes
+						Array.Copy(receiveBuffer, receiveHandleIndex, currentMessageData, currentMessageDataIndex, bytes_to_read);
+
+						//Advance buffer indices
+						currentMessageDataIndex += bytes_to_read;
+						receiveHandleIndex += bytes_to_read;
+
+						//Handle data
+						if (currentMessageDataIndex >= currentMessageData.Length)
+						{
+							//Handle received message
+							messageReceived(currentMessageID, currentMessageData);
+
+							currentMessageData = null;
+
+							//Prepare for the next header read
+							currentMessageHeaderIndex = 0;
+						}
+					}
+				}
+
+			}
+
+			//Once all receive bytes have been handled, reset buffer indices to use the whole buffer again
+			receiveHandleIndex = 0;
+			receiveIndex = 0;
+		}
+
+		private static void messageReceived(KLFCommon.ServerMessageID id, byte[] data)
+		{
+			ServerMessage message;
+			message.id = id;
+			message.data = data;
+
+			receivedMessageQueue.Enqueue(message);
+		}
+
+		/*
 		private static void asyncReadHeader(IAsyncResult result)
 		{
 			try
@@ -1692,6 +1851,7 @@ namespace KLFClient
 				passExceptionToMain(e);
 			}
 		}
+		 */
 
 		private static void sendHandshakeMessage()
 		{
