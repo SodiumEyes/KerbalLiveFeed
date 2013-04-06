@@ -1125,7 +1125,7 @@ namespace KLFClient
 					while (pluginUpdateInQueue.Count > 0)
 					{
 						byte[] update;
-						if (!pluginUpdateInQueue.TryDequeue(out update))
+						if (pluginUpdateInQueue.TryDequeue(out update))
 							in_stream.Write(update, 0, update.Length);
 						else
 							break;
