@@ -42,8 +42,12 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="KLFCommon.cs" />
-    <Compile Include="ScreenshotSettings.cs" />
+    <Compile Include="..\KLFCommon.cs">
+      <Link>KLFCommon.cs</Link>
+    </Compile>
+    <Compile Include="..\ScreenshotSettings.cs">
+      <Link>ScreenshotSettings.cs</Link>
+    </Compile>
     <Compile Include="ServerClient.cs" />
     <Compile Include="Server.cs" />
     <Compile Include="ServerMain.cs" />
