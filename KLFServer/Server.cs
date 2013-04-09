@@ -57,6 +57,7 @@ namespace KLFServer
 		}
 		
 		public bool quit = false;
+		public bool stop = false;
 
 		public String threadExceptionStackTrace;
 		public Exception threadException;
@@ -407,9 +408,11 @@ namespace KLFServer
 
 						if (input.ElementAt(0) == '/')
 						{
-							if (input == "/quit")
+							if (input == "/quit" || input == "/stop")
 							{
 								quit = true;
+								if (input == "/stop")
+									stop = true;
 
 								//Disconnect all clients
 								for (int i = 0; i < clients.Length; i++)
