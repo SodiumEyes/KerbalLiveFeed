@@ -910,15 +910,12 @@ namespace KLFServer
 
 				HttpListenerResponse response = context.Response;
 
-				/*
-				foreach (String key in request.Headers.AllKeys)
-				{
-					stampedConsoleWriteLine("HTTP Request: " + key + " : " + request.Headers[key]);
-				}
-				 */
-
 				//Build response string
 				StringBuilder response_builder = new StringBuilder();
+
+				response_builder.Append("Version: ");
+				response_builder.Append(KLFCommon.PROGRAM_VERSION);
+				response_builder.Append('\n');
 
 				response_builder.Append("Port: ");
 				response_builder.Append(settings.port);
