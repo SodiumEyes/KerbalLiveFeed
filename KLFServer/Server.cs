@@ -369,7 +369,8 @@ namespace KLFServer
 			}
 			catch (Exception e)
 			{
-				stampedConsoleWriteLine("Error starting http server: " + e);
+				stampedConsoleWriteLine("Error starting http server: " + e); //Might need a replacement as HttpListener needs admin rights
+				stampedConsoleWriteLine("Please try running the server as an administrator");
 			}
 
 			while (!quit)
