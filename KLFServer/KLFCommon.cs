@@ -36,7 +36,8 @@ public class KLFCommon
 
 	internal static string filteredFileName(string filename)
 	{
-		const String illegal = "\\/:*?\"<>|";
+		const String illegal = "\\/:*?\"<>|";
+
  		StringBuilder sb = new StringBuilder();
 		foreach (char c in filename)
 		{

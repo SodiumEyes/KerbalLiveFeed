@@ -360,7 +360,7 @@ namespace KLFServer
 
 			//Begin listening for HTTP requests
 
-			httpListener = new HttpListener();
+			httpListener = new HttpListener(); //Might need a replacement as HttpListener needs admin rights
 			try
 			{
 				httpListener.Prefixes.Add("http://*:" + settings.httpPort + '/');
@@ -369,7 +369,7 @@ namespace KLFServer
 			}
 			catch (Exception e)
 			{
-				stampedConsoleWriteLine("Error starting http server: " + e); //Might need a replacement as HttpListener needs admin rights
+				stampedConsoleWriteLine("Error starting http server: " + e);
 				stampedConsoleWriteLine("Please try running the server as an administrator");
 			}
 
