@@ -57,6 +57,7 @@ namespace KLFServer
 		}
 		
 		public bool quit = false;
+		public bool stop = false;
 
 		public String threadExceptionStackTrace;
 		public Exception threadException;
@@ -359,7 +360,7 @@ namespace KLFServer
 
 			//Begin listening for HTTP requests
 
-			httpListener = new HttpListener();
+			httpListener = new HttpListener(); //Might need a replacement as HttpListener needs admin rights
 			try
 			{
 				httpListener.Prefixes.Add("http://*:" + settings.httpPort + '/');
@@ -369,6 +370,7 @@ namespace KLFServer
 			catch (Exception e)
 			{
 				stampedConsoleWriteLine("Error starting http server: " + e);
+				stampedConsoleWriteLine("Please try running the server as an administrator");
 			}
 
 			while (!quit)
@@ -407,9 +409,11 @@ namespace KLFServer
 
 						if (input.ElementAt(0) == '/')
 						{
-							if (input == "/quit")
+							if (input == "/quit" || input == "/stop")
 							{
 								quit = true;
+								if (input == "/stop")
+									stop = true;
 
 								//Disconnect all clients
 								for (int i = 0; i < clients.Length; i++)

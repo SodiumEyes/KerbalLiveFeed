@@ -19,6 +19,7 @@ namespace KLFServer
 		public const String SCREENSHOT_INTERVAL_LABEL = "screenshotInterval";
 		public const String SAVE_SCREENSHOTS_LABEL = "saveScreenshots";
 		public const String AUTO_RESTART_LABEL = "autoRestart";
+		public const String AUTO_HOST_LABEL = "autoHost";
 		public const String TOTAL_INACTIVE_SHIPS_LABEL = "totalInactiveShips";
 		public const String SCREENSHOT_HEIGHT_LABEL = "screenshotHeight";
 
@@ -28,6 +29,7 @@ namespace KLFServer
 		public float updatesPerSecond = 5;
 		public int screenshotInterval = 3000;
 		public bool autoRestart = false;
+		public bool autoHost = false;
 		public bool saveScreenshots = false;
 		public String joinMessage = String.Empty;
 		public byte totalInactiveShips = 10;
@@ -120,6 +122,12 @@ namespace KLFServer
 							if (bool.TryParse(line, out new_val))
 								autoRestart = new_val;
 						}
+						else if (label == AUTO_HOST_LABEL)
+						{
+							bool new_val;
+							if (bool.TryParse(line, out new_val))
+								autoHost = new_val;
+						}
 						else if (label == SAVE_SCREENSHOTS_LABEL)
 						{
 							bool new_val;
@@ -186,6 +194,10 @@ namespace KLFServer
 			//auto-restart
 			writer.WriteLine(AUTO_RESTART_LABEL);
 			writer.WriteLine(autoRestart);
+
+			//auto-host
+			writer.WriteLine(AUTO_HOST_LABEL);
+			writer.WriteLine(autoHost);
 
 			//upnp
 			writer.WriteLine(TOTAL_INACTIVE_SHIPS_LABEL);

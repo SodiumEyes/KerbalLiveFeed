@@ -23,6 +23,7 @@ namespace KLFServer
 
 			ServerSettings settings = new ServerSettings();
 			settings.readConfigFile();
+			bool firstLoop = true;
 
 			while (true)
 			{
@@ -88,14 +89,30 @@ namespace KLFServer
 				Console.ResetColor();
 				Console.WriteLine(settings.autoRestart);
 
+				Console.ForegroundColor = ConsoleColor.Green;
+				Console.Write("Auto-Host: ");
+
+				Console.ResetColor();
+				Console.WriteLine(settings.autoHost);
+
 				Console.ResetColor();
 				Console.WriteLine();
 				Console.WriteLine("P: change port, HP: change http port, M: change max clients");
 				Console.WriteLine("J: join message, U: updates per second, IS: total inactive ships");
 				Console.WriteLine("SH: screenshot height, SI: screenshot interval, SV: save screenshots");
-				Console.WriteLine("A: toggle auto-restart, H: begin hosting, Q: quit");
+				Console.WriteLine("AR: toggle auto-restart, AH: toggle auto-host");
+				Console.WriteLine("H: begin hosting, Q: quit");
 
-				String in_string = Console.ReadLine().ToLower();
+				String in_string;
+				if (settings.autoHost && firstLoop)
+				{
+					in_string = "h";
+				}
+				else
+				{
+					in_string = Console.ReadLine().ToLower();
+				}
+				firstLoop = false;
 
 				if (in_string == "q")
 				{
@@ -221,29 +238,43 @@ namespace KLFServer
 					settings.saveScreenshots = !settings.saveScreenshots;
 					settings.writeConfigFile();
 				}
-				else if (in_string == "a")
+				else if (in_string == "ar")
 				{
 					settings.autoRestart = !settings.autoRestart;
 					settings.writeConfigFile();
 				}
+				else if (in_string == "ah")
+				{
+					settings.autoHost = !settings.autoHost;
+					settings.writeConfigFile();
+				}
 				else if (in_string == "h")
 				{
-					while (hostServer(settings))
+					ServerStatus status = hostServer(settings);
+					while (status == ServerStatus.RESTARTING)
 					{
 						System.Threading.Thread.Sleep(AUTO_RESTART_DELAY);
+						status = hostServer(settings);
 					}
-
-					Console.WriteLine("Press any key to quit");
-					Console.ReadKey();
-
-					break;
+					
+					if (status == ServerStatus.QUIT)
+					{
+						Console.WriteLine("Press any key to quit");
+						Console.ReadKey();
+	
+						break;
+					}
+					else
+					{
+						Console.WriteLine("Server "+Enum.GetName(typeof(ServerStatus), status).ToLower());
+					}
 				}
 
 			}
 
 		}
 
-		static bool hostServer(ServerSettings settings)
+		static ServerStatus hostServer(ServerSettings settings)
 		{
 
 			Server server = new Server(settings);
@@ -279,15 +310,22 @@ namespace KLFServer
 
 				Console.WriteLine();
 				Console.ResetColor();
+				//server.clearState();
+				//return ServerStatus.CRASHED;
 			}
 
 			server.clearState();
 
-			if (!settings.autoRestart || server.quit)
-				return false;
+			if (server.stop)
+				return ServerStatus.STOPPED;
 
-			return true;
+			if (!settings.autoRestart || server.quit)
+				return ServerStatus.QUIT;
+
+			return ServerStatus.RESTARTING;
 		}
-	
+		public enum ServerStatus {
+			STOPPED, QUIT, CRASHED, RESTARTING
+		}
 	}
 }
