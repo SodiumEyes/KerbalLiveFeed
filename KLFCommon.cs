@@ -12,7 +12,7 @@ public class KLFCommon
 	public const int MSG_HEADER_LENGTH = 8;
 	public const int INTEROP_MSG_HEADER_LENGTH = 8;
 
-	public const int SERVER_SETTINGS_LENGTH = 17;
+	public const int SERVER_SETTINGS_LENGTH = 13;
 
 	public const int MAX_CRAFT_FILE_BYTES = 1024 * 1024;
 
@@ -84,7 +84,7 @@ public class KLFCommon
 		SERVER_MESSAGE /*Message text*/,
 		TEXT_MESSAGE /*Message text*/,
 		PLUGIN_UPDATE /*data*/,
-		SERVER_SETTINGS /*UpdateInterval (4) : MaxQueueSize (4) : Screenshot Interval (4) : Screenshot Height (4): InactiveShips (1)*/,
+		SERVER_SETTINGS /*UpdateInterval (4) : Screenshot Interval (4) : Screenshot Height (4): InactiveShips (1)*/,
 		SCREENSHOT_SHARE /*Description Length : Description : data*/,
 		KEEPALIVE,
 		CONNECTION_END /*Message*/,

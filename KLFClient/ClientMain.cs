@@ -82,7 +82,6 @@ namespace KLFClient
 		public static int port = 2075;
 		public static int updateInterval = 500;
 		public static int screenshotInterval = 1000;
-		public static int maxQueuedUpdates = 32;
 		public static bool autoReconnect = true;
 		public static byte inactiveShipsPerUpdate = 0;
 		public static ScreenshotSettings screenshotSettings = new ScreenshotSettings();
@@ -549,16 +548,15 @@ namespace KLFClient
 
 					lock (serverSettingsLock)
 					{
-						if (data != null && data.Length >= KLFCommon.SERVER_SETTINGS_LENGTH)
+						if (data != null && data.Length >= KLFCommon.SERVER_SETTINGS_LENGTH && handshakeCompleted)
 						{
 
 							updateInterval = KLFCommon.intFromBytes(data, 0);
-							maxQueuedUpdates = KLFCommon.intFromBytes(data, 4);
-							screenshotInterval = KLFCommon.intFromBytes(data, 8);
+							screenshotInterval = KLFCommon.intFromBytes(data, 4);
 
 							lock (clientDataLock)
 							{
-								int new_screenshot_height = KLFCommon.intFromBytes(data, 12);
+								int new_screenshot_height = KLFCommon.intFromBytes(data, 8);
 								if (screenshotSettings.maxHeight != new_screenshot_height)
 								{
 									screenshotSettings.maxHeight = new_screenshot_height;
@@ -566,16 +564,15 @@ namespace KLFClient
 									enqueueTextMessage("Screenshot Height has been set to " + screenshotSettings.maxHeight);
 								}
 
-								if (inactiveShipsPerUpdate != data[16])
+								if (inactiveShipsPerUpdate != data[12])
 								{
-									inactiveShipsPerUpdate = data[16];
+									inactiveShipsPerUpdate = data[12];
 									lastClientDataChangeTime = stopwatch.ElapsedMilliseconds;
 								}
 							}
 
 							/*
 							Console.WriteLine("Update interval: " + updateInterval);
-							Console.WriteLine("Max queued updates: " + maxQueuedUpdates);
 							Console.WriteLine("Screenshot interval: " + screenshotInterval);
 							Console.WriteLine("Inactive ships per update: " + inactiveShipsPerUpdate);
 							 */
@@ -595,14 +592,17 @@ namespace KLFClient
 
 				case KLFCommon.ServerMessageID.CONNECTION_END:
 
-					String message = encoder.GetString(data, 0, data.Length);
+					if (data != null)
+					{
+						String message = encoder.GetString(data, 0, data.Length);
 
-					endSession = true;
+						endSession = true;
 
-					//If the reason is not a timeout, connection end is intentional
-					intentionalConnectionEnd = message.ToLower() != "timeout";
+						//If the reason is not a timeout, connection end is intentional
+						intentionalConnectionEnd = message.ToLower() != "timeout";
 
-					enqueuePluginChatMessage("Server closed the connection: " + message, true);
+						enqueuePluginChatMessage("Server closed the connection: " + message, true);
+					}
 
 					break;
 

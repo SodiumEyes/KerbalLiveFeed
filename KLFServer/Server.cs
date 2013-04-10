@@ -119,14 +119,6 @@ namespace KLFServer
 			}
 		}
 
-		public int maxQueuedUpdates
-		{
-			get
-			{
-				return Math.Max((numClients - 1) * 2, 4);
-			}
-		}
-
 		public byte inactiveShipsPerClient
 		{
 			get
@@ -1059,6 +1051,7 @@ namespace KLFServer
 						clients[client_index].receivedHandshake = true;
 
 						sendServerMessage(client_index, sb.ToString());
+						sendServerSettings(client_index);
 
 						stampedConsoleWriteLine(username + " has joined the server using client version " + version);
 
@@ -1551,10 +1544,9 @@ namespace KLFServer
 			byte[] bytes = new byte[KLFCommon.SERVER_SETTINGS_LENGTH];
 
 			KLFCommon.intToBytes(updateInterval).CopyTo(bytes, 0); //Update interval
-			KLFCommon.intToBytes(maxQueuedUpdates).CopyTo(bytes, 4); //Max update queue
-			KLFCommon.intToBytes(settings.screenshotInterval).CopyTo(bytes, 8); //Screenshot interval
-			KLFCommon.intToBytes(settings.screenshotSettings.maxHeight).CopyTo(bytes, 12); //Screenshot height
-			bytes[16] = inactiveShipsPerClient; //Inactive ships per client
+			KLFCommon.intToBytes(settings.screenshotInterval).CopyTo(bytes, 4); //Screenshot interval
+			KLFCommon.intToBytes(settings.screenshotSettings.maxHeight).CopyTo(bytes, 8); //Screenshot height
+			bytes[12] = inactiveShipsPerClient; //Inactive ships per client
 
 			return bytes;
 		}
