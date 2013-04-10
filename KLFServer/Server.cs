@@ -934,6 +934,10 @@ namespace KLFServer
 				}
 				response_builder.Append('\n');
 
+				response_builder.Append("Information: ");
+				response_builder.Append(settings.serverInfo);
+				response_builder.Append('\n');
+
 				response_builder.Append("Updates per Second: ");
 				response_builder.Append(settings.updatesPerSecond);
 				response_builder.Append('\n');

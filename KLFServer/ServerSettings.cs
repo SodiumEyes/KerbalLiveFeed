@@ -15,6 +15,7 @@ namespace KLFServer
 		public const String HTTP_PORT_LABEL = "httpPort";
 		public const String MAX_CLIENTS_LABEL = "maxClients";
 		public const String JOIN_MESSAGE_LABEL = "joinMessage";
+		public const String SERVER_INFO_LABEL = "serverInfo";
 		public const String UPDATES_PER_SECOND_LABEL = "updatesPerSecond";
 		public const String SCREENSHOT_INTERVAL_LABEL = "screenshotInterval";
 		public const String SAVE_SCREENSHOTS_LABEL = "saveScreenshots";
@@ -32,6 +33,7 @@ namespace KLFServer
 		public bool autoHost = false;
 		public bool saveScreenshots = false;
 		public String joinMessage = String.Empty;
+		public String serverInfo = String.Empty;
 		public byte totalInactiveShips = 10;
 		public ScreenshotSettings screenshotSettings = new ScreenshotSettings();
 
@@ -103,6 +105,10 @@ namespace KLFServer
 						else if (label == JOIN_MESSAGE_LABEL)
 						{
 							joinMessage = line;
+						}
+						else if (label == SERVER_INFO_LABEL)
+						{
+							serverInfo = line;
 						}
 						else if (label == UPDATES_PER_SECOND_LABEL)
 						{
@@ -182,6 +188,10 @@ namespace KLFServer
 			//join message
 			writer.WriteLine(JOIN_MESSAGE_LABEL);
 			writer.WriteLine(joinMessage);
+
+			//server info
+			writer.WriteLine(SERVER_INFO_LABEL);
+			writer.WriteLine(serverInfo);
 
 			//update interval
 			writer.WriteLine(UPDATES_PER_SECOND_LABEL);

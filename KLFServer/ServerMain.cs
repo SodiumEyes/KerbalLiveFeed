@@ -54,6 +54,12 @@ namespace KLFServer
 				Console.WriteLine(settings.joinMessage);
 
 				Console.ForegroundColor = ConsoleColor.Green;
+				Console.Write("Server Info: ");
+
+				Console.ResetColor();
+				Console.WriteLine(settings.serverInfo);
+
+				Console.ForegroundColor = ConsoleColor.Green;
 				Console.Write("Updates Per Second: ");
 
 				Console.ResetColor();
@@ -98,7 +104,7 @@ namespace KLFServer
 				Console.ResetColor();
 				Console.WriteLine();
 				Console.WriteLine("P: change port, HP: change http port, M: change max clients");
-				Console.WriteLine("J: join message, U: updates per second, IS: total inactive ships");
+				Console.WriteLine("J: join message, IF: server info, U: updates per second, IS: total inactive ships");
 				Console.WriteLine("SH: screenshot height, SI: screenshot interval, SV: save screenshots");
 				Console.WriteLine("AR: toggle auto-restart, AH: toggle auto-host");
 				Console.WriteLine("H: begin hosting, Q: quit");
@@ -169,6 +175,12 @@ namespace KLFServer
 				{
 					Console.Write("Enter the join message: ");
 					settings.joinMessage = Console.ReadLine();
+					settings.writeConfigFile();
+				}
+				else if (in_string == "if")
+				{
+					Console.Write("Enter the server info message: ");
+					settings.serverInfo = Console.ReadLine();
 					settings.writeConfigFile();
 				}
 				else if (in_string == "u")
