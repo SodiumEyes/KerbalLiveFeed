@@ -70,6 +70,7 @@ namespace KLFServer
 		public Thread listenThread;
 		public Thread commandThread;
 		public Thread connectionThread;
+		public Thread outgoingMessageThread;
 
 		public TcpListener tcpListener;
 		public UdpClient udpClient;
@@ -196,6 +197,7 @@ namespace KLFServer
 			safeAbort(listenThread);
 			safeAbort(commandThread);
 			safeAbort(connectionThread);
+			safeAbort(outgoingMessageThread);
 
 			if (clients != null)
 			{
@@ -333,6 +335,7 @@ namespace KLFServer
 			listenThread = new Thread(new ThreadStart(listenForClients));
 			commandThread = new Thread(new ThreadStart(handleCommands));
 			connectionThread = new Thread(new ThreadStart(handleConnections));
+			outgoingMessageThread = new Thread(new ThreadStart(sendOutgoingMessages));
 
 			threadException = null;
 
@@ -351,12 +354,14 @@ namespace KLFServer
 
 			Console.WriteLine("Commands:");
 			Console.WriteLine("/quit - close server");
+			Console.WriteLine("/stop - stop hosting server");
 			Console.WriteLine("/list - list players");
 			Console.WriteLine("/count - display player counts");
 			Console.WriteLine("/kick <username>");
 
 			commandThread.Start();
 			connectionThread.Start();
+			outgoingMessageThread.Start();
 
 			//Begin listening for HTTP requests
 
@@ -636,9 +641,6 @@ namespace KLFServer
 								if (changed)
 									clientActivityLevelChanged(i);
 
-								//Send out-going messages for the client
-								clients[i].sendOutgoingMessages();
-
 							}
 						}
 						else if (!clients[i].canBeReplaced)
@@ -661,6 +663,32 @@ namespace KLFServer
 			}
 
 			debugConsoleWriteLine("Ending disconnect thread.");
+		}
+
+		void sendOutgoingMessages()
+		{
+			try
+			{
+
+				while (true)
+				{
+					for (int i = 0; i < clients.Length; i++)
+					{
+						if (clientIsValid(i))
+							clients[i].sendOutgoingMessages();
+					}
+
+					Thread.Sleep(SLEEP_TIME);
+				}
+
+			}
+			catch (ThreadAbortException)
+			{
+			}
+			catch (Exception e)
+			{
+				passExceptionToMain(e);
+			}
 		}
 
 		//Clients
@@ -843,6 +871,7 @@ namespace KLFServer
 								{
 									stampedConsoleWriteLine("Established UDP connection with client " + clients[sender_index].username);
 									clientUDPAddressMap.Add(address_key, sender_index);
+									stampedConsoleWriteLine(address_key);
 								}
 							}
 						}

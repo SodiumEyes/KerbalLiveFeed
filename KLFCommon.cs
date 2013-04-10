@@ -6,10 +6,11 @@ using System.Text;
 public class KLFCommon
 {
 
-	public const String PROGRAM_VERSION = "0.5.5";
+	public const String PROGRAM_VERSION = "0.6.0";
 	public const Int32 FILE_FORMAT_VERSION = 6;
 	public const Int32 NET_PROTOCOL_VERSION = 7;
 	public const int MSG_HEADER_LENGTH = 8;
+	public const int INTEROP_MSG_HEADER_LENGTH = 8;
 
 	public const int SERVER_SETTINGS_LENGTH = 17;
 
@@ -99,6 +100,22 @@ public class KLFCommon
 		UDP_ACKNOWLEDGE,
 		NULL,
 		CRAFT_FILE /*Craft Type Byte : Craft name length : Craft Name : File bytes*/
+	}
+
+	public enum ClientInteropMessageID
+	{
+		NULL,
+		CLIENT_DATA,
+		SCREENSHOT_RECEIVE,
+		CHAT_RECEIVE /*Message*/
+	}
+
+	public enum PluginInteropMessageID
+	{
+		NULL,
+		PLUGIN_DATA,
+		SCREENSHOT_SHARE,
+		CHAT_SEND
 	}
 
 }

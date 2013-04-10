@@ -35,6 +35,8 @@ namespace KLFClient
 		public const String PORT_LABEL = "port";
 		public const String AUTO_RECONNECT_LABEL = "reconnect";
 
+		public const String INTEROP_CLIENT_FILENAME = "PluginData/kerballivefeed/interopclient.txt";
+		public const String INTEROP_PLUGIN_FILENAME = "PluginData/kerballivefeed/interopplugin.txt";
 		public const String OUT_FILENAME = "PluginData/kerballivefeed/out.txt";
 		public const String IN_FILENAME = "PluginData/kerballivefeed/in.txt";
 		public const String CLIENT_DATA_FILENAME = "PluginData/kerballivefeed/clientdata.txt";
@@ -57,9 +59,14 @@ namespace KLFClient
 		public const int RECONNECT_DELAY = 1000;
 		public const int MAX_RECONNECT_ATTEMPTS = 3;
 
+		public const int INTEROP_WRITE_INTERVAL = 100;
+		public const int INTEROP_MAX_QUEUE_SIZE = 128;
+
 		public const int MAX_QUEUED_CHAT_LINES = 8;
 
 		public const String PLUGIN_DIRECTORY = "PluginData/kerballivefeed/";
+
+		public static UnicodeEncoding encoder = new UnicodeEncoding();
 
 		//Settings
 
@@ -104,10 +111,11 @@ namespace KLFClient
 
 		//Plugin Interop
 
+		public static ConcurrentQueue<byte[]> interopOutQueue;
+		public static long lastInteropWriteTime;
+
 		public static ConcurrentQueue<byte[]> pluginUpdateInQueue;
 		public static ConcurrentQueue<InTextMessage> textMessageQueue;
-		public static ConcurrentQueue<String> pluginChatInQueue;
-		public static long lastChatInWriteTime;
 		public static long lastScreenshotShareTime;
 		public static byte[] queuedInScreenshot;
 		public static byte[] lastSharedScreenshot;
@@ -143,6 +151,7 @@ namespace KLFClient
 		public static String threadExceptionStackTrace;
 		public static Exception threadException;
 
+		public static Thread interopThread;
 		public static Thread pluginUpdateThread;
 		public static Thread screenshotUpdateThread;
 		public static Thread chatThread;
@@ -358,7 +367,7 @@ namespace KLFClient
 
 					pluginUpdateInQueue = new ConcurrentQueue<byte[]>();
 					textMessageQueue = new ConcurrentQueue<InTextMessage>();
-					pluginChatInQueue = new ConcurrentQueue<string>();
+					interopOutQueue = new ConcurrentQueue<byte[]>();
 
 					receivedMessageQueue = new ConcurrentQueue<ServerMessage>();
 
@@ -369,7 +378,6 @@ namespace KLFClient
 					queuedInScreenshot = null;
 					lastSharedScreenshot = null;
 					lastScreenshotShareTime = 0;
-					lastChatInWriteTime = 0;
 					lastTCPMessageSendTime = 0;
 					lastClientDataWriteTime = 0;
 					lastClientDataChangeTime = stopwatch.ElapsedMilliseconds;
@@ -413,6 +421,9 @@ namespace KLFClient
 					chatThread = new Thread(new ThreadStart(handleChat));
 					chatThread.Start();
 
+					interopThread = new Thread(new ThreadStart(handlePluginInterop));
+					interopThread.Start();
+
 					//Create a thread to handle disconnection
 					connectionThread = new Thread(new ThreadStart(handleConnection));
 					connectionThread.Start();
@@ -453,8 +464,6 @@ namespace KLFClient
 					else
 						enqueuePluginChatMessage("Lost connection with server", true);
 
-					writeChatIn();
-
 					Console.ResetColor();
 
 					//Delete the client data file
@@ -483,8 +492,6 @@ namespace KLFClient
 
 		static void handleMessage(KLFCommon.ServerMessageID id, byte[] data)
 		{
-
-			UnicodeEncoding encoder = new UnicodeEncoding();
 
 			switch (id)
 			{
@@ -679,6 +686,7 @@ namespace KLFClient
 			safeAbort(chatThread, true);
 			safeAbort(screenshotUpdateThread, true);
 			safeAbort(connectionThread, true);
+			safeAbort(interopThread, true);
 
 			//Close the socket if it's still open
 			if (tcpClient != null)
@@ -758,6 +766,34 @@ namespace KLFClient
 		}
 
 		//Threads
+
+		static void handlePluginInterop()
+		{
+			try
+			{
+
+				while (true)
+				{
+					readPluginInterop();
+
+					if (stopwatch.ElapsedMilliseconds - lastInteropWriteTime >= INTEROP_WRITE_INTERVAL)
+					{
+						if (writePluginInterop())
+							lastInteropWriteTime = stopwatch.ElapsedMilliseconds;
+					}
+
+					Thread.Sleep(SLEEP_TIME);
+				}
+
+			}
+			catch (ThreadAbortException)
+			{
+			}
+			catch (Exception e)
+			{
+				passExceptionToMain(e);
+			}
+		}
 
 		static void handlePluginUpdates()
 		{
@@ -965,14 +1001,6 @@ namespace KLFClient
 						}
 					}
 
-					if (stopwatch.ElapsedMilliseconds - lastChatInWriteTime >= CHAT_IN_WRITE_INTERVAL)
-					{
-						if (writeChatIn())
-							lastChatInWriteTime = stopwatch.ElapsedMilliseconds;
-					}
-
-					readChatOut();
-
 					Thread.Sleep(SLEEP_TIME);
 				}
 
@@ -1003,6 +1031,172 @@ namespace KLFClient
 
 		//Plugin Interop
 
+		static bool writePluginInterop()
+		{
+			bool success = false;
+
+			if (interopOutQueue.Count > 0 && !File.Exists(INTEROP_CLIENT_FILENAME))
+			{
+				FileStream stream = null;
+				try
+				{
+
+					stream = File.OpenWrite(INTEROP_CLIENT_FILENAME);
+
+					success = true;
+
+					while (interopOutQueue.Count > 0)
+					{
+						byte[] message;
+						if (interopOutQueue.TryDequeue(out message))
+							stream.Write(message, 0, message.Length);
+						else
+							break;
+					}
+
+				}
+				catch (System.IO.FileNotFoundException)
+				{
+				}
+				catch (System.UnauthorizedAccessException)
+				{
+				}
+				catch (System.IO.DirectoryNotFoundException)
+				{
+				}
+				catch (System.InvalidOperationException)
+				{
+				}
+				catch (System.IO.IOException)
+				{
+				}
+				finally
+				{
+					if (stream != null)
+						stream.Close();
+				}
+
+			}
+
+			return success;
+		}
+
+		static void readPluginInterop()
+		{
+
+			byte[] bytes = null;
+
+			if (File.Exists(INTEROP_PLUGIN_FILENAME))
+			{
+
+				try
+				{
+					bytes = File.ReadAllBytes(INTEROP_PLUGIN_FILENAME);
+					File.Delete(INTEROP_PLUGIN_FILENAME);
+				}
+				catch (System.IO.FileNotFoundException)
+				{
+				}
+				catch (System.UnauthorizedAccessException)
+				{
+				}
+				catch (System.IO.DirectoryNotFoundException)
+				{
+				}
+				catch (System.InvalidOperationException)
+				{
+				}
+				catch (System.IO.IOException)
+				{
+				}
+
+			}
+
+			if (bytes != null && bytes.Length > 0)
+			{
+				//Parse the bytes
+				int index = 0;
+				while (index < bytes.Length - KLFCommon.INTEROP_MSG_HEADER_LENGTH)
+				{
+					//Read the message id
+					int id_int = KLFCommon.intFromBytes(bytes, index);
+
+					KLFCommon.PluginInteropMessageID id = KLFCommon.PluginInteropMessageID.NULL;
+					if (id_int >= 0 && id_int < Enum.GetValues(typeof(KLFCommon.PluginInteropMessageID)).Length)
+						id = (KLFCommon.PluginInteropMessageID)id_int;
+
+					//Read the length of the message data
+					int data_length = KLFCommon.intFromBytes(bytes, index+4);
+
+					index += KLFCommon.INTEROP_MSG_HEADER_LENGTH;
+
+					if (data_length <= 0)
+						handleInteropMessage(id, null);
+					else if (data_length <= (bytes.Length - index))
+					{
+						
+						//Copy the message data
+						byte[] data = new byte[data_length];
+						Array.Copy(bytes, index, data, 0, data.Length);
+
+						handleInteropMessage(id, data);
+					}
+
+					if (data_length > 0)
+						index += data_length;
+				}
+			}
+
+		}
+
+		static void handleInteropMessage(KLFCommon.PluginInteropMessageID id, byte[] data)
+		{
+			switch (id)
+			{
+
+				case KLFCommon.PluginInteropMessageID.CHAT_SEND:
+
+					if (data != null)
+					{
+						String line = encoder.GetString(data);
+
+						InTextMessage message = new InTextMessage();
+						message.fromServer = false;
+						message.message = "[" + username + "] " + line;
+						enqueueTextMessage(message, false);
+
+						handleChatInput(line);
+					}
+
+					break;
+				
+			}
+		}
+
+		static void enqueueClientInteropMessage(KLFCommon.ClientInteropMessageID id, byte[] data)
+		{
+			int msg_data_length = 0;
+			if (data != null)
+				msg_data_length = data.Length;
+
+			byte[] message_bytes = new byte[KLFCommon.INTEROP_MSG_HEADER_LENGTH + msg_data_length];
+
+			KLFCommon.intToBytes((int)id).CopyTo(message_bytes, 0);
+			KLFCommon.intToBytes(msg_data_length).CopyTo(message_bytes, 4);
+			if (data != null)
+				data.CopyTo(message_bytes, KLFCommon.INTEROP_MSG_HEADER_LENGTH);
+
+			interopOutQueue.Enqueue(message_bytes);
+
+			//Enforce max queue size
+			while (interopOutQueue.Count > INTEROP_MAX_QUEUE_SIZE)
+			{
+				byte[] bytes;
+				if (!interopOutQueue.TryDequeue(out bytes))
+					break;
+			}
+		}
+
 		static void writeClientData()
 		{
 
@@ -1028,7 +1222,6 @@ namespace KLFClient
 						client_data_stream.Write(KLFCommon.intToBytes(screenshotSettings.maxHeight), 0, 4);
 
 						//Write username
-						UnicodeEncoding encoder = new UnicodeEncoding();
 						byte[] username_bytes = encoder.GetBytes(username);
 						client_data_stream.Write(username_bytes, 0, username_bytes.Length);
 
@@ -1311,114 +1504,6 @@ namespace KLFClient
 			}
 		}
 
-		static bool writeChatIn()
-		{
-			bool success = false;
-
-			if (pluginChatInQueue.Count > 0 && !File.Exists(CHAT_IN_FILENAME))
-			{
-				FileStream in_stream = null;
-				//Write chat in
-				try
-				{
-					in_stream = File.OpenWrite(CHAT_IN_FILENAME);
-
-					UnicodeEncoding encoder = new UnicodeEncoding();
-
-					while (pluginChatInQueue.Count > 0)
-					{
-						String chat_line;
-						if (pluginChatInQueue.TryDequeue(out chat_line))
-						{
-							byte[] bytes = encoder.GetBytes(chat_line);
-							in_stream.Write(bytes, 0, bytes.Length);
-
-							bytes = encoder.GetBytes("\n");
-							in_stream.Write(bytes, 0, bytes.Length);
-						}
-						else
-							break;
-					}
-
-				}
-				catch (System.IO.FileNotFoundException)
-				{
-				}
-				catch (System.UnauthorizedAccessException)
-				{
-				}
-				catch (System.IO.DirectoryNotFoundException)
-				{
-				}
-				catch (System.InvalidOperationException)
-				{
-				}
-				catch (System.IO.IOException)
-				{
-				}
-				finally
-				{
-					if (in_stream != null)
-						in_stream.Close();
-				}
-
-				success = true;
-				
-			}
-
-			return success;
-		}
-
-		static void readChatOut()
-		{
-			if (File.Exists(CHAT_OUT_FILENAME))
-			{
-
-				try
-				{
-					byte[] bytes = File.ReadAllBytes(CHAT_OUT_FILENAME);
-
-					if (bytes != null && bytes.Length > 0)
-					{
-						UnicodeEncoding encoder = new UnicodeEncoding();
-						String[] lines = encoder.GetString(bytes, 0, bytes.Length).Split('\n');
-
-						foreach (String line in lines)
-						{
-							if (line.Length > 0)
-							{
-								InTextMessage message = new InTextMessage();
-								message.fromServer = false;
-								message.message = "[" + username + "] " + line;
-								enqueueTextMessage(message, false);
-
-								handleChatInput(line);
-							}
-						}
-					}
-
-					File.Delete(CHAT_OUT_FILENAME);
-
-				}
-				catch (System.IO.FileNotFoundException)
-				{
-				}
-				catch (System.UnauthorizedAccessException)
-				{
-				}
-				catch (System.IO.DirectoryNotFoundException)
-				{
-				}
-				catch (System.InvalidOperationException)
-				{
-				}
-				catch (System.IO.IOException)
-				{
-				}
-
-			}
-		}
-
 		static void enqueueTextMessage(String message, bool from_server = false, bool to_plugin = true)
 		{
 			InTextMessage text_message = new InTextMessage();
@@ -1441,7 +1526,7 @@ namespace KLFClient
 			if (to_plugin)
 			{
 				if (message.fromServer)
-					enqueuePluginChatMessage("[Server] " + message.message);
+					enqueuePluginChatMessage("[Server] " + message.message, false);
 				else
 					enqueuePluginChatMessage(message.message);
 			}
@@ -1449,13 +1534,11 @@ namespace KLFClient
 
 		static void enqueuePluginChatMessage(String message, bool print = false)
 		{
-			pluginChatInQueue.Enqueue(message);
 
-			while (pluginChatInQueue.Count > MAX_QUEUED_CHAT_LINES)
-			{
-				String old_message;
-				pluginChatInQueue.TryDequeue(out old_message);
-			}
+			enqueueClientInteropMessage(
+				KLFCommon.ClientInteropMessageID.CHAT_RECEIVE,
+				encoder.GetBytes(message)
+				);
 
 			if (print)
 				Console.WriteLine(message);
@@ -1753,7 +1836,6 @@ namespace KLFClient
 		private static void sendHandshakeMessage()
 		{
 			//Encode username
-			UnicodeEncoding encoder = new UnicodeEncoding();
 			byte[] username_bytes = encoder.GetBytes(username);
 			byte[] version_bytes = encoder.GetBytes(KLFCommon.PROGRAM_VERSION);
 
@@ -1769,7 +1851,6 @@ namespace KLFClient
 		private static void sendTextMessage(String message)
 		{
 			//Encode message
-			UnicodeEncoding encoder = new UnicodeEncoding();
 			byte[] message_bytes = encoder.GetBytes(message);
 
 			sendMessageTCP(KLFCommon.ClientMessageID.TEXT_MESSAGE, message_bytes);
@@ -1795,7 +1876,6 @@ namespace KLFClient
 		private static void sendScreenshotWatchPlayerMessage(String name)
 		{
 			//Encode name
-			UnicodeEncoding encoder = new UnicodeEncoding();
 			byte[] bytes = encoder.GetBytes(name);
 
 			sendMessageTCP(KLFCommon.ClientMessageID.SCREEN_WATCH_PLAYER, bytes);
@@ -1804,7 +1884,6 @@ namespace KLFClient
 		private static void sendConnectionEndMessage(String message)
 		{
 			//Encode message
-			UnicodeEncoding encoder = new UnicodeEncoding();
 			byte[] message_bytes = encoder.GetBytes(message);
 
 			sendMessageTCP(KLFCommon.ClientMessageID.CONNECTION_END, message_bytes);
@@ -1813,7 +1892,6 @@ namespace KLFClient
 		private static void sendShareCraftMessage(String craft_name, byte[] data, byte type)
 		{
 			//Encode message
-			UnicodeEncoding encoder = new UnicodeEncoding();
 			byte[] name_bytes = encoder.GetBytes(craft_name);
 
 			byte[] bytes = new byte [5 + name_bytes.Length + data.Length];

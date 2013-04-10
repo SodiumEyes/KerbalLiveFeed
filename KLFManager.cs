@@ -32,14 +32,14 @@ namespace KLF
 
 		//Properties
 
+		public const String INTEROP_CLIENT_FILENAME = "interopclient.txt";
+		public const String INTEROP_PLUGIN_FILENAME = "interopplugin.txt";
 		public const String OUT_FILENAME = "out.txt";
 		public const String IN_FILENAME = "in.txt";
 		public const String CLIENT_DATA_FILENAME = "clientdata.txt";
 		public const String PLUGIN_DATA_FILENAME = "plugindata.txt";
 		public const String SCREENSHOT_OUT_FILENAME = "screenout.png";
 		public const String SCREENSHOT_IN_FILENAME = "screenin.png";
-		public const String CHAT_OUT_FILENAME = "chatout.txt";
-		public const String CHAT_IN_FILENAME = "chatin.txt";
 
 		public const String GLOBAL_SETTINGS_FILENAME = "globalsettings.txt";
 
@@ -53,6 +53,10 @@ namespace KLF
 		public const float PLUGIN_DATA_WRITE_INTERVAL = 5.0f;
 		public const float GLOBAL_SETTINGS_SAVE_INTERVAL = 10.0f;
 
+		public const int INTEROP_MAX_QUEUE_SIZE = 128;
+
+		public UnicodeEncoding encoder = new UnicodeEncoding();
+
 		public String playerName = String.Empty;
 		public byte inactiveVesselsPerUpdate = 0;
 
@@ -60,6 +64,8 @@ namespace KLF
 		public SortedDictionary<String, VesselStatusInfo> playerStatus = new SortedDictionary<string, VesselStatusInfo>();
 		public RenderingManager renderManager;
 		public PlanetariumCamera planetariumCam;
+
+		public Queue<byte[]> interopOutQueue = new Queue<byte[]>();
 
 		private float lastGlobalSettingSaveTime = 0.0f;
 		private float lastPluginDataWriteTime = 0.0f;
@@ -138,11 +144,17 @@ namespace KLF
 
 		public void updateStep()
 		{
+			if (HighLogic.LoadedScene == GameScenes.LOADING)
+				return; //Don't do anything while the game is loading
+
 			//Handle all queued vessel updates
 			while (vesselUpdateQueue.Count > 0)
 			{
 				handleVesselUpdate(vesselUpdateQueue.Dequeue());
 			}
+
+			readClientInterop();
+			writePluginInterop();
 
 			writePluginUpdate();
 			readUpdatesFromFile();
@@ -153,9 +165,6 @@ namespace KLF
 				if (writePluginData())
 					lastPluginDataWriteTime = UnityEngine.Time.realtimeSinceStartup;
 			}
-
-			readChatInFromFile();
-			writeChatToFile();
 
 			//Save global settings periodically
 
@@ -816,7 +825,6 @@ namespace KLF
 					//Debug.Log("Screenshot height: " + KLFScreenshotDisplay.screenshotSettings.maxHeight);
 
 					//Read username
-					UnicodeEncoding encoder = new UnicodeEncoding();
 					playerName = encoder.GetString(bytes, 5, bytes.Length - 5);
 				}
 			}
@@ -835,8 +843,6 @@ namespace KLF
 						out_stream = KSP.IO.File.Create<KLFManager>(PLUGIN_DATA_FILENAME);
 
 						out_stream.Lock(0, long.MaxValue);
-
-						UnicodeEncoding encoder = new UnicodeEncoding();
 
 						//CurrentGameTitle
 						String current_game_title = String.Empty;
@@ -878,67 +884,6 @@ namespace KLF
 			}
 
 			return false;
-		}
-
-		private void readChatInFromFile()
-		{
-			if (KSP.IO.File.Exists<KLFManager>(CHAT_IN_FILENAME))
-			{
-				byte[] in_bytes = null;
-
-				try
-				{
-					in_bytes = KSP.IO.File.ReadAllBytes<KLFManager>(CHAT_IN_FILENAME); //Read the screenshot
-
-					//Delete the screenshot now that it's been read
-					KSP.IO.File.Delete<KLFManager>(CHAT_IN_FILENAME);
-
-				}
-				catch
-				{
-					in_bytes = null;
-					Debug.LogWarning("*** Unable to read file " + CHAT_IN_FILENAME);
-				}
-
-				if (in_bytes != null)
-				{
-					UnicodeEncoding encoder = new UnicodeEncoding();
-					String chat_in_string = encoder.GetString(in_bytes);
-					String[] lines = chat_in_string.Split('\n');
-					foreach (String line in lines)
-					{
-						if (line.Length > 0)
-							KLFChatDisplay.enqueueChatLine(line);
-					}
-				}
-			}
-		}
-
-		private void writeChatToFile()
-		{
-			if (KLFChatDisplay.chatOutQueue.Count > 0 && !KSP.IO.File.Exists<KLFManager>(CHAT_OUT_FILENAME))
-			{
-				try
-				{
-
-					KSP.IO.FileStream out_stream = KSP.IO.File.Create<KLFManager>(CHAT_OUT_FILENAME);
-					out_stream.Lock(0, long.MaxValue);
-
-					UnicodeEncoding encoder = new UnicodeEncoding();
-
-					while (KLFChatDisplay.chatOutQueue.Count > 0)
-					{
-						byte[] bytes = encoder.GetBytes(KLFChatDisplay.chatOutQueue.Dequeue() + '\n');
-						out_stream.Write(bytes, 0, bytes.Length);
-					}
-
-					out_stream.Unlock(0, long.MaxValue);
-					out_stream.Flush();
-					out_stream.Dispose();
-
-				}
-				catch { }
-			}
 		}
 
 		private VesselStatusInfo statusArrayToInfo(String[] status_array)
@@ -1206,12 +1151,143 @@ namespace KLF
 			String line = message.Replace("\n", ""); //Remove line breaks from message
 			if (line.Length > 0)
 			{
-				KLFChatDisplay.chatOutQueue.Enqueue(line);
-				while (KLFChatDisplay.chatOutQueue.Count > KLFChatDisplay.MAX_CHAT_OUT_QUEUE)
-					KLFChatDisplay.chatOutQueue.Dequeue();
-
+				enqueuePluginInteropMessage(KLFCommon.PluginInteropMessageID.CHAT_SEND, encoder.GetBytes(line));
 				KLFChatDisplay.enqueueChatLine("[" + playerName + "] " + line);
 			}
+		}
+
+		//Interop
+
+		private void readClientInterop()
+		{
+			if (KSP.IO.File.Exists<KLFManager>(INTEROP_CLIENT_FILENAME))
+			{
+				byte[] bytes = null;
+
+				try
+				{
+					bytes = KSP.IO.File.ReadAllBytes<KLFManager>(INTEROP_CLIENT_FILENAME);
+
+					//Delete the screenshot now that it's been read
+					KSP.IO.File.Delete<KLFManager>(INTEROP_CLIENT_FILENAME);
+
+				}
+				catch
+				{
+					bytes = null;
+					Debug.LogWarning("*** Unable to read file " + INTEROP_CLIENT_FILENAME);
+				}
+
+				if (bytes != null)
+				{
+					//Parse the bytes
+					int index = 0;
+					while (index < bytes.Length - KLFCommon.INTEROP_MSG_HEADER_LENGTH)
+					{
+						//Read the message id
+						int id_int = KLFCommon.intFromBytes(bytes, index);
+
+						KLFCommon.ClientInteropMessageID id = KLFCommon.ClientInteropMessageID.NULL;
+						if (id_int >= 0 && id_int < Enum.GetValues(typeof(KLFCommon.ClientInteropMessageID)).Length)
+							id = (KLFCommon.ClientInteropMessageID)id_int;
+
+						//Read the length of the message data
+						int data_length = KLFCommon.intFromBytes(bytes, index + 4);
+
+						index += KLFCommon.INTEROP_MSG_HEADER_LENGTH;
+
+						if (data_length <= 0)
+							handleInteropMessage(id, null);
+						else if (data_length <= (bytes.Length - index))
+						{
+
+							//Copy the message data
+							byte[] data = new byte[data_length];
+							Array.Copy(bytes, index, data, 0, data.Length);
+
+							handleInteropMessage(id, data);
+						}
+
+						if (data_length > 0)
+							index += data_length;
+					}
+				}
+			}
+		}
+
+		private bool writePluginInterop()
+		{
+			bool success = false;
+
+			if (interopOutQueue.Count > 0 && !KSP.IO.File.Exists<KLFManager>(INTEROP_PLUGIN_FILENAME))
+			{
+				try
+				{
+
+					KSP.IO.FileStream out_stream = null;
+					try
+					{
+						out_stream = KSP.IO.File.Create<KLFManager>(INTEROP_PLUGIN_FILENAME);
+
+						out_stream.Lock(0, long.MaxValue);
+
+						while (interopOutQueue.Count > 0)
+						{
+							byte[] message = interopOutQueue.Dequeue();
+							out_stream.Write(message, 0, message.Length);
+						}
+
+						out_stream.Unlock(0, long.MaxValue);
+						out_stream.Flush();
+
+						return true;
+					}
+					finally
+					{
+						if (out_stream != null)
+							out_stream.Dispose();
+					}
+
+				}
+				catch { }
+			}
+
+			return success;
+		}
+
+		private void handleInteropMessage(KLFCommon.ClientInteropMessageID id, byte[] data)
+		{
+			switch (id)
+			{
+				case KLFCommon.ClientInteropMessageID.CHAT_RECEIVE:
+
+					if (data != null)
+					{
+						KLFChatDisplay.enqueueChatLine(encoder.GetString(data));
+					}
+
+					break;
+			}
+		}
+
+		private void enqueuePluginInteropMessage(KLFCommon.PluginInteropMessageID id, byte[] data)
+		{
+			int msg_data_length = 0;
+			if (data != null)
+				msg_data_length = data.Length;
+
+			byte[] message_bytes = new byte[KLFCommon.INTEROP_MSG_HEADER_LENGTH + msg_data_length];
+
+			KLFCommon.intToBytes((int)id).CopyTo(message_bytes, 0);
+			KLFCommon.intToBytes(msg_data_length).CopyTo(message_bytes, 4);
+			if (data != null)
+				data.CopyTo(message_bytes, KLFCommon.INTEROP_MSG_HEADER_LENGTH);
+
+			interopOutQueue.Enqueue(message_bytes);
+
+			//Enforce max queue size
+			while (interopOutQueue.Count > INTEROP_MAX_QUEUE_SIZE)
+				interopOutQueue.Dequeue();
 		}
 
 		//Settings
@@ -1294,9 +1370,9 @@ namespace KLF
 			InvokeRepeating("updateStep", 1/60.0f, 1/60.0f);
 
 			//Delete remnant in files
+			safeDelete(INTEROP_CLIENT_FILENAME);
 			safeDelete(IN_FILENAME);
 			safeDelete(SCREENSHOT_IN_FILENAME);
-			safeDelete(CHAT_IN_FILENAME);
 
 			loadGlobalSettings();
 		}

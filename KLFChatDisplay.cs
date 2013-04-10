@@ -52,8 +52,6 @@ namespace KLF
 		public static Queue<ChatLine> chatLineQueue = new Queue<ChatLine>();
 		public static String chatEntryString = String.Empty;
 
-		public static Queue<string> chatOutQueue = new Queue<string>();
-
 		public static void enqueueChatLine(String line)
 		{
 			ChatLine chat_line = new ChatLine(line);
