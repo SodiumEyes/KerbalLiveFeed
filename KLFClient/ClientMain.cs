@@ -46,10 +46,10 @@ namespace KLFClient
 		public const long UDP_PROBE_DELAY = 1000;
 		public const long UDP_TIMEOUT_DELAY = 8000;
 		public const int SLEEP_TIME = 15;
-		public const int CHAT_IN_WRITE_INTERVAL = 500;
 		public const int CLIENT_DATA_FORCE_WRITE_INTERVAL = 10000;
 		public const int RECONNECT_DELAY = 1000;
 		public const int MAX_RECONNECT_ATTEMPTS = 3;
+		public const long PING_TIMEOUT_DELAY = 10000;
 
 		public const int INTEROP_WRITE_INTERVAL = 100;
 		public const int INTEROP_MAX_QUEUE_SIZE = 128;
@@ -150,6 +150,7 @@ namespace KLFClient
 		public static Thread connectionThread;
 
 		public static Stopwatch stopwatch;
+		public static Stopwatch pingStopwatch = new Stopwatch();
 
 		static void Main(string[] args)
 		{
@@ -648,6 +649,15 @@ namespace KLFClient
 					}
 
 					break;
+
+				case KLFCommon.ServerMessageID.PING_REPLY:
+					if (pingStopwatch.IsRunning)
+					{
+						enqueueTextMessage("Ping Reply: " + pingStopwatch.ElapsedMilliseconds + "ms");
+						pingStopwatch.Stop();
+						pingStopwatch.Reset();
+					}
+					break;
 			}
 		}
 
@@ -693,6 +703,14 @@ namespace KLFClient
 					{
 						Object o = null;
 						o.ToString();
+					}
+					else if (line_lower == "/ping")
+					{
+						if (!pingStopwatch.IsRunning)
+						{
+							sendMessageTCP(KLFCommon.ClientMessageID.PING, null);
+							pingStopwatch.Start();
+						}
 					}
 					else if (line_lower.Length > (KLFCommon.SHARE_CRAFT_COMMAND.Length + 1)
 						&& line_lower.Substring(0, KLFCommon.SHARE_CRAFT_COMMAND.Length) == KLFCommon.SHARE_CRAFT_COMMAND)
@@ -826,6 +844,13 @@ namespace KLFClient
 
 				while (true)
 				{
+					if (pingStopwatch.IsRunning && pingStopwatch.ElapsedMilliseconds > PING_TIMEOUT_DELAY)
+					{
+						enqueueTextMessage("Ping timed out.", true);
+						pingStopwatch.Stop();
+						pingStopwatch.Reset();
+					}
+
 					//Send a keep-alive message to prevent timeout
 					if (stopwatch.ElapsedMilliseconds - lastTCPMessageSendTime >= KEEPALIVE_DELAY)
 						sendMessageTCP(KLFCommon.ClientMessageID.KEEPALIVE, null);
@@ -1696,18 +1721,17 @@ namespace KLFClient
 
 		private static void sendUDPProbeMessage()
 		{
-			sendMessageUDP(KLFCommon.ClientMessageID.UDP_PROBE, KLFCommon.intToBytes(clientID));
+			sendMessageUDP(KLFCommon.ClientMessageID.UDP_PROBE, null);
 		}
 
 		private static void sendMessageUDP(KLFCommon.ClientMessageID id, byte[] data)
 		{
 			if (udpSocket != null)
 			{
-
 				//Send the packet
 				try
 				{
-					udpSocket.Send(buildMessageByteArray(id, data));
+					udpSocket.Send(buildMessageByteArray(id, data, KLFCommon.intToBytes(clientID)));
 				}
 				catch { }
 
@@ -1719,18 +1743,37 @@ namespace KLFClient
 			}
 		}
 
-		private static byte[] buildMessageByteArray(KLFCommon.ClientMessageID id, byte[] data)
+		private static byte[] buildMessageByteArray(KLFCommon.ClientMessageID id, byte[] data, byte[] prefix = null)
 		{
+			int prefix_length = 0;
+			if (prefix != null)
+				prefix_length = prefix.Length;
+
 			int msg_data_length = 0;
 			if (data != null)
 				msg_data_length = data.Length;
 
-			byte[] message_bytes = new byte[KLFCommon.MSG_HEADER_LENGTH + msg_data_length];
+			byte[] message_bytes = new byte[KLFCommon.MSG_HEADER_LENGTH + msg_data_length + prefix_length];
 
-			KLFCommon.intToBytes((int)id).CopyTo(message_bytes, 0);
-			KLFCommon.intToBytes(msg_data_length).CopyTo(message_bytes, 4);
+			int index = 0;
+
+			if (prefix != null)
+			{
+				prefix.CopyTo(message_bytes, index);
+				index += 4;
+			}
+
+			KLFCommon.intToBytes((int)id).CopyTo(message_bytes, index);
+			index += 4;
+
+			KLFCommon.intToBytes(msg_data_length).CopyTo(message_bytes, index);
+			index += 4;
+
 			if (data != null)
-				data.CopyTo(message_bytes, KLFCommon.MSG_HEADER_LENGTH);
+			{
+				data.CopyTo(message_bytes, index);
+				index += data.Length;
+			}
 
 			return message_bytes;
 		}

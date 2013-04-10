@@ -63,7 +63,6 @@ namespace KLFServer
 
 		public object threadExceptionLock = new object();
 		public object clientActivityCountLock = new object();
-		public object clientUDPAddressMapLock = new object();
 		public static object consoleWriteLock = new object();
 
 		public Thread listenThread;
@@ -77,7 +76,6 @@ namespace KLFServer
 		public HttpListener httpListener;
 
 		public ServerClient[] clients;
-		public Dictionary<String, int> clientUDPAddressMap;
 		public ConcurrentQueue<ClientMessage> clientMessageQueue;
 
 		public ServerSettings settings;
@@ -331,7 +329,6 @@ namespace KLFServer
 				clients[i] = new ServerClient(this, i);
 			}
 
-			clientUDPAddressMap = new Dictionary<string, int>();
 			clientMessageQueue = new ConcurrentQueue<ClientMessage>();
 
 			numClients = 0;
@@ -774,22 +771,6 @@ namespace KLFServer
 
 				//Send the disconnect message to all other clients
 				sendServerMessageToAll(sb.ToString());
-
-				//Remove the client from the udp address map
-				List<String> remove_keys = new List<string>();
-				lock (clientUDPAddressMapLock) {
-
-					foreach (KeyValuePair<string, int> pair in clientUDPAddressMap)
-					{
-						if (pair.Value == index)
-							remove_keys.Add(pair.Key);
-					}
-
-					foreach (String key in remove_keys)
-					{
-						clientUDPAddressMap.Remove(key);
-					}
-				}
 			}
 			else
 				stampedConsoleWriteLine("Client failed to handshake successfully: " + message);
@@ -847,50 +828,24 @@ namespace KLFServer
 				IPEndPoint endpoint = new IPEndPoint(IPAddress.Any, settings.port);
 				byte[] received = udpClient.EndReceive(result, ref endpoint);
 
-				if (received.Length >= KLFCommon.MSG_HEADER_LENGTH)
+				if (received.Length >= KLFCommon.MSG_HEADER_LENGTH + 4)
 				{
+					int index = 0;
+
+					//Get the sender index
+					int sender_index = KLFCommon.intFromBytes(received, index);
+					index += 4;
+
 					//Get the message header data
-					KLFCommon.ClientMessageID id = (KLFCommon.ClientMessageID)KLFCommon.intFromBytes(received, 0);
+					KLFCommon.ClientMessageID id = (KLFCommon.ClientMessageID)KLFCommon.intFromBytes(received, index);
+					index += 4;
+
+					int data_length = KLFCommon.intFromBytes(received, index);
+					index += 4;
 
 					//Get the data
-					byte[] data = new byte[received.Length - KLFCommon.MSG_HEADER_LENGTH];
-					Array.Copy(received, KLFCommon.MSG_HEADER_LENGTH, data, 0, data.Length);
-
-					//Determine the sender
-					int sender_index = -1;
-
-					String address_key = endpoint.ToString();
-
-					if (id == KLFCommon.ClientMessageID.UDP_PROBE && data.Length >= 4)
-					{
-						//Read the sender index from the data
-						sender_index = KLFCommon.intFromBytes(data);
-
-						if (clientIsValid(sender_index))
-						{
-							lock (clientUDPAddressMapLock)
-							{
-								//Map the sender address to the client index
-								if (clientUDPAddressMap.ContainsKey(address_key))
-									clientUDPAddressMap[address_key] = sender_index;
-								else
-								{
-									stampedConsoleWriteLine("Established UDP connection with client " + clients[sender_index].username);
-									clientUDPAddressMap.Add(address_key, sender_index);
-									stampedConsoleWriteLine(address_key);
-								}
-							}
-						}
-					}
-					else
-					{
-						lock (clientUDPAddressMapLock)
-						{
-							//Check if the receiver address has already been mapped to a client index
-							if (!clientUDPAddressMap.TryGetValue(address_key, out sender_index))
-								sender_index = -1;
-						}
-					}
+					byte[] data = new byte[data_length];
+					Array.Copy(received, index, data, 0, data.Length);
 
 					if (clientIsValid(sender_index))
 					{
@@ -1274,6 +1229,9 @@ namespace KLFServer
 					clients[client_index].updateActivityLevel(ServerClient.ActivityLevel.IN_GAME);
 					break;
 
+				case KLFCommon.ClientMessageID.PING:
+					clients[client_index].queueOutgoingMessage(KLFCommon.ServerMessageID.PING_REPLY, null);
+					break;
 
 			}
 

@@ -69,11 +69,12 @@ public class KLFCommon
 		SCREENSHOT_SHARE /*Description Length : Description : data*/,
 		KEEPALIVE,
 		CONNECTION_END /*Message*/ ,
-		UDP_PROBE /*ClientID*/,
+		UDP_PROBE,
 		NULL,
 		SHARE_CRAFT_FILE /*Craft Type Byte : Craft name length : Craft Name : File bytes*/,
 		ACTIVITY_UPDATE_IN_GAME,
-		ACTIVITY_UPDATE_IN_FLIGHT
+		ACTIVITY_UPDATE_IN_FLIGHT,
+		PING
 	}
 
 	public enum ServerMessageID
@@ -89,7 +90,8 @@ public class KLFCommon
 		CONNECTION_END /*Message*/,
 		UDP_ACKNOWLEDGE,
 		NULL,
-		CRAFT_FILE /*Craft Type Byte : Craft name length : Craft Name : File bytes*/
+		CRAFT_FILE /*Craft Type Byte : Craft name length : Craft Name : File bytes*/,
+		PING_REPLY
 	}
 
 	public enum ClientInteropMessageID

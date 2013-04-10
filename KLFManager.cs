@@ -49,6 +49,7 @@ namespace KLF
 
 		public const int INTEROP_MAX_QUEUE_SIZE = 128;
 		public const float INTEROP_WRITE_INTERVAL = 0.1f;
+		public const float INTEROP_WRITE_TIMEOUT = 2.0f;
 
 		public UnicodeEncoding encoder = new UnicodeEncoding();
 
@@ -153,7 +154,8 @@ namespace KLF
 
 			readClientInterop();
 
-			if ((UnityEngine.Time.realtimeSinceStartup - lastPluginUpdateWriteTime) > updateInterval)
+			if ((UnityEngine.Time.realtimeSinceStartup - lastPluginUpdateWriteTime) > updateInterval
+				&& (Time.realtimeSinceStartup - lastInteropWriteTime) < INTEROP_WRITE_TIMEOUT)
 			{
 				writePluginUpdate();
 				lastPluginUpdateWriteTime = UnityEngine.Time.realtimeSinceStartup;
@@ -1542,6 +1544,10 @@ namespace KLF
 			screenshotDescriptionStyle.alignment = TextAnchor.MiddleCenter;
 			screenshotDescriptionStyle.stretchWidth = true;
 			screenshotDescriptionStyle.fontStyle = FontStyle.Normal;
+			screenshotDescriptionStyle.margin.bottom = 0;
+			screenshotDescriptionStyle.margin.top = 0;
+			screenshotDescriptionStyle.padding.bottom = 0;
+			screenshotDescriptionStyle.padding.top = 4;
 
 			//Screenshot
 			if (KLFScreenshotDisplay.texture != null)
