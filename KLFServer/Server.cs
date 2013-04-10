@@ -836,10 +836,15 @@ namespace KLFServer
 					index += 4;
 
 					//Get the data
-					byte[] data = new byte[data_length];
-					Array.Copy(received, index, data, 0, data.Length);
+					byte[] data = null;
+						
+					if (data_length > 0 && data_length <= received.Length - index)
+					{
+						data = new byte[data_length];
+						Array.Copy(received, index, data, 0, data.Length);
+					}
 
-					if (clientIsValid(sender_index))
+					if (clientIsReady(sender_index))
 					{
 						if ((currentMillisecond - clients[sender_index].lastUDPACKTime) > UDP_ACK_THROTTLE)
 						{

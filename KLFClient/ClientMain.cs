@@ -32,8 +32,8 @@ namespace KLFClient
 
 		public const String USERNAME_LABEL = "username";
 		public const String IP_LABEL = "ip";
-		public const String PORT_LABEL = "port";
 		public const String AUTO_RECONNECT_LABEL = "reconnect";
+		public const String FAVORITE_LABEL = "fav";
 
 		public const String INTEROP_CLIENT_FILENAME = "PluginData/kerballivefeed/interopclient.txt";
 		public const String INTEROP_PLUGIN_FILENAME = "PluginData/kerballivefeed/interopplugin.txt";
@@ -55,6 +55,7 @@ namespace KLFClient
 		public const int INTEROP_MAX_QUEUE_SIZE = 128;
 
 		public const int MAX_QUEUED_CHAT_LINES = 8;
+		public const int DEFAULT_PORT = 2075;
 
 		public const String PLUGIN_DIRECTORY = "PluginData/kerballivefeed/";
 
@@ -79,12 +80,12 @@ namespace KLFClient
 			}
 		}
 		public static String hostname = "localhost";
-		public static int port = 2075;
 		public static int updateInterval = 500;
 		public static int screenshotInterval = 1000;
 		public static bool autoReconnect = true;
 		public static byte inactiveShipsPerUpdate = 0;
 		public static ScreenshotSettings screenshotSettings = new ScreenshotSettings();
+		public static String[] favorites = new String[8];
 
 		//Connection
 		public static int clientID;
@@ -162,6 +163,9 @@ namespace KLFClient
 			stopwatch = new Stopwatch();
 			stopwatch.Start();
 
+			for (int i = 0; i < favorites.Length; i++)
+				favorites[i] = String.Empty;
+
 			readConfigFile();
 
 			while (true)
@@ -178,13 +182,7 @@ namespace KLFClient
 				Console.Write("Server Address: ");
 
 				Console.ResetColor();
-				Console.Write(hostname);
-
-				Console.ForegroundColor = ConsoleColor.Green;
-				Console.Write(" Port: ");
-
-				Console.ResetColor();
-				Console.WriteLine(port);
+				Console.WriteLine(hostname);
 
 				Console.ForegroundColor = ConsoleColor.Green;
 				Console.Write("Auto-Reconnect: ");
@@ -195,7 +193,8 @@ namespace KLFClient
 				Console.ResetColor();
 				Console.WriteLine();
 				Console.WriteLine("Enter N to change name, A to toggle auto-reconnect");
-				Console.WriteLine("IP to change IP, P to change port");
+				Console.WriteLine("IP to change address");
+				Console.WriteLine("FAV to favorite current address, LIST to pick a favorite");
 				Console.WriteLine("C to connect, Q to quit");
 
 				String in_string = Console.ReadLine().ToLower();
@@ -222,22 +221,67 @@ namespace KLFClient
 						writeConfigFile();
 					}
 				}
-				else if (in_string == "p") {
-					Console.Write("Enter the Port: ");
-
-					int new_port;
-					if (int.TryParse(Console.ReadLine(), out new_port) && new_port >= IPEndPoint.MinPort && new_port <= IPEndPoint.MaxPort)
-					{
-						port = new_port;
-						writeConfigFile();
-					}
-					else
-						Console.WriteLine("Invalid port");
-				}
 				else if (in_string == "a")
 				{
 					autoReconnect = !autoReconnect;
 					writeConfigFile();
+				}
+				else if (in_string == "fav")
+				{
+					int replace_index = -1;
+					//Check if any favorite entries are empty
+					for (int i = 0; i < favorites.Length; i++)
+					{
+						if (favorites[i].Length <= 0)
+						{
+							replace_index = i;
+							break;
+						}
+					}
+
+					if (replace_index < 0)
+					{
+						//Ask the user which favorite to replace
+						Console.WriteLine();
+						listFavorites();
+						Console.WriteLine();
+						Console.Write("Enter the index of the favorite to replace: ");
+						if (!int.TryParse(Console.ReadLine(), out replace_index))
+							replace_index = -1;
+					}
+
+					if (replace_index >= 0 && replace_index < favorites.Length)
+					{
+						//Set the favorite
+						favorites[replace_index] = hostname;
+						writeConfigFile();
+						Console.WriteLine("Favorite saved.");
+					}
+					else
+						Console.WriteLine("Invalid index.");
+
+
+					writeConfigFile();
+				}
+				else if (in_string == "list")
+				{
+					int index = -1;
+
+					//Ask the user which favorite to choose
+					Console.WriteLine();
+					listFavorites();
+					Console.WriteLine();
+					Console.Write("Enter the index of the favorite: ");
+					if (!int.TryParse(Console.ReadLine(), out index))
+						index = -1;
+
+					if (index >= 0 && index < favorites.Length)
+					{
+						hostname = favorites[index];
+						writeConfigFile();
+					}
+					else
+						Console.WriteLine("Invalid index.");
 				}
 				else if (in_string == "c")
 				{
@@ -316,10 +360,25 @@ namespace KLFClient
 		{
 			tcpClient = new TcpClient();
 
+			//Look for a port-number in the hostname
+			int port = DEFAULT_PORT;
+			String trimmed_hostname = hostname;
+
+			int port_start_index = hostname.LastIndexOf(':');
+			if (port_start_index >= 0 && port_start_index < (hostname.Length - 1))
+			{
+				String port_substring = hostname.Substring(port_start_index + 1);
+				if (!int.TryParse(port_substring, out port) || port < IPEndPoint.MinPort || port > IPEndPoint.MaxPort)
+					port = DEFAULT_PORT;
+
+				trimmed_hostname = hostname.Substring(0, port_start_index);
+			}
+
+			//Look up the actual IP address
 			IPHostEntry host_entry = new IPHostEntry();
 			try
 			{
-				host_entry = Dns.GetHostEntry(hostname);
+				host_entry = Dns.GetHostEntry(trimmed_hostname);
 			}
 			catch (SocketException)
 			{
@@ -334,7 +393,7 @@ namespace KLFClient
 			if (host_entry != null && host_entry.AddressList.Length == 1)
 				address = host_entry.AddressList.First();
 			else
-				IPAddress.TryParse(hostname, out address);
+				IPAddress.TryParse(trimmed_hostname, out address);
 
 			if (address == null) {
 				Console.WriteLine("Invalid server address.");
@@ -1407,14 +1466,15 @@ namespace KLFClient
 							username = line;
 						else if (label == IP_LABEL)
 							hostname = line;
-						else if (label == PORT_LABEL)
-						{
-							int new_port;
-							if (int.TryParse(line, out new_port) && new_port >= IPEndPoint.MinPort && new_port <= IPEndPoint.MaxPort)
-								port = new_port;
-						}
 						else if (label == AUTO_RECONNECT_LABEL)
 							bool.TryParse(line, out autoReconnect);
+						else if (label.Substring(0, FAVORITE_LABEL.Length) == FAVORITE_LABEL && label.Length > FAVORITE_LABEL.Length)
+						{
+							String index_string = label.Substring(FAVORITE_LABEL.Length);
+							int index = -1;
+							if (int.TryParse(index_string, out index) && index >= 0 && index < favorites.Length)
+								favorites[index] = line;
+						}
 
 					}
 
@@ -1442,12 +1502,19 @@ namespace KLFClient
 			writer.WriteLine(hostname);
 
 			//port
-			writer.WriteLine(PORT_LABEL);
-			writer.WriteLine(port);
-
-			//port
 			writer.WriteLine(AUTO_RECONNECT_LABEL);
 			writer.WriteLine(autoReconnect);
+
+			//favorites
+			for (int i = 0; i < favorites.Length; i++)
+			{
+				if (favorites[i].Length > 0)
+				{
+					writer.Write(FAVORITE_LABEL);
+					writer.WriteLine(i);
+					writer.WriteLine(favorites[i]);
+				}
+			}
 
 			writer.Close();
 		}
@@ -1776,6 +1843,14 @@ namespace KLFClient
 			}
 
 			return message_bytes;
+		}
+
+		//Favorites
+
+		private static void listFavorites()
+		{
+			for (int i = 0; i < favorites.Length; i++)
+				Console.WriteLine(i + ": " + favorites[i]);
 		}
 
 	}

@@ -447,11 +447,11 @@ namespace KLF
             }
         }
 
-        public void updateRenderProperties()
+        public void updateRenderProperties(bool force_hide = false)
         {
-            line.enabled = orbitValid && gameObj != null && MapView.MapIsEnabled;
+			line.enabled = !force_hide && orbitValid && gameObj != null && MapView.MapIsEnabled;
 
-			if (gameObj != null && shouldShowOrbit)
+			if (gameObj != null && !force_hide && shouldShowOrbit)
 				orbitRenderer.drawMode = OrbitRenderer.DrawMode.REDRAW_AND_RECALCULATE;
 			else
 				orbitRenderer.drawMode = OrbitRenderer.DrawMode.OFF;
@@ -485,7 +485,7 @@ namespace KLF
 			line.SetColors(color, color);
 			orbitRenderer.orbitColor = color * 0.5f;
 
-			if (!orbitValid)
+			if (force_hide || !orbitValid)
 				orbitRenderer.drawIcons = OrbitRenderer.DrawIcons.NONE;
 			else if (info.state == State.ACTIVE && shouldShowOrbit)
 				orbitRenderer.drawIcons = OrbitRenderer.DrawIcons.OBJ_PE_AP;

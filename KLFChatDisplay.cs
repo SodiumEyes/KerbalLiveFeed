@@ -31,9 +31,6 @@ namespace KLF
 		public const float NAME_COLOR_SATURATION_FACTOR = 0.35f;
 		public static GUILayoutOption[] layoutOptions;
 
-		public static bool windowEnabled = false;
-		public static bool windowWide = false;
-		public static bool chatColors = true;
 		public static bool displayCommands = false;
 		public static Rect windowPos = new Rect(Screen.width - WINDOW_WIDTH_NORMAL - 8, Screen.height / 2 - WINDOW_HEIGHT / 2, WINDOW_WIDTH_NORMAL, WINDOW_HEIGHT);
 		public static Vector2 scrollPos = Vector2.zero;
@@ -42,7 +39,7 @@ namespace KLF
 		{
 			get
 			{
-				if (windowWide)
+				if (KLFGlobalSettings.instance.chatWindowWide)
 					return WINDOW_WIDTH_WIDE;
 				else
 					return WINDOW_WIDTH_NORMAL;

@@ -49,7 +49,7 @@ namespace KLF
 
 		public const int INTEROP_MAX_QUEUE_SIZE = 128;
 		public const float INTEROP_WRITE_INTERVAL = 0.1f;
-		public const float INTEROP_WRITE_TIMEOUT = 2.0f;
+		public const float INTEROP_WRITE_TIMEOUT = 6.0f;
 
 		public UnicodeEncoding encoder = new UnicodeEncoding();
 
@@ -82,7 +82,7 @@ namespace KLF
 		{
 			get
 			{
-				return renderManager == null || renderManager.uiElementsToDisable.Length < 1 || renderManager.uiElementsToDisable[0].active;
+				return renderManager == null || renderManager.uiElementsToDisable.Length < 1 || renderManager.uiElementsToDisable[0].activeSelf;
 			}
 		}
 
@@ -195,7 +195,7 @@ namespace KLF
 				if ((UnityEngine.Time.realtimeSinceStartup-entry.lastUpdateTime) <= VESSEL_TIMEOUT_DELAY
 					&& entry.vessel != null && entry.vessel.gameObj != null)
 				{
-					entry.vessel.updateRenderProperties();
+					entry.vessel.updateRenderProperties(!KLFGlobalSettings.instance.showInactiveShips && entry.vessel.info.state != State.ACTIVE);
 					entry.vessel.updatePosition();
 				}
 				else
@@ -725,7 +725,7 @@ namespace KLF
 			RenderTexture render_tex = new RenderTexture(w, h, 24);
 			render_tex.useMipMap = false;
 
-			if (KLFScreenshotDisplay.smoothScreens && (Screen.width > w * 2 || Screen.height > h * 2))
+			if (KLFGlobalSettings.instance.smoothScreens && (Screen.width > w * 2 || Screen.height > h * 2))
 			{
 				//Blit the full texture to a double-sized texture to improve final quality
 				RenderTexture resize_tex = new RenderTexture(w * 2, h * 2, 24);
@@ -1185,26 +1185,19 @@ namespace KLF
 		private void saveGlobalSettings()
 		{
 			//Get the global settings
-			KLFGlobalSettings global_settings = new KLFGlobalSettings();
-			global_settings.infoDisplayWindowX = KLFInfoDisplay.infoWindowPos.x;
-			global_settings.infoDisplayWindowY = KLFInfoDisplay.infoWindowPos.y;
-			global_settings.infoDisplayBig = KLFInfoDisplay.infoDisplayBig;
-			global_settings.guiToggleKey = KLFInfoDisplay.guiToggleKey;
+			KLFGlobalSettings.instance.infoDisplayWindowX = KLFInfoDisplay.infoWindowPos.x;
+			KLFGlobalSettings.instance.infoDisplayWindowY = KLFInfoDisplay.infoWindowPos.y;
 
-			global_settings.screenshotDisplayWindowX = KLFScreenshotDisplay.windowPos.x;
-			global_settings.screenshotDisplayWindowY = KLFScreenshotDisplay.windowPos.y;
-			global_settings.screenshotKey = KLFScreenshotDisplay.screenshotKey;
-			global_settings.smoothScreens = KLFScreenshotDisplay.smoothScreens;
+			KLFGlobalSettings.instance.screenshotDisplayWindowX = KLFScreenshotDisplay.windowPos.x;
+			KLFGlobalSettings.instance.screenshotDisplayWindowY = KLFScreenshotDisplay.windowPos.y;
 
-			global_settings.chatDisplayWindowX = KLFChatDisplay.windowPos.x;
-			global_settings.chatDisplayWindowY = KLFChatDisplay.windowPos.y;
-			global_settings.chatWindowEnabled = KLFChatDisplay.windowEnabled;
-			global_settings.chatWindowWide = KLFChatDisplay.windowWide;
+			KLFGlobalSettings.instance.chatDisplayWindowX = KLFChatDisplay.windowPos.x;
+			KLFGlobalSettings.instance.chatDisplayWindowY = KLFChatDisplay.windowPos.y;
 
 			//Serialize global settings to file
 			try
 			{
-				byte[] serialized = KSP.IO.IOUtils.SerializeToBinary(global_settings);
+				byte[] serialized = KSP.IO.IOUtils.SerializeToBinary(KLFGlobalSettings.instance);
 				KSP.IO.File.WriteAllBytes<KLFManager>(serialized, GLOBAL_SETTINGS_FILENAME);
 			}
 			catch (KSP.IO.IOException)
@@ -1223,26 +1216,23 @@ namespace KLF
 					object deserialized = KSP.IO.IOUtils.DeserializeFromBinary(bytes);
 					if (deserialized is KLFGlobalSettings)
 					{
-						KLFGlobalSettings global_settings = (KLFGlobalSettings)deserialized;
+						KLFGlobalSettings.instance = (KLFGlobalSettings)deserialized;
 
 						//Apply deserialized global settings
-						KLFInfoDisplay.infoWindowPos.x = global_settings.infoDisplayWindowX;
-						KLFInfoDisplay.infoWindowPos.y = global_settings.infoDisplayWindowY;
-						KLFInfoDisplay.infoDisplayBig = global_settings.infoDisplayBig;
+						KLFInfoDisplay.infoWindowPos.x = KLFGlobalSettings.instance.infoDisplayWindowX;
+						KLFInfoDisplay.infoWindowPos.y = KLFGlobalSettings.instance.infoDisplayWindowY;
 
-						if (global_settings.guiToggleKey != KeyCode.None)
-							KLFInfoDisplay.guiToggleKey = global_settings.guiToggleKey;
+						if (KLFGlobalSettings.instance.guiToggleKey == KeyCode.None)
+							KLFGlobalSettings.instance.guiToggleKey = KeyCode.F7;
 
-						KLFScreenshotDisplay.windowPos.x = global_settings.screenshotDisplayWindowX;
-						KLFScreenshotDisplay.windowPos.y = global_settings.screenshotDisplayWindowY;
-						if (global_settings.screenshotKey != KeyCode.None)
-							KLFScreenshotDisplay.screenshotKey = global_settings.screenshotKey;
-						KLFScreenshotDisplay.smoothScreens = global_settings.smoothScreens;
+						if (KLFGlobalSettings.instance.screenshotKey != KeyCode.None)
+							KLFGlobalSettings.instance.guiToggleKey = KeyCode.F8;
 
-						KLFChatDisplay.windowPos.x = global_settings.chatDisplayWindowX;
-						KLFChatDisplay.windowPos.y = global_settings.chatDisplayWindowY;
-						KLFChatDisplay.windowEnabled = global_settings.chatWindowEnabled;
-						KLFChatDisplay.windowWide = global_settings.chatWindowWide;
+						KLFScreenshotDisplay.windowPos.x = KLFGlobalSettings.instance.screenshotDisplayWindowX;
+						KLFScreenshotDisplay.windowPos.y = KLFGlobalSettings.instance.screenshotDisplayWindowY;
+
+						KLFChatDisplay.windowPos.x = KLFGlobalSettings.instance.chatDisplayWindowX;
+						KLFChatDisplay.windowPos.y = KLFGlobalSettings.instance.chatDisplayWindowY;
 					}
 				}
 			}
@@ -1268,6 +1258,9 @@ namespace KLF
 		public void Update()
 		{
 
+			if (HighLogic.LoadedScene == GameScenes.LOADING)
+				return; //Don't do anything while the game is loading
+
 			//Find an instance of the game's RenderingManager
 			if (renderManager == null)
 				renderManager = (RenderingManager) FindObjectOfType(typeof(RenderingManager));
@@ -1276,10 +1269,10 @@ namespace KLF
 			if (planetariumCam == null)
 				planetariumCam = (PlanetariumCamera)FindObjectOfType(typeof(PlanetariumCamera));
 
-			if (Input.GetKeyDown(KLFInfoDisplay.guiToggleKey))
+			if (Input.GetKeyDown(KLFGlobalSettings.instance.guiToggleKey))
 				KLFInfoDisplay.infoDisplayActive = !KLFInfoDisplay.infoDisplayActive;
 
-			if (Input.GetKeyDown(KLFScreenshotDisplay.screenshotKey))
+			if (Input.GetKeyDown(KLFGlobalSettings.instance.screenshotKey))
 				shareScreenshot();
 
 			if (Input.anyKeyDown)
@@ -1291,7 +1284,7 @@ namespace KLF
 				KeyCode key = KeyCode.F7;
 				if (getAnyKeyDown(ref key))
 				{
-					KLFInfoDisplay.guiToggleKey = key;
+					KLFGlobalSettings.instance.guiToggleKey = key;
 					mappingGUIToggleKey = false;
 				}
 			}
@@ -1301,7 +1294,7 @@ namespace KLF
 				KeyCode key = KeyCode.F8;
 				if (getAnyKeyDown(ref key))
 				{
-					KLFScreenshotDisplay.screenshotKey = key;
+					KLFGlobalSettings.instance.screenshotKey = key;
 					mappingScreenshotKey = false;
 				}
 			}
@@ -1338,7 +1331,7 @@ namespace KLF
 				else
 				{
 
-					if (KLFInfoDisplay.infoDisplayBig)
+					if (KLFGlobalSettings.instance.infoDisplayBig)
 					{
 						KLFInfoDisplay.layoutOptions[4] = GUILayout.MinWidth(KLFInfoDisplay.WINDOW_WIDTH_BIG);
 						KLFInfoDisplay.layoutOptions[5] = GUILayout.MaxWidth(KLFInfoDisplay.WINDOW_WIDTH_BIG);
@@ -1378,7 +1371,7 @@ namespace KLF
 					999999,
 					KLFInfoDisplay.infoWindowPos,
 					infoDisplayWindow,
-					KLFInfoDisplay.infoDisplayMinimized ? "KLF" : "Kerbal LiveFeed v"+KLFCommon.PROGRAM_VERSION+" ("+KLFInfoDisplay.guiToggleKey+")",
+					KLFInfoDisplay.infoDisplayMinimized ? "KLF" : "Kerbal LiveFeed v"+KLFCommon.PROGRAM_VERSION+" ("+KLFGlobalSettings.instance.guiToggleKey+")",
 					KLFInfoDisplay.layoutOptions
 					);
 
@@ -1393,7 +1386,7 @@ namespace KLF
 						);
 				}
 
-				if (KLFChatDisplay.windowEnabled)
+				if (KLFGlobalSettings.instance.chatWindowEnabled)
 				{
 					KLFChatDisplay.windowPos = GUILayout.Window(
 						999997,
@@ -1417,7 +1410,7 @@ namespace KLF
 			GUILayout.BeginVertical();
 
 			bool minimized = KLFInfoDisplay.infoDisplayMinimized;
-			bool big = KLFInfoDisplay.infoDisplayBig;
+			bool big = KLFGlobalSettings.instance.infoDisplayBig;
 
 			if (!minimized)
 				GUILayout.BeginHorizontal();
@@ -1430,7 +1423,7 @@ namespace KLF
 			if (!minimized)
 			{
 				KLFInfoDisplay.infoDisplayDetailed = GUILayout.Toggle(KLFInfoDisplay.infoDisplayDetailed, "Detail", GUI.skin.button);
-				KLFInfoDisplay.infoDisplayBig = GUILayout.Toggle(KLFInfoDisplay.infoDisplayBig, "Big", GUI.skin.button);
+				KLFGlobalSettings.instance.infoDisplayBig = GUILayout.Toggle(KLFGlobalSettings.instance.infoDisplayBig, "Big", GUI.skin.button);
 				KLFInfoDisplay.infoDisplayOptions = GUILayout.Toggle(KLFInfoDisplay.infoDisplayOptions, "Options", GUI.skin.button);
 				GUILayout.EndHorizontal();
 
@@ -1481,9 +1474,9 @@ namespace KLF
 				GUILayout.EndScrollView();
 
 				GUILayout.BeginHorizontal();
-				KLFChatDisplay.windowEnabled = GUILayout.Toggle(KLFChatDisplay.windowEnabled, "Chat", GUI.skin.button);
+				KLFGlobalSettings.instance.chatWindowEnabled = GUILayout.Toggle(KLFGlobalSettings.instance.chatWindowEnabled, "Chat", GUI.skin.button);
 				KLFScreenshotDisplay.windowEnabled = GUILayout.Toggle(KLFScreenshotDisplay.windowEnabled, "Viewer", GUI.skin.button);
-				if (GUILayout.Button("Share Screen ("+KLFScreenshotDisplay.screenshotKey+")"))
+				if (GUILayout.Button("Share Screen ("+KLFGlobalSettings.instance.screenshotKey+")"))
 					shareScreenshot();
 				GUILayout.EndHorizontal();
 
@@ -1494,10 +1487,16 @@ namespace KLF
 
 					GUILayout.BeginHorizontal();
 
-					KLFScreenshotDisplay.smoothScreens = GUILayout.Toggle(
-						KLFScreenshotDisplay.smoothScreens,
+					KLFGlobalSettings.instance.smoothScreens = GUILayout.Toggle(
+						KLFGlobalSettings.instance.smoothScreens,
 						"Smooth Screenshots",
 						GUI.skin.button);
+
+					KLFGlobalSettings.instance.chatColors
+						= GUILayout.Toggle(KLFGlobalSettings.instance.chatColors, "Chat Colors", GUI.skin.button);
+
+					KLFGlobalSettings.instance.showInactiveShips
+						= GUILayout.Toggle(KLFGlobalSettings.instance.showInactiveShips, "Inactive Ships", GUI.skin.button);
 
 					GUILayout.EndHorizontal();
 
@@ -1508,12 +1507,12 @@ namespace KLF
 
 					mappingGUIToggleKey = GUILayout.Toggle(
 						mappingGUIToggleKey,
-						mappingGUIToggleKey ? "Press key" : "Menu Toggle: " + KLFInfoDisplay.guiToggleKey,
+						mappingGUIToggleKey ? "Press key" : "Menu Toggle: " + KLFGlobalSettings.instance.guiToggleKey,
 						GUI.skin.button);
 
 					mappingScreenshotKey = GUILayout.Toggle(
 						mappingScreenshotKey,
-						mappingScreenshotKey ? "Press key" : "Screenshot: " + KLFScreenshotDisplay.screenshotKey,
+						mappingScreenshotKey ? "Press key" : "Screenshot: " + KLFGlobalSettings.instance.screenshotKey,
 						GUI.skin.button);
 
 					GUILayout.EndHorizontal();
@@ -1611,8 +1610,7 @@ namespace KLF
 
 			//Mode toggles
 			GUILayout.BeginHorizontal();
-			KLFChatDisplay.windowWide = GUILayout.Toggle(KLFChatDisplay.windowWide, "Wide", GUI.skin.button);
-			KLFChatDisplay.chatColors = GUILayout.Toggle(KLFChatDisplay.chatColors, "Colors", GUI.skin.button);
+			KLFGlobalSettings.instance.chatWindowWide = GUILayout.Toggle(KLFGlobalSettings.instance.chatWindowWide, "Wide", GUI.skin.button);
 			KLFChatDisplay.displayCommands = GUILayout.Toggle(KLFChatDisplay.displayCommands, "Help", GUI.skin.button);
 			GUILayout.EndHorizontal();
 
@@ -1634,7 +1632,7 @@ namespace KLF
 
 			foreach (KLFChatDisplay.ChatLine line in KLFChatDisplay.chatLineQueue)
 			{
-				if (KLFChatDisplay.chatColors)
+				if (KLFGlobalSettings.instance.chatColors)
 					chatLineStyle.normal.textColor = line.color;
 				GUILayout.Label(line.message, chatLineStyle);
 			}
@@ -1889,7 +1887,7 @@ namespace KLF
 			bool should_lock = HighLogic.LoadedSceneIsEditor && shouldDrawGUI && (
 					KLFInfoDisplay.infoWindowPos.Contains(mousePos)
 					|| (KLFScreenshotDisplay.windowEnabled && KLFScreenshotDisplay.windowPos.Contains(mousePos))
-					|| (KLFChatDisplay.windowEnabled && KLFChatDisplay.windowPos.Contains(mousePos))
+					|| (KLFGlobalSettings.instance.chatWindowEnabled && KLFChatDisplay.windowPos.Contains(mousePos))
 					);
 
 			if (should_lock && !isEditorLocked && !EditorLogic.editorLocked)

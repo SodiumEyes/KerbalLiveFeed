@@ -17,8 +17,6 @@ namespace KLF
 		public static String watchPlayerName = String.Empty;
 		public static Texture2D texture;
 		public static String description = String.Empty;
-		public static KeyCode screenshotKey = KeyCode.F8;
-		public static bool smoothScreens = true;
 
 		public static Rect windowPos = new Rect(
 			Screen.width / 2 - MIN_WINDOW_WIDTH / 2, Screen.height / 2 - MIN_WINDOW_HEIGHT / 2,

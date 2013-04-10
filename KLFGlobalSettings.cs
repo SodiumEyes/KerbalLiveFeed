@@ -14,13 +14,13 @@ namespace KLF
 		public float infoDisplayWindowX;
 		public float infoDisplayWindowY;
 
-		public bool infoDisplayBig = false;
-
 		public float screenshotDisplayWindowX;
 		public float screenshotDisplayWindowY;
 
 		public float chatDisplayWindowX;
 		public float chatDisplayWindowY;
+
+		public bool infoDisplayBig = false;
 
 		public bool chatWindowEnabled = false;
 		public bool chatWindowWide = false;
@@ -31,11 +31,23 @@ namespace KLF
 		[OptionalField(VersionAdded = 1)]
 		public bool smoothScreens = true;
 
+		[OptionalField(VersionAdded = 2)]
+		public bool chatColors = true;
+
+		[OptionalField(VersionAdded = 2)]
+		public bool showInactiveShips = true;
+
 		[OnDeserializing]
 		private void SetDefault(StreamingContext sc)
 		{
 			smoothScreens = true;
+			guiToggleKey = KeyCode.F7;
+			screenshotKey = KeyCode.F8;
+			chatColors = true;
+			showInactiveShips = true;
 		}
+
+		public static KLFGlobalSettings instance = new KLFGlobalSettings();
 
 	}
 }
