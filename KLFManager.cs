@@ -34,8 +34,6 @@ namespace KLF
 
 		public const String INTEROP_CLIENT_FILENAME = "interopclient.txt";
 		public const String INTEROP_PLUGIN_FILENAME = "interopplugin.txt";
-		public const String SCREENSHOT_OUT_FILENAME = "screenout.png";
-		public const String SCREENSHOT_IN_FILENAME = "screenin.png";
 
 		public const String GLOBAL_SETTINGS_FILENAME = "globalsettings.txt";
 
@@ -45,7 +43,7 @@ namespace KLF
 		public const int STATUS_ARRAY_MIN_SIZE = 2;
 		public const int MAX_VESSEL_NAME_LENGTH = 32;
 		public const float VESSEL_TIMEOUT_DELAY = 6.0f;
-		public const float IDLE_DELAY = 5.0f;
+		public const float IDLE_DELAY = 120.0f;
 		public const float PLUGIN_DATA_WRITE_INTERVAL = 5.0f;
 		public const float GLOBAL_SETTINGS_SAVE_INTERVAL = 10.0f;
 
@@ -73,7 +71,7 @@ namespace KLF
 
 		private Queue<KLFVesselUpdate> vesselUpdateQueue = new Queue<KLFVesselUpdate>();
 
-		GUIStyle playerNameStyle, vesselNameStyle, stateTextStyle, chatLineStyle;
+		GUIStyle playerNameStyle, vesselNameStyle, stateTextStyle, chatLineStyle, screenshotDescriptionStyle;
 		private bool isEditorLocked = false;
 
 		private bool mappingGUIToggleKey = false;
@@ -160,8 +158,6 @@ namespace KLF
 				writePluginUpdate();
 				lastPluginUpdateWriteTime = UnityEngine.Time.realtimeSinceStartup;
 			}
-
-			readScreenshotFromFile();
 
 			if ((UnityEngine.Time.realtimeSinceStartup - lastPluginDataWriteTime) > PLUGIN_DATA_WRITE_INTERVAL)
 			{
@@ -637,51 +633,6 @@ namespace KLF
 			return detail;
 		}
 
-		private void readScreenshotFromFile()
-		{
-			if (KSP.IO.File.Exists<KLFManager>(SCREENSHOT_IN_FILENAME))
-			{
-				byte[] in_bytes = null;
-
-				try
-				{
-					in_bytes = KSP.IO.File.ReadAllBytes<KLFManager>(SCREENSHOT_IN_FILENAME); //Read the screenshot
-
-					//Delete the screenshot now that it's been read
-					KSP.IO.File.Delete<KLFManager>(SCREENSHOT_IN_FILENAME);
-
-				}
-				catch
-				{
-					in_bytes = null;
-					Debug.LogWarning("*** Unable to read file " + SCREENSHOT_IN_FILENAME);
-				}
-
-				if (in_bytes != null)
-				{
-					if (in_bytes.Length <= KLFScreenshotDisplay.screenshotSettings.maxNumBytes)
-					{
-						if (KLFScreenshotDisplay.texture == null)
-							KLFScreenshotDisplay.texture = new Texture2D(4, 4, TextureFormat.RGB24, false, true);
-
-						if (KLFScreenshotDisplay.texture.LoadImage(in_bytes))
-						{
-							KLFScreenshotDisplay.texture.Apply();
-
-							//Make sure the screenshot texture does not exceed the size limits
-							if (KLFScreenshotDisplay.texture.width > KLFScreenshotDisplay.screenshotSettings.maxWidth
-								|| KLFScreenshotDisplay.texture.height > KLFScreenshotDisplay.screenshotSettings.maxHeight)
-							{
-								KLFScreenshotDisplay.texture = null;
-							}
-						}
-						else
-							KLFScreenshotDisplay.texture = null;
-					}
-				}
-			}
-		}
-
 		private void writePluginData()
 		{
 			//CurrentGameTitle
@@ -795,14 +746,26 @@ namespace KLF
 
 			RenderTexture.active = null;
 
-			byte[] bytes = resized_tex.EncodeToPNG();
-			try
+			byte[] data = resized_tex.EncodeToPNG();
+
+			//Build the description
+			StringBuilder sb = new StringBuilder();
+			sb.Append(playerName);
+			if (isInFlight)
 			{
-				KSP.IO.File.WriteAllBytes<KLFManager>(bytes, SCREENSHOT_OUT_FILENAME);
+				sb.Append(" - ");
+				sb.Append(FlightGlobals.ActiveVessel.vesselName);
 			}
-			catch (KSP.IO.IOException)
-			{
-			}
+
+			byte[] description = encoder.GetBytes(sb.ToString());
+
+			//Build the message data
+			byte[] bytes = new byte[4 + description.Length + data.Length];
+			KLFCommon.intToBytes(description.Length).CopyTo(bytes, 0);
+			description.CopyTo(bytes, 4);
+			data.CopyTo(bytes, 4 + description.Length);
+
+			enqueuePluginInteropMessage(KLFCommon.PluginInteropMessageID.SCREENSHOT_SHARE, bytes);
 		}
 
 		private void handleUpdate(object obj)
@@ -1138,8 +1101,6 @@ namespace KLF
 
 						updateInterval = ((float)KLFCommon.intFromBytes(data, 5))/1000.0f;
 
-						Debug.Log("update interval: " + updateInterval);
-
 						//Read username
 						playerName = encoder.GetString(data, 9, data.Length - 9);
 					}
@@ -1151,6 +1112,47 @@ namespace KLF
 					{
 						//De-serialize and handle the update
 						handleUpdate(KSP.IO.IOUtils.DeserializeFromBinary(data));
+					}
+					break;
+
+				case KLFCommon.ClientInteropMessageID.SCREENSHOT_RECEIVE:
+					if (data != null)
+					{
+						//Read description length
+						int description_length = KLFCommon.intFromBytes(data, 0);
+
+						//Read description
+						String description = encoder.GetString(data, 4, description_length);
+
+						//Read data
+						byte[] image_data = new byte[data.Length - 4 - description_length];
+						Array.Copy(data, 4 + description_length, image_data, 0, image_data.Length);
+
+						if (image_data.Length <= KLFScreenshotDisplay.screenshotSettings.maxNumBytes)
+						{
+							if (KLFScreenshotDisplay.texture == null)
+								KLFScreenshotDisplay.texture = new Texture2D(4, 4, TextureFormat.RGB24, false, true);
+
+							KLFScreenshotDisplay.description = description;
+
+							if (KLFScreenshotDisplay.texture.LoadImage(image_data))
+							{
+								KLFScreenshotDisplay.texture.Apply();
+
+								//Make sure the screenshot texture does not exceed the size limits
+								if (KLFScreenshotDisplay.texture.width > KLFScreenshotDisplay.screenshotSettings.maxWidth
+									|| KLFScreenshotDisplay.texture.height > KLFScreenshotDisplay.screenshotSettings.maxHeight)
+								{
+									KLFScreenshotDisplay.texture = null;
+									KLFScreenshotDisplay.description = String.Empty;
+								}
+							}
+							else
+							{
+								KLFScreenshotDisplay.texture = null;
+								KLFScreenshotDisplay.description = String.Empty;
+							}
+						}
 					}
 					break;
 			}
@@ -1257,7 +1259,6 @@ namespace KLF
 
 			//Delete remnant in files
 			safeDelete(INTEROP_CLIENT_FILENAME);
-			safeDelete(SCREENSHOT_IN_FILENAME);
 
 			loadGlobalSettings();
 		}
@@ -1535,9 +1536,19 @@ namespace KLF
 			screenshot_box_options[2] = GUILayout.MinHeight(KLFScreenshotDisplay.screenshotSettings.maxHeight);
 			screenshot_box_options[3] = GUILayout.MaxHeight(KLFScreenshotDisplay.screenshotSettings.maxHeight);
 
+			//Init label styles
+			screenshotDescriptionStyle = new GUIStyle(GUI.skin.label);
+			screenshotDescriptionStyle.normal.textColor = Color.white;
+			screenshotDescriptionStyle.alignment = TextAnchor.MiddleCenter;
+			screenshotDescriptionStyle.stretchWidth = true;
+			screenshotDescriptionStyle.fontStyle = FontStyle.Normal;
+
 			//Screenshot
 			if (KLFScreenshotDisplay.texture != null)
+			{
 				GUILayout.Box(KLFScreenshotDisplay.texture, screenshot_box_options);
+				GUILayout.Label(KLFScreenshotDisplay.description, screenshotDescriptionStyle);
+			}
 			else
 				GUILayout.Box(GUIContent.none, screenshot_box_options);
 

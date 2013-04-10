@@ -66,7 +66,7 @@ public class KLFCommon
 		SECONDARY_PLUGIN_UPDATE /*data*/,
 		TEXT_MESSAGE /*Message text*/,
 		SCREEN_WATCH_PLAYER /*Player name*/,
-		SCREENSHOT_SHARE /*Screenshot bytes*/,
+		SCREENSHOT_SHARE /*Description Length : Description : data*/,
 		KEEPALIVE,
 		CONNECTION_END /*Message*/ ,
 		UDP_PROBE /*ClientID*/,
@@ -84,7 +84,7 @@ public class KLFCommon
 		TEXT_MESSAGE /*Message text*/,
 		PLUGIN_UPDATE /*data*/,
 		SERVER_SETTINGS /*UpdateInterval (4) : MaxQueueSize (4) : Screenshot Interval (4) : Screenshot Height (4): InactiveShips (1)*/,
-		SCREENSHOT_SHARE /*Screenshot bytes*/,
+		SCREENSHOT_SHARE /*Description Length : Description : data*/,
 		KEEPALIVE,
 		CONNECTION_END /*Message*/,
 		UDP_ACKNOWLEDGE,
@@ -96,7 +96,7 @@ public class KLFCommon
 	{
 		NULL,
 		CLIENT_DATA /*Byte - Inactive Vessels Per Update : Screenshot Height : UpdateInterval : Player Name*/,
-		SCREENSHOT_RECEIVE,
+		SCREENSHOT_RECEIVE /*Description Length : Description : data*/,
 		CHAT_RECEIVE /*Message*/,
 		PLUGIN_UPDATE /*data*/
 	}
@@ -105,8 +105,8 @@ public class KLFCommon
 	{
 		NULL,
 		PLUGIN_DATA /*Byte - In-Flight : Int32 - Current Game Title length : Current Game Title : Int32 - Screenshot watch player name length : Screenshot watch player name*/,
-		SCREENSHOT_SHARE,
-		CHAT_SEND,
+		SCREENSHOT_SHARE /*Description Length : Description : data*/,
+		CHAT_SEND /*Message*/,
 		PRIMARY_PLUGIN_UPDATE /*data*/,
 		SECONDARY_PLUGIN_UPDATE /*data*/
 	}

@@ -1,5 +1,5 @@
 ﻿//#define DEBUG_OUT
-#define SEND_UPDATES_TO_SENDER
+//#define SEND_UPDATES_TO_SENDER
 
 using System;
 using System.Collections.Generic;
@@ -275,7 +275,14 @@ namespace KLFServer
 			{
 				try
 				{
-					File.WriteAllBytes(filename, bytes);
+					//Read description length
+					int description_length = KLFCommon.intFromBytes(bytes, 0);
+
+					//Trim the description bytes from the image
+					byte[] trimmed_bytes = new byte[bytes.Length - 4 - description_length];
+					Array.Copy(bytes, 4 + description_length, trimmed_bytes, 0, trimmed_bytes.Length);
+
+					File.WriteAllBytes(filename, trimmed_bytes);
 				}
 				catch (Exception)
 				{

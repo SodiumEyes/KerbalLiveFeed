@@ -16,6 +16,7 @@ namespace KLF
 		public static bool windowEnabled = false;
 		public static String watchPlayerName = String.Empty;
 		public static Texture2D texture;
+		public static String description = String.Empty;
 		public static KeyCode screenshotKey = KeyCode.F8;
 		public static bool smoothScreens = true;
 

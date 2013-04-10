@@ -37,8 +37,6 @@ namespace KLFClient
 
 		public const String INTEROP_CLIENT_FILENAME = "PluginData/kerballivefeed/interopclient.txt";
 		public const String INTEROP_PLUGIN_FILENAME = "PluginData/kerballivefeed/interopplugin.txt";
-		public const String SCREENSHOT_OUT_FILENAME = "PluginData/kerballivefeed/screenout.png";
-		public const String SCREENSHOT_IN_FILENAME = "PluginData/kerballivefeed/screenin.png";
 		public const String CLIENT_CONFIG_FILENAME = "KLFClientConfig.txt";
 		public const String CRAFT_FILE_EXTENSION = ".craft";
 		
@@ -111,8 +109,10 @@ namespace KLFClient
 		public static ConcurrentQueue<byte[]> pluginUpdateInQueue;
 		public static ConcurrentQueue<InTextMessage> textMessageQueue;
 		public static long lastScreenshotShareTime;
-		public static byte[] queuedInScreenshot;
+
+		public static byte[] queuedOutScreenshot;
 		public static byte[] lastSharedScreenshot;
+
 		public static String currentGameTitle;
 		public static String watchPlayerName;
 
@@ -137,7 +137,7 @@ namespace KLFClient
 
 		public static object tcpSendLock = new object();
 		public static object serverSettingsLock = new object();
-		public static object screenshotInLock = new object();
+		public static object screenshotOutLock = new object();
 		public static object threadExceptionLock = new object();
 		public static object clientDataLock = new object();
 		public static object udpTimestampLock = new object();
@@ -146,8 +146,6 @@ namespace KLFClient
 		public static Exception threadException;
 
 		public static Thread interopThread;
-		public static Thread pluginUpdateThread;
-		public static Thread screenshotUpdateThread;
 		public static Thread chatThread;
 		public static Thread connectionThread;
 
@@ -369,7 +367,6 @@ namespace KLFClient
 
 					currentGameTitle = String.Empty;
 					watchPlayerName = String.Empty;
-					queuedInScreenshot = null;
 					lastSharedScreenshot = null;
 					lastScreenshotShareTime = 0;
 					lastTCPMessageSendTime = 0;
@@ -400,18 +397,11 @@ namespace KLFClient
 					lastUDPAckReceiveTime = 0;
 					lastUDPMessageSendTime = stopwatch.ElapsedMilliseconds;
 
-					//Create a thread to handle plugin updates
-					pluginUpdateThread = new Thread(new ThreadStart(handlePluginUpdates));
-					pluginUpdateThread.Start();
-
-					//Create a thread to handle screenshots
-					screenshotUpdateThread = new Thread(new ThreadStart(handleScreenshots));
-					screenshotUpdateThread.Start();
-
 					//Create a thread to handle chat
 					chatThread = new Thread(new ThreadStart(handleChat));
 					chatThread.Start();
 
+					//Create a thread to handle client interop
 					interopThread = new Thread(new ThreadStart(handlePluginInterop));
 					interopThread.Start();
 
@@ -598,10 +588,7 @@ namespace KLFClient
 					if (data != null && data.Length > 0 && data.Length < screenshotSettings.maxNumBytes
 						&& watchPlayerName.Length > 0 && watchPlayerName != username)
 					{
-						lock (screenshotInLock)
-						{
-							queuedInScreenshot = data;
-						}
+						enqueueClientInteropMessage(KLFCommon.ClientInteropMessageID.SCREENSHOT_RECEIVE, data);
 					}
 					break;
 
@@ -667,9 +654,7 @@ namespace KLFClient
 		static void clearConnectionState()
 		{
 			//Abort all threads
-			safeAbort(pluginUpdateThread, true);
 			safeAbort(chatThread, true);
-			safeAbort(screenshotUpdateThread, true);
 			safeAbort(connectionThread, true);
 			safeAbort(interopThread, true);
 
@@ -759,12 +744,34 @@ namespace KLFClient
 
 				while (true)
 				{
+					writeClientData();
+
 					readPluginInterop();
 
 					if (stopwatch.ElapsedMilliseconds - lastInteropWriteTime >= INTEROP_WRITE_INTERVAL)
 					{
 						if (writePluginInterop())
 							lastInteropWriteTime = stopwatch.ElapsedMilliseconds;
+					}
+
+					//Throttle the rate at which you can share screenshots
+					if (stopwatch.ElapsedMilliseconds - lastScreenshotShareTime > screenshotInterval)
+					{
+						lock (screenshotOutLock)
+						{
+							if (queuedOutScreenshot != null)
+							{
+								//Share the screenshot
+								sendShareScreenshotMesssage(queuedOutScreenshot);
+								lastSharedScreenshot = queuedOutScreenshot;
+								queuedOutScreenshot = null;
+								lastScreenshotShareTime = stopwatch.ElapsedMilliseconds;
+
+								//Send the screenshot back to the plugin if the player is watching themselves
+								if (watchPlayerName == username)
+									enqueueClientInteropMessage(KLFCommon.ClientInteropMessageID.SCREENSHOT_RECEIVE, lastSharedScreenshot);
+							}
+						}
 					}
 
 					Thread.Sleep(SLEEP_TIME);
@@ -800,36 +807,6 @@ namespace KLFClient
 					}
 
 					Thread.Sleep(sleep_time);
-				}
-
-			}
-			catch (ThreadAbortException)
-			{
-			}
-			catch (Exception e)
-			{
-				passExceptionToMain(e);
-			}
-		}
-
-		static void handleScreenshots()
-		{
-
-			try
-			{
-
-				while (true)
-				{
-					//Throttle the rate at which you can share screenshots
-					if (stopwatch.ElapsedMilliseconds - lastScreenshotShareTime > screenshotInterval)
-					{
-						if (readSharedScreenshot())
-							lastScreenshotShareTime = stopwatch.ElapsedMilliseconds;
-					}
-
-					writeQueuedScreenshot();
-
-					Thread.Sleep(SLEEP_TIME);
 				}
 
 			}
@@ -1204,13 +1181,8 @@ namespace KLFClient
 					{
 						watchPlayerName = new_watch_player_name;
 
-						lock (screenshotInLock)
-						{
-							if (watchPlayerName != username)
-								queuedInScreenshot = null;
-							else
-								queuedInScreenshot = lastSharedScreenshot; //Show the player their last shared screenshot
-						}
+						if (watchPlayerName == username && lastSharedScreenshot != null)
+							enqueueClientInteropMessage(KLFCommon.ClientInteropMessageID.SCREENSHOT_RECEIVE, lastSharedScreenshot);
 
 						sendScreenshotWatchPlayerMessage(watchPlayerName);
 					}
@@ -1222,6 +1194,18 @@ namespace KLFClient
 
 				case KLFCommon.PluginInteropMessageID.SECONDARY_PLUGIN_UPDATE:
 					sendPluginUpdate(data, false);
+					break;
+
+				case KLFCommon.PluginInteropMessageID.SCREENSHOT_SHARE:
+
+					if (data != null)
+					{
+						lock (screenshotOutLock)
+						{
+							queuedOutScreenshot = data;
+						}
+					}
+
 					break;
 				
 			}
@@ -1276,86 +1260,6 @@ namespace KLFClient
 				}
 			}
 
-		}
-
-		static bool readSharedScreenshot()
-		{
-			//Send shared screenshots to server
-			if (File.Exists(SCREENSHOT_OUT_FILENAME))
-			{
-
-				try
-				{
-					byte[] bytes = File.ReadAllBytes(SCREENSHOT_OUT_FILENAME);
-
-					if (bytes != null && bytes.Length > 0 && bytes.Length <= screenshotSettings.maxNumBytes)
-					{
-						sendShareScreenshotMesssage(bytes);
-
-						lastSharedScreenshot = bytes;
-						if (watchPlayerName == username)
-						{
-							lock (screenshotInLock)
-							{
-								queuedInScreenshot = lastSharedScreenshot;
-							}
-						}
-					}
-
-					File.Delete(SCREENSHOT_OUT_FILENAME);
-
-					return true;
-				}
-				catch (System.IO.FileNotFoundException)
-				{
-				}
-				catch (System.UnauthorizedAccessException)
-				{
-				}
-				catch (System.IO.DirectoryNotFoundException)
-				{
-				}
-				catch (System.InvalidOperationException)
-				{
-				}
-				catch (System.IO.IOException)
-				{
-				}
-
-			}
-
-			return false;
-		}
-
-		static void writeQueuedScreenshot()
-		{
-			if (queuedInScreenshot != null && queuedInScreenshot.Length > 0 && !File.Exists(SCREENSHOT_IN_FILENAME))
-			{
-				lock (screenshotInLock)
-				{
-					try
-					{
-						File.WriteAllBytes(SCREENSHOT_IN_FILENAME, queuedInScreenshot);
-						queuedInScreenshot = null;
-					}
-					catch (System.IO.FileNotFoundException)
-					{
-					}
-					catch (System.UnauthorizedAccessException)
-					{
-					}
-					catch (System.IO.DirectoryNotFoundException)
-					{
-					}
-					catch (System.InvalidOperationException)
-					{
-					}
-					catch (System.IO.IOException)
-					{
-					}
-				}
-				
-			}
 		}
 
 		static void enqueueTextMessage(String message, bool from_server = false, bool to_plugin = true)
