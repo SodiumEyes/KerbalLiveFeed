@@ -37,8 +37,6 @@ namespace KLFClient
 
 		public const String INTEROP_CLIENT_FILENAME = "PluginData/kerballivefeed/interopclient.txt";
 		public const String INTEROP_PLUGIN_FILENAME = "PluginData/kerballivefeed/interopplugin.txt";
-		public const String OUT_FILENAME = "PluginData/kerballivefeed/out.txt";
-		public const String IN_FILENAME = "PluginData/kerballivefeed/in.txt";
 		public const String SCREENSHOT_OUT_FILENAME = "PluginData/kerballivefeed/screenout.png";
 		public const String SCREENSHOT_IN_FILENAME = "PluginData/kerballivefeed/screenin.png";
 		public const String CLIENT_CONFIG_FILENAME = "KLFClientConfig.txt";
@@ -380,6 +378,10 @@ namespace KLFClient
 
 					quitHelperMessageShow = true;
 
+					//Delete remnant interop files
+					safeDelete(INTEROP_CLIENT_FILENAME);
+					safeDelete(INTEROP_PLUGIN_FILENAME);
+
 					//Init udp socket
 					try
 					{
@@ -397,10 +399,6 @@ namespace KLFClient
 					udpConnected = false;
 					lastUDPAckReceiveTime = 0;
 					lastUDPMessageSendTime = stopwatch.ElapsedMilliseconds;
-
-					//Delete and in/out files, because they are probably remnants from another session
-					safeDelete(IN_FILENAME);
-					safeDelete(OUT_FILENAME);
 
 					//Create a thread to handle plugin updates
 					pluginUpdateThread = new Thread(new ThreadStart(handlePluginUpdates));
@@ -552,10 +550,7 @@ namespace KLFClient
 				case KLFCommon.ServerMessageID.PLUGIN_UPDATE:
 
 					if (data != null)
-					{
-						//Add the update the queue
-						pluginUpdateInQueue.Enqueue(data);
-					}
+						enqueueClientInteropMessage(KLFCommon.ClientInteropMessageID.PLUGIN_UPDATE, data);
 
 					break;
 
@@ -794,9 +789,9 @@ namespace KLFClient
 				{
 					writeClientData();
 
-					readPluginUpdates();
+					//readPluginUpdates();
 
-					writeQueuedUpdates();
+					//writeQueuedUpdates();
 
 					int sleep_time = 0;
 					lock (serverSettingsLock)
@@ -1031,6 +1026,9 @@ namespace KLFClient
 
 					stream = File.OpenWrite(INTEROP_CLIENT_FILENAME);
 
+					//Write file format version
+					stream.Write(KLFCommon.intToBytes(KLFCommon.FILE_FORMAT_VERSION), 0, 4);
+
 					success = true;
 
 					while (interopOutQueue.Count > 0)
@@ -1102,8 +1100,18 @@ namespace KLFClient
 
 			if (bytes != null && bytes.Length > 0)
 			{
-				//Parse the bytes
-				int index = 0;
+				//Read the file-format version
+				int file_version = KLFCommon.intFromBytes(bytes, 0);
+
+				if (file_version != KLFCommon.FILE_FORMAT_VERSION)
+				{
+					//Incompatible client version
+					Console.WriteLine("KLF Client incompatible with plugin");
+					return;
+				}
+
+				//Parse the messages
+				int index = 4;
 				while (index < bytes.Length - KLFCommon.INTEROP_MSG_HEADER_LENGTH)
 				{
 					//Read the message id
@@ -1162,19 +1170,34 @@ namespace KLFClient
 
 					String new_watch_player_name = String.Empty;
 
-					if (data != null && data.Length >= 8)
+					if (data != null && data.Length >= 9)
 					{
 						UnicodeEncoding encoder = new UnicodeEncoding();
+						int index = 0;
+
+						//Read current activity status
+						bool in_flight = data[index] != 0;
+						index++;
 
 						//Read current game title
-						int current_game_title_length = KLFCommon.intFromBytes(data, 0);
-						currentGameTitle = encoder.GetString(data, 4, current_game_title_length);
+						int current_game_title_length = KLFCommon.intFromBytes(data, index);
+						index += 4;
+
+						currentGameTitle = encoder.GetString(data, index, current_game_title_length);
+						index += current_game_title_length;
 
 						//Read the watch player name
-						int watch_player_name_length = KLFCommon.intFromBytes(data, current_game_title_length + 4);
-						new_watch_player_name = encoder.GetString(data, current_game_title_length + 8, watch_player_name_length);
+						int watch_player_name_length = KLFCommon.intFromBytes(data, index);
+						index += 4;
 
-						Console.WriteLine("plugin data");
+						new_watch_player_name = encoder.GetString(data, index, watch_player_name_length);
+						index += watch_player_name_length;
+
+						//Send the activity status to the server
+						if (in_flight)
+							sendMessageTCP(KLFCommon.ClientMessageID.ACTIVITY_UPDATE_IN_FLIGHT, null);
+						else
+							sendMessageTCP(KLFCommon.ClientMessageID.ACTIVITY_UPDATE_IN_GAME, null);
 					}
 
 					if (watchPlayerName != new_watch_player_name)
@@ -1191,6 +1214,14 @@ namespace KLFClient
 
 						sendScreenshotWatchPlayerMessage(watchPlayerName);
 					}
+					break;
+
+				case KLFCommon.PluginInteropMessageID.PRIMARY_PLUGIN_UPDATE:
+					sendPluginUpdate(data, true);
+					break;
+
+				case KLFCommon.PluginInteropMessageID.SECONDARY_PLUGIN_UPDATE:
+					sendPluginUpdate(data, false);
 					break;
 				
 			}
@@ -1232,11 +1263,12 @@ namespace KLFClient
 					byte[] username_bytes = encoder.GetBytes(username);
 						
 					//Build client data array
-					byte[] bytes = new byte[5 + username_bytes.Length];
+					byte[] bytes = new byte[9 + username_bytes.Length];
 
 					bytes[0] = inactiveShipsPerUpdate;
 					KLFCommon.intToBytes(screenshotSettings.maxHeight).CopyTo(bytes, 1);
-					username_bytes.CopyTo(bytes, 5);
+					KLFCommon.intToBytes(updateInterval).CopyTo(bytes, 5);
+					username_bytes.CopyTo(bytes, 9);
 
 					enqueueClientInteropMessage(KLFCommon.ClientInteropMessageID.CLIENT_DATA, bytes);
 
@@ -1244,119 +1276,6 @@ namespace KLFClient
 				}
 			}
 
-		}
-
-		static void readPluginUpdates()
-		{
-			//Send outgoing plugin updates to server
-			if (File.Exists(OUT_FILENAME))
-			{
-
-				try
-				{
-
-					//Read the update
-					byte[] update_bytes = File.ReadAllBytes(OUT_FILENAME);
-					File.Delete(OUT_FILENAME); //Delete the file now that it's been read
-
-					//Make sure the file format version is correct
-					Int32 file_format_version = KLFCommon.intFromBytes(update_bytes, 0);
-					if (file_format_version == KLFCommon.FILE_FORMAT_VERSION)
-					{
-						//Remove the 4 file format version bytes before sending
-						byte[] trimmed_update_bytes = new byte[update_bytes.Length - 4];
-						Array.Copy(update_bytes, 4, trimmed_update_bytes, 0, update_bytes.Length - 4);
-						sendPluginUpdate(trimmed_update_bytes);
-					}
-					else
-					{
-						//Don't send the update if the file format version is wrong
-						Console.WriteLine("Error: Plugin version is incompatible with client version!");
-					}
-
-				}
-				catch (System.IO.FileNotFoundException)
-				{
-				}
-				catch (System.UnauthorizedAccessException)
-				{
-				}
-				catch (System.IO.DirectoryNotFoundException)
-				{
-				}
-				catch (System.InvalidOperationException)
-				{
-				}
-				catch (System.IO.IOException)
-				{
-				}
-			}
-		}
-
-		static void writeQueuedUpdates()
-		{
-			//Pass queued updates to plugin
-			if (!File.Exists(IN_FILENAME) && pluginUpdateInQueue.Count > 0)
-			{
-
-				FileStream in_stream = null;
-
-				try
-				{
-					in_stream = File.Create(IN_FILENAME);
-
-					//Write the file format version
-					in_stream.Write(KLFCommon.intToBytes(KLFCommon.FILE_FORMAT_VERSION), 0, 4);
-
-					//Write the updates to the file
-					while (pluginUpdateInQueue.Count > 0)
-					{
-						byte[] update;
-						if (pluginUpdateInQueue.TryDequeue(out update))
-							in_stream.Write(update, 0, update.Length);
-						else
-							break;
-					}
-
-				}
-				catch (System.IO.FileNotFoundException)
-				{
-				}
-				catch (System.UnauthorizedAccessException)
-				{
-				}
-				catch (System.IO.DirectoryNotFoundException)
-				{
-				}
-				catch (System.InvalidOperationException)
-				{
-				}
-				catch (System.IO.IOException)
-				{
-				}
-				finally
-				{
-					if (in_stream != null)
-						in_stream.Close();
-				}
-
-			}
-			else
-			{
-				int max_queue_size = 0;
-				//Don't let the update queue get insanely large
-				lock (serverSettingsLock)
-				{
-					max_queue_size = maxQueuedUpdates;
-				}
-
-				while (pluginUpdateInQueue.Count > max_queue_size)
-				{
-					byte[] update;
-					if (!pluginUpdateInQueue.TryDequeue(out update))
-						break;
-				}
-			}
 		}
 
 		static bool readSharedScreenshot()
@@ -1791,14 +1710,18 @@ namespace KLFClient
 			sendMessageTCP(KLFCommon.ClientMessageID.TEXT_MESSAGE, message_bytes);
 		}
 
-		private static void sendPluginUpdate(byte[] data)
+		private static void sendPluginUpdate(byte[] data, bool primary)
 		{
 			if (data != null && data.Length > 0)
 			{
+				KLFCommon.ClientMessageID id
+					= primary ? KLFCommon.ClientMessageID.PRIMARY_PLUGIN_UPDATE : KLFCommon.ClientMessageID.SECONDARY_PLUGIN_UPDATE;
+
+
 				if (udpConnected)
-					sendMessageUDP(KLFCommon.ClientMessageID.PLUGIN_UPDATE, data);
+					sendMessageUDP(id, data);
 				else
-					sendMessageTCP(KLFCommon.ClientMessageID.PLUGIN_UPDATE, data);
+					sendMessageTCP(id, data);
 			}
 		}
 

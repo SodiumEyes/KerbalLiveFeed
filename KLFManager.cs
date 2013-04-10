@@ -34,8 +34,6 @@ namespace KLF
 
 		public const String INTEROP_CLIENT_FILENAME = "interopclient.txt";
 		public const String INTEROP_PLUGIN_FILENAME = "interopplugin.txt";
-		public const String OUT_FILENAME = "out.txt";
-		public const String IN_FILENAME = "in.txt";
 		public const String SCREENSHOT_OUT_FILENAME = "screenout.png";
 		public const String SCREENSHOT_IN_FILENAME = "screenin.png";
 
@@ -47,16 +45,18 @@ namespace KLF
 		public const int STATUS_ARRAY_MIN_SIZE = 2;
 		public const int MAX_VESSEL_NAME_LENGTH = 32;
 		public const float VESSEL_TIMEOUT_DELAY = 6.0f;
-		public const float IDLE_DELAY = 120.0f;
+		public const float IDLE_DELAY = 5.0f;
 		public const float PLUGIN_DATA_WRITE_INTERVAL = 5.0f;
 		public const float GLOBAL_SETTINGS_SAVE_INTERVAL = 10.0f;
 
 		public const int INTEROP_MAX_QUEUE_SIZE = 128;
+		public const float INTEROP_WRITE_INTERVAL = 0.1f;
 
 		public UnicodeEncoding encoder = new UnicodeEncoding();
 
 		public String playerName = String.Empty;
 		public byte inactiveVesselsPerUpdate = 0;
+		public float updateInterval = 0.25f;
 
 		public Dictionary<String, VesselEntry> vessels = new Dictionary<string, VesselEntry>();
 		public SortedDictionary<String, VesselStatusInfo> playerStatus = new SortedDictionary<string, VesselStatusInfo>();
@@ -67,6 +67,8 @@ namespace KLF
 
 		private float lastGlobalSettingSaveTime = 0.0f;
 		private float lastPluginDataWriteTime = 0.0f;
+		private float lastPluginUpdateWriteTime = 0.0f;
+		private float lastInteropWriteTime = 0.0f;
 		private float lastKeyPressTime = 0.0f;
 
 		private Queue<KLFVesselUpdate> vesselUpdateQueue = new Queue<KLFVesselUpdate>();
@@ -152,16 +154,26 @@ namespace KLF
 			}
 
 			readClientInterop();
-			writePluginInterop();
 
-			writePluginUpdate();
-			readUpdatesFromFile();
+			if ((UnityEngine.Time.realtimeSinceStartup - lastPluginUpdateWriteTime) > updateInterval)
+			{
+				writePluginUpdate();
+				lastPluginUpdateWriteTime = UnityEngine.Time.realtimeSinceStartup;
+			}
+
 			readScreenshotFromFile();
 
 			if ((UnityEngine.Time.realtimeSinceStartup - lastPluginDataWriteTime) > PLUGIN_DATA_WRITE_INTERVAL)
 			{
 				writePluginData();
 				lastPluginDataWriteTime = UnityEngine.Time.realtimeSinceStartup;
+			}
+
+			//Write interop
+			if ((UnityEngine.Time.realtimeSinceStartup - lastInteropWriteTime) > INTEROP_WRITE_INTERVAL)
+			{
+				if (writePluginInterop())
+					lastInteropWriteTime = UnityEngine.Time.realtimeSinceStartup;
 			}
 
 			//Save global settings periodically
@@ -219,23 +231,43 @@ namespace KLF
 			if (playerName == null || playerName.Length == 0)
 				return;
 
-			if (isInFlight)
-				writeVesselsToFile();
-			else if (!KSP.IO.File.Exists<KLFManager>(OUT_FILENAME))
-			{
-				//Write non-flight status
-				KSP.IO.FileStream out_stream = KSP.IO.File.Create<KLFManager>(OUT_FILENAME);
-				out_stream.Lock(0, long.MaxValue); //Lock that file so the client won't read it until we're done
+			writePrimaryUpdate();
 
+			if (isInFlight)
+				writeSecondaryUpdates();
+		}
+
+		private void writePrimaryUpdate()
+		{
+			if (isInFlight)
+			{
+				//Write vessel status
+				KLFVesselUpdate update = getVesselUpdate(FlightGlobals.ActiveVessel);
+
+				//Update the player vessel info
+				VesselStatusInfo my_status = new VesselStatusInfo();
+				my_status.info = update;
+				my_status.orbit = FlightGlobals.ActiveVessel.orbit;
+				my_status.color = KLFVessel.generateActiveColor(playerName);
+				my_status.ownerName = playerName;
+				my_status.vesselName = FlightGlobals.ActiveVessel.vesselName;
+				my_status.lastUpdateTime = UnityEngine.Time.realtimeSinceStartup;
+
+				if (playerStatus.ContainsKey(playerName))
+					playerStatus[playerName] = my_status;
+				else
+					playerStatus.Add(playerName, my_status);
+
+				enqueuePluginInteropMessage(KLFCommon.PluginInteropMessageID.PRIMARY_PLUGIN_UPDATE, KSP.IO.IOUtils.SerializeToBinary(update));
+			}
+			else
+			{
 				//Check if the player is building a ship
 				bool building_ship = HighLogic.LoadedSceneIsEditor
 					&& EditorLogic.fetch != null
 					&& EditorLogic.fetch.ship != null && EditorLogic.fetch.ship.Count > 0
 					&& EditorLogic.fetch.shipNameField != null
 					&& EditorLogic.fetch.shipNameField.text != null && EditorLogic.fetch.shipNameField.text.Length > 0;
-
-				//Write the file format version
-				writeIntToStream(out_stream, KLFCommon.FILE_FORMAT_VERSION);
 
 				String[] status_array = null;
 
@@ -280,21 +312,14 @@ namespace KLF
 
 				//Check if player is idle
 				if (isIdle)
-					status_array[1] = "Idle " + status_array[1];
+					status_array[1] = "(Idle) " + status_array[1];
 
-				status_array[0] = playerName;				
+				status_array[0] = playerName;
 
 				//Serialize the update
 				byte[] update_bytes = KSP.IO.IOUtils.SerializeToBinary(status_array);
 
-				//Write the length of the serialized to the stream
-				writeIntToStream(out_stream, update_bytes.Length);
-
-				//Write the serialized update to the stream
-				out_stream.Write(update_bytes, 0, update_bytes.Length);
-
-				out_stream.Unlock(0, long.MaxValue);
-				out_stream.Dispose();
+				enqueuePluginInteropMessage(KLFCommon.PluginInteropMessageID.PRIMARY_PLUGIN_UPDATE, update_bytes);
 
 				VesselStatusInfo my_status = statusArrayToInfo(status_array);
 				if (playerStatus.ContainsKey(playerName))
@@ -304,90 +329,50 @@ namespace KLF
 			}
 		}
 
-		private void writeVesselsToFile()
+		private void writeSecondaryUpdates()
 		{
-
-			if (isInFlight && !KSP.IO.File.Exists<KLFManager>(OUT_FILENAME))
+			if (inactiveVesselsPerUpdate > 0)
 			{
+				//Write the inactive vessels nearest the active vessel to the file
+				SortedList<float, Vessel> nearest_vessels = new SortedList<float, Vessel>();
 
-				try
+				foreach (Vessel vessel in FlightGlobals.Vessels)
 				{
-
-					//Debug.Log("*** Writing vessels to file!");
-
-					KSP.IO.FileStream out_stream = KSP.IO.File.Create<KLFManager>(OUT_FILENAME);
-
-					out_stream.Lock(0, long.MaxValue); //Lock that file so the client won't read it until we're done
-
-					//Write the file format version
-					writeIntToStream(out_stream, KLFCommon.FILE_FORMAT_VERSION);
-
-					//Write the active vessel to the file
-					writeVesselUpdateToFile(out_stream, FlightGlobals.ActiveVessel);
-
-					if (inactiveVesselsPerUpdate > 0)
+					if (vessel != FlightGlobals.ActiveVessel)
 					{
-
-						//Write the inactive vessels nearest the active vessel to the file
-						SortedList<float, Vessel> nearest_vessels = new SortedList<float, Vessel>();
-
-						foreach (Vessel vessel in FlightGlobals.Vessels)
+						float distance = (float)Vector3d.Distance(vessel.GetWorldPos3D(), FlightGlobals.ActiveVessel.GetWorldPos3D());
+						if (distance < INACTIVE_VESSEL_RANGE)
 						{
-							if (vessel != FlightGlobals.ActiveVessel)
+							try
 							{
-								float distance = (float)Vector3d.Distance(vessel.GetWorldPos3D(), FlightGlobals.ActiveVessel.GetWorldPos3D());
-								if (distance < INACTIVE_VESSEL_RANGE)
-								{
-									try
-									{
-										nearest_vessels.Add(distance, vessel);
-									}
-									catch (ArgumentException)
-									{
-									}
-								}
+								nearest_vessels.Add(distance, vessel);
+							}
+							catch (ArgumentException)
+							{
 							}
 						}
-
-						int num_written_vessels = 0;
-
-						//Write inactive vessels to file in order of distance from active vessel
-						IEnumerator<KeyValuePair<float, Vessel>> enumerator = nearest_vessels.GetEnumerator();
-						while (num_written_vessels < inactiveVesselsPerUpdate
-							&& num_written_vessels < MAX_INACTIVE_VESSELS_PER_UPDATE && enumerator.MoveNext())
-						{
-							writeVesselUpdateToFile(out_stream, enumerator.Current.Value);
-							num_written_vessels++;
-						}
 					}
-
-					out_stream.Flush();
-
-					out_stream.Unlock(0, long.MaxValue);
-
-					out_stream.Dispose();
-
-					//Debug.Log("*** Done writing vessels");
-
 				}
-				catch (KSP.IO.IOException e)
+
+				int num_written_vessels = 0;
+
+				//Write inactive vessels to file in order of distance from active vessel
+				IEnumerator<KeyValuePair<float, Vessel>> enumerator = nearest_vessels.GetEnumerator();
+				while (num_written_vessels < inactiveVesselsPerUpdate
+					&& num_written_vessels < MAX_INACTIVE_VESSELS_PER_UPDATE && enumerator.MoveNext())
 				{
-					Debug.Log("*** IO Exception?!");
-					Debug.Log(e);
+					byte[] update_bytes = KSP.IO.IOUtils.SerializeToBinary(getVesselUpdate(enumerator.Current.Value));
+					enqueuePluginInteropMessage(KLFCommon.PluginInteropMessageID.SECONDARY_PLUGIN_UPDATE, update_bytes);
+					num_written_vessels++;
 				}
-				catch (UnauthorizedAccessException)
-				{
-				}
-
 			}
-
 		}
 
-		private void writeVesselUpdateToFile(KSP.IO.FileStream out_stream, Vessel vessel)
+		private KLFVesselUpdate getVesselUpdate(Vessel vessel)
 		{
 
-			if (!vessel || !vessel.mainBody)
-				return;
+			if (vessel == null || vessel.mainBody == null)
+				return null;
 
 			//Create a KLFVesselUpdate from the vessel data
 			KLFVesselUpdate update = new KLFVesselUpdate();
@@ -479,31 +464,7 @@ namespace KLF
 			update.timeScale = (float)Planetarium.TimeScale;
 			update.bodyName = vessel.mainBody.bodyName;
 
-			//Serialize the update
-			byte[] update_bytes = KSP.IO.IOUtils.SerializeToBinary(update);
-            
-			//Write the length of the serialized to the stream
-			writeIntToStream(out_stream, update_bytes.Length);
-
-			//Write the serialized update to the stream
-			out_stream.Write(update_bytes, 0, update_bytes.Length);
-
-			if (vessel == FlightGlobals.ActiveVessel && playerName.Length > 0)
-			{
-				//Update the player vessel info
-				VesselStatusInfo my_status = new VesselStatusInfo();
-				my_status.info = update;
-				my_status.orbit = vessel.orbit;
-				my_status.color = KLFVessel.generateActiveColor(playerName);
-				my_status.ownerName = playerName;
-				my_status.vesselName = vessel.vesselName;
-				my_status.lastUpdateTime = UnityEngine.Time.realtimeSinceStartup;
-
-				if (playerStatus.ContainsKey(playerName))
-					playerStatus[playerName] = my_status;
-				else
-					playerStatus.Add(playerName, my_status);
-			}
+			return update;
 
 		}
 
@@ -511,6 +472,7 @@ namespace KLF
 		{
 			KLFVesselDetail detail = new KLFVesselDetail();
 
+			detail.idle = isIdle;
 			detail.mass = vessel.GetTotalMass();
 
 			bool is_eva = false;
@@ -675,74 +637,6 @@ namespace KLF
 			return detail;
 		}
 
-		private void readUpdatesFromFile()
-		{
-			if (KSP.IO.File.Exists<KLFManager>(IN_FILENAME))
-			{
-				byte[] in_bytes = null;
-
-				try
-				{
-					//I would have used a FileStream here, but KSP.IO.File.Open is broken?
-					in_bytes = KSP.IO.File.ReadAllBytes<KLFManager>(IN_FILENAME); //Read the updates from the file
-
-					//Delete the update file now that it's been read
-					KSP.IO.File.Delete<KLFManager>(IN_FILENAME);
-
-				}
-				catch
-				{
-					in_bytes = null;
-					Debug.LogWarning("*** Unable to read file " + IN_FILENAME);
-				}
-
-				if (in_bytes != null)
-				{
-
-					int offset = 0;
-
-					//Read the file format version
-					Int32 file_format_version = KLFCommon.intFromBytes(in_bytes, offset);
-					offset += 4;
-
-					//Make sure the file format versions match
-					if (file_format_version == KLFCommon.FILE_FORMAT_VERSION)
-					{
-						while (offset < in_bytes.Length)
-						{
-							//Read the length of the following update
-							Int32 update_length = KLFCommon.intFromBytes(in_bytes, offset);
-							offset += 4;
-
-							if (offset + update_length <= in_bytes.Length)
-							{
-
-								//Copy the update data to a new array for de-serialization
-								byte[] update_bytes = new byte[update_length];
-								for (int i = 0; i < update_length; i++)
-								{
-									update_bytes[i] = in_bytes[offset + i];
-								}
-								offset += update_length;
-
-								//De-serialize and handle the update
-								handleUpdate(KSP.IO.IOUtils.DeserializeFromBinary(update_bytes));
-								
-							}
-							else
-								break;
-						}
-					}
-					else
-					{
-						Debug.Log("*** KLF file format version mismatch:" + file_format_version + " expected:" + KLFCommon.FILE_FORMAT_VERSION);
-					}
-
-				}
-
-			}
-		}
-
 		private void readScreenshotFromFile()
 		{
 			if (KSP.IO.File.Exists<KLFManager>(SCREENSHOT_IN_FILENAME))
@@ -812,16 +706,22 @@ namespace KLF
 			byte[] watch_bytes = encoder.GetBytes(watch_player_name);
 
 			//Build update byte array
-			byte[] update_bytes = new byte[4 + title_bytes.Length + 4 + watch_bytes.Length];
+			byte[] update_bytes = new byte[1 + 4 + title_bytes.Length + 4 + watch_bytes.Length];
 
 			int index = 0;
 
+			//Activity
+			update_bytes[index] = isInFlight ? (byte)1 : (byte)0;
+			index++;
+
+			//Game title
 			KLFCommon.intToBytes(title_bytes.Length).CopyTo(update_bytes, index);
 			index += 4;
 
 			title_bytes.CopyTo(update_bytes, index);
 			index += title_bytes.Length;
 
+			//Watch player name
 			KLFCommon.intToBytes(watch_bytes.Length).CopyTo(update_bytes, index);
 			index += 4;
 
@@ -1123,10 +1023,20 @@ namespace KLF
 					Debug.LogWarning("*** Unable to read file " + INTEROP_CLIENT_FILENAME);
 				}
 
-				if (bytes != null)
+				if (bytes != null && bytes.Length > 4)
 				{
-					//Parse the bytes
-					int index = 0;
+					//Read the file-format version
+					int file_version = KLFCommon.intFromBytes(bytes, 0);
+
+					if (file_version != KLFCommon.FILE_FORMAT_VERSION)
+					{
+						//Incompatible client version
+						Debug.LogError("KLF Client incompatible with plugin");
+						return;
+					}
+
+					//Parse the messages
+					int index = 4;
 					while (index < bytes.Length - KLFCommon.INTEROP_MSG_HEADER_LENGTH)
 					{
 						//Read the message id
@@ -1175,6 +1085,9 @@ namespace KLF
 						out_stream = KSP.IO.File.Create<KLFManager>(INTEROP_PLUGIN_FILENAME);
 
 						out_stream.Lock(0, long.MaxValue);
+						
+						//Write file-format version
+						out_stream.Write(KLFCommon.intToBytes(KLFCommon.FILE_FORMAT_VERSION), 0, 4);
 
 						while (interopOutQueue.Count > 0)
 						{
@@ -1215,7 +1128,7 @@ namespace KLF
 
 				case KLFCommon.ClientInteropMessageID.CLIENT_DATA:
 
-					if (data != null && data.Length > 5)
+					if (data != null && data.Length > 9)
 					{
 						//Read inactive vessels per update count
 						inactiveVesselsPerUpdate = data[0];
@@ -1223,13 +1136,22 @@ namespace KLF
 						//Read screenshot height
 						KLFScreenshotDisplay.screenshotSettings.maxHeight = KLFCommon.intFromBytes(data, 1);
 
-						//Debug.Log("Inactive vessels per update: " + inactiveVesselsPerUpdate);
-						//Debug.Log("Screenshot height: " + KLFScreenshotDisplay.screenshotSettings.maxHeight);
+						updateInterval = ((float)KLFCommon.intFromBytes(data, 5))/1000.0f;
+
+						Debug.Log("update interval: " + updateInterval);
 
 						//Read username
-						playerName = encoder.GetString(data, 5, data.Length - 5);
+						playerName = encoder.GetString(data, 9, data.Length - 9);
 					}
 
+					break;
+
+				case KLFCommon.ClientInteropMessageID.PLUGIN_UPDATE:
+					if (data != null)
+					{
+						//De-serialize and handle the update
+						handleUpdate(KSP.IO.IOUtils.DeserializeFromBinary(data));
+					}
 					break;
 			}
 		}
@@ -1335,7 +1257,6 @@ namespace KLF
 
 			//Delete remnant in files
 			safeDelete(INTEROP_CLIENT_FILENAME);
-			safeDelete(IN_FILENAME);
 			safeDelete(SCREENSHOT_IN_FILENAME);
 
 			loadGlobalSettings();
@@ -1740,7 +1661,14 @@ namespace KLF
 				name_pressed |= GUILayout.Button(status.ownerName, playerNameStyle);
 
 			if (status.vesselName != null && status.vesselName.Length > 0)
-				name_pressed |=  GUILayout.Button(status.vesselName, vesselNameStyle);
+			{
+				String vessel_name = status.vesselName;
+
+				if (status.info != null && status.info.detail != null && status.info.detail.idle)
+					vessel_name = "(Idle) " + vessel_name;
+
+				name_pressed |= GUILayout.Button(vessel_name, vesselNameStyle);
+			}
 
 			if (big)
 				GUILayout.EndHorizontal();

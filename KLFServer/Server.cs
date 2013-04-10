@@ -1,4 +1,5 @@
 ﻿//#define DEBUG_OUT
+#define SEND_UPDATES_TO_SENDER
 
 using System;
 using System.Collections.Generic;
@@ -25,14 +26,12 @@ namespace KLFServer
 			public byte[] data;
 		}
 
-		public const bool SEND_UPDATES_TO_SENDER = false;
 		public const long CLIENT_TIMEOUT_DELAY = 8000;
 		public const long CLIENT_HANDSHAKE_TIMEOUT_DELAY = 6000;
 		public const int SLEEP_TIME = 15;
 		public const int MAX_SCREENSHOT_COUNT = 10000;
 		public const int UDP_ACK_THROTTLE = 1000;
 
-		public const int IN_FLIGHT_UPDATE_SIZE_THRESHOLD = 400;
 		public const float NOT_IN_FLIGHT_UPDATE_WEIGHT = 1.0f/4.0f;
 		public const int ACTIVITY_RESET_DELAY = 10000;
 
@@ -1110,18 +1109,16 @@ namespace KLFServer
 
 					break;
 
-				case KLFCommon.ClientMessageID.PLUGIN_UPDATE:
+				case KLFCommon.ClientMessageID.PRIMARY_PLUGIN_UPDATE:
+				case KLFCommon.ClientMessageID.SECONDARY_PLUGIN_UPDATE:
 
 					if (data != null && clientIsReady(client_index))
 					{
-						sendPluginUpdateToAll(data, client_index);
-
-						//Update the sending client's activity level
-						if (data.Length >= IN_FLIGHT_UPDATE_SIZE_THRESHOLD)
-							clients[client_index].updateActivityLevel(ServerClient.ActivityLevel.IN_FLIGHT);
-						else
-							clients[client_index].updateActivityLevel(ServerClient.ActivityLevel.IN_GAME);
-
+#if SEND_UPDATES_TO_SENDER
+						sendPluginUpdateToAll(data, id == KLFCommon.ClientMessageID.SECONDARY_PLUGIN_UPDATE);
+#else
+						sendPluginUpdateToAll(data, id == KLFCommon.ClientMessageID.SECONDARY_PLUGIN_UPDATE, client_index);
+#endif
 					}
 
 					break;
@@ -1260,6 +1257,14 @@ namespace KLFServer
 							sendTextMessageToAll(sb.ToString());
 						}
 					}
+					break;
+
+				case KLFCommon.ClientMessageID.ACTIVITY_UPDATE_IN_FLIGHT:
+					clients[client_index].updateActivityLevel(ServerClient.ActivityLevel.IN_FLIGHT);
+					break;
+
+				case KLFCommon.ClientMessageID.ACTIVITY_UPDATE_IN_GAME:
+					clients[client_index].updateActivityLevel(ServerClient.ActivityLevel.IN_GAME);
 					break;
 
 
@@ -1481,7 +1486,7 @@ namespace KLFServer
 			clients[client_index].queueOutgoingMessage(KLFCommon.ServerMessageID.SERVER_MESSAGE, encoder.GetBytes(message));
 		}
 
-		private void sendPluginUpdateToAll(byte[] data, int exclude_index = -1)
+		private void sendPluginUpdateToAll(byte[] data, bool in_flight_only, int exclude_index = -1)
 		{
 			//Build the message array
 			byte[] message_bytes = buildMessageArray(KLFCommon.ServerMessageID.PLUGIN_UPDATE, data);
@@ -1490,9 +1495,10 @@ namespace KLFServer
 			for (int i = 0; i < clients.Length; i++)
 			{
 				//Make sure the client is valid and in-game
-				if ((i != exclude_index || SEND_UPDATES_TO_SENDER)
+				if ((i != exclude_index)
 					&& clientIsReady(i)
-					&& clients[i].activityLevel != ServerClient.ActivityLevel.INACTIVE)
+					&& clients[i].activityLevel != ServerClient.ActivityLevel.INACTIVE
+					&& (clients[i].activityLevel == ServerClient.ActivityLevel.IN_FLIGHT || !in_flight_only))
 					clients[i].queueOutgoingMessage(message_bytes);
 			}
 		}

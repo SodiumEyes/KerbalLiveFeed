@@ -7,8 +7,8 @@ public class KLFCommon
 {
 
 	public const String PROGRAM_VERSION = "0.6.0";
-	public const Int32 FILE_FORMAT_VERSION = 6;
-	public const Int32 NET_PROTOCOL_VERSION = 7;
+	public const Int32 FILE_FORMAT_VERSION = 7;
+	public const Int32 NET_PROTOCOL_VERSION = 8;
 	public const int MSG_HEADER_LENGTH = 8;
 	public const int INTEROP_MSG_HEADER_LENGTH = 8;
 
@@ -62,7 +62,8 @@ public class KLFCommon
 	public enum ClientMessageID
 	{
 		HANDSHAKE /*Username Length : Username : Version*/,
-		PLUGIN_UPDATE /*data*/,
+		PRIMARY_PLUGIN_UPDATE /*data*/,
+		SECONDARY_PLUGIN_UPDATE /*data*/,
 		TEXT_MESSAGE /*Message text*/,
 		SCREEN_WATCH_PLAYER /*Player name*/,
 		SCREENSHOT_SHARE /*Screenshot bytes*/,
@@ -70,7 +71,9 @@ public class KLFCommon
 		CONNECTION_END /*Message*/ ,
 		UDP_PROBE /*ClientID*/,
 		NULL,
-		SHARE_CRAFT_FILE /*Craft Type Byte : Craft name length : Craft Name : File bytes*/
+		SHARE_CRAFT_FILE /*Craft Type Byte : Craft name length : Craft Name : File bytes*/,
+		ACTIVITY_UPDATE_IN_GAME,
+		ACTIVITY_UPDATE_IN_FLIGHT
 	}
 
 	public enum ServerMessageID
@@ -92,17 +95,20 @@ public class KLFCommon
 	public enum ClientInteropMessageID
 	{
 		NULL,
-		CLIENT_DATA /*Byte - Inactive Vessels Per Update : Int32 - Screenshot Height : Player Name*/,
+		CLIENT_DATA /*Byte - Inactive Vessels Per Update : Screenshot Height : UpdateInterval : Player Name*/,
 		SCREENSHOT_RECEIVE,
-		CHAT_RECEIVE /*Message*/
+		CHAT_RECEIVE /*Message*/,
+		PLUGIN_UPDATE /*data*/
 	}
 
 	public enum PluginInteropMessageID
 	{
 		NULL,
-		PLUGIN_DATA /*Int32 - Current Game Title length : Current Game Title : Int32 - Screenshot watch player name length :Screenshot watch player name*/,
+		PLUGIN_DATA /*Byte - In-Flight : Int32 - Current Game Title length : Current Game Title : Int32 - Screenshot watch player name length : Screenshot watch player name*/,
 		SCREENSHOT_SHARE,
-		CHAT_SEND
+		CHAT_SEND,
+		PRIMARY_PLUGIN_UPDATE /*data*/,
+		SECONDARY_PLUGIN_UPDATE /*data*/
 	}
 
 }

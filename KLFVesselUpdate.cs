@@ -47,6 +47,11 @@ namespace KLF
 		public Activity activity;
 
 		/// <summary>
+		/// Whether or not the player controlling this vessel is idle
+		/// </summary>
+		public bool idle;
+
+		/// <summary>
 		/// The number of crew the vessel is holding. byte.Max signifies not applicable
 		/// </summary>
 		public byte numCrew;
@@ -73,6 +78,7 @@ namespace KLF
 			percentFuel = 0;
 			percentRCS = 0;
 			mass = 0.0f;
+			idle = false;
 		}
 
 	}
