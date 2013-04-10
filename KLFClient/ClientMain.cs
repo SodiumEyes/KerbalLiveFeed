@@ -39,12 +39,8 @@ namespace KLFClient
 		public const String INTEROP_PLUGIN_FILENAME = "PluginData/kerballivefeed/interopplugin.txt";
 		public const String OUT_FILENAME = "PluginData/kerballivefeed/out.txt";
 		public const String IN_FILENAME = "PluginData/kerballivefeed/in.txt";
-		public const String CLIENT_DATA_FILENAME = "PluginData/kerballivefeed/clientdata.txt";
-		public const String PLUGIN_DATA_FILENAME = "PluginData/kerballivefeed/plugindata.txt";
 		public const String SCREENSHOT_OUT_FILENAME = "PluginData/kerballivefeed/screenout.png";
 		public const String SCREENSHOT_IN_FILENAME = "PluginData/kerballivefeed/screenin.png";
-		public const String CHAT_IN_FILENAME = "PluginData/kerballivefeed/chatin.txt";
-		public const String CHAT_OUT_FILENAME = "PluginData/kerballivefeed/chatout.txt";
 		public const String CLIENT_CONFIG_FILENAME = "KLFClientConfig.txt";
 		public const String CRAFT_FILE_EXTENSION = ".craft";
 		
@@ -405,9 +401,6 @@ namespace KLFClient
 					//Delete and in/out files, because they are probably remnants from another session
 					safeDelete(IN_FILENAME);
 					safeDelete(OUT_FILENAME);
-					safeDelete(CHAT_IN_FILENAME);
-					safeDelete(CHAT_OUT_FILENAME);
-					safeDelete(CLIENT_DATA_FILENAME);
 
 					//Create a thread to handle plugin updates
 					pluginUpdateThread = new Thread(new ThreadStart(handlePluginUpdates));
@@ -465,9 +458,6 @@ namespace KLFClient
 						enqueuePluginChatMessage("Lost connection with server", true);
 
 					Console.ResetColor();
-
-					//Delete the client data file
-					safeDelete(CLIENT_DATA_FILENAME);
 
 					return true;
 				}
@@ -807,8 +797,6 @@ namespace KLFClient
 					readPluginUpdates();
 
 					writeQueuedUpdates();
-
-					readPluginData();
 
 					int sleep_time = 0;
 					lock (serverSettingsLock)
@@ -1169,6 +1157,41 @@ namespace KLFClient
 					}
 
 					break;
+
+				case KLFCommon.PluginInteropMessageID.PLUGIN_DATA:
+
+					String new_watch_player_name = String.Empty;
+
+					if (data != null && data.Length >= 8)
+					{
+						UnicodeEncoding encoder = new UnicodeEncoding();
+
+						//Read current game title
+						int current_game_title_length = KLFCommon.intFromBytes(data, 0);
+						currentGameTitle = encoder.GetString(data, 4, current_game_title_length);
+
+						//Read the watch player name
+						int watch_player_name_length = KLFCommon.intFromBytes(data, current_game_title_length + 4);
+						new_watch_player_name = encoder.GetString(data, current_game_title_length + 8, watch_player_name_length);
+
+						Console.WriteLine("plugin data");
+					}
+
+					if (watchPlayerName != new_watch_player_name)
+					{
+						watchPlayerName = new_watch_player_name;
+
+						lock (screenshotInLock)
+						{
+							if (watchPlayerName != username)
+								queuedInScreenshot = null;
+							else
+								queuedInScreenshot = lastSharedScreenshot; //Show the player their last shared screenshot
+						}
+
+						sendScreenshotWatchPlayerMessage(watchPlayerName);
+					}
+					break;
 				
 			}
 		}
@@ -1206,48 +1229,19 @@ namespace KLFClient
 				if (lastClientDataChangeTime > lastClientDataWriteTime
 					|| (stopwatch.ElapsedMilliseconds - lastClientDataWriteTime) > CLIENT_DATA_FORCE_WRITE_INTERVAL)
 				{
+					byte[] username_bytes = encoder.GetBytes(username);
+						
+					//Build client data array
+					byte[] bytes = new byte[5 + username_bytes.Length];
 
-					try
-					{
+					bytes[0] = inactiveShipsPerUpdate;
+					KLFCommon.intToBytes(screenshotSettings.maxHeight).CopyTo(bytes, 1);
+					username_bytes.CopyTo(bytes, 5);
 
-						safeDelete(CLIENT_DATA_FILENAME); //Delete the previous client data file
+					enqueueClientInteropMessage(KLFCommon.ClientInteropMessageID.CLIENT_DATA, bytes);
 
-						//Create a file to pass the client data to the plugin
-						FileStream client_data_stream = File.Open(CLIENT_DATA_FILENAME, FileMode.OpenOrCreate);
-
-						//Write num inactive ships per update
-						client_data_stream.WriteByte(inactiveShipsPerUpdate);
-
-						//Write screenshot height
-						client_data_stream.Write(KLFCommon.intToBytes(screenshotSettings.maxHeight), 0, 4);
-
-						//Write username
-						byte[] username_bytes = encoder.GetBytes(username);
-						client_data_stream.Write(username_bytes, 0, username_bytes.Length);
-
-						client_data_stream.Close();
-
-						lastClientDataWriteTime = stopwatch.ElapsedMilliseconds;
-
-					}
-					catch (System.IO.FileNotFoundException)
-					{
-					}
-					catch (System.UnauthorizedAccessException)
-					{
-					}
-					catch (System.IO.DirectoryNotFoundException)
-					{
-					}
-					catch (System.InvalidOperationException)
-					{
-					}
-					catch (System.IO.IOException)
-					{
-					}
-
+					lastClientDataWriteTime = stopwatch.ElapsedMilliseconds;
 				}
-
 			}
 
 		}
@@ -1442,65 +1436,6 @@ namespace KLFClient
 					}
 				}
 				
-			}
-		}
-
-		static void readPluginData()
-		{
-			if (File.Exists(PLUGIN_DATA_FILENAME))
-			{
-				try
-				{
-					String new_watch_player_name = String.Empty;
-
-					byte[] bytes = File.ReadAllBytes(PLUGIN_DATA_FILENAME);
-
-					File.Delete(PLUGIN_DATA_FILENAME);
-
-					if (bytes != null && bytes.Length >= 8)
-					{
-						UnicodeEncoding encoder = new UnicodeEncoding();
-
-						//Read current game title
-						int current_game_title_length = KLFCommon.intFromBytes(bytes, 0);
-						currentGameTitle = encoder.GetString(bytes, 4, current_game_title_length);
-
-						//Read the watch player name
-						int watch_player_name_length = KLFCommon.intFromBytes(bytes, current_game_title_length + 4);
-						new_watch_player_name = encoder.GetString(bytes, current_game_title_length + 8, watch_player_name_length);
-					}
-
-					if (watchPlayerName != new_watch_player_name)
-					{
-						watchPlayerName = new_watch_player_name;
-
-						lock (screenshotInLock)
-						{
-							if (watchPlayerName != username)
-								queuedInScreenshot = null;
-							else
-								queuedInScreenshot = lastSharedScreenshot; //Show the player their last shared screenshot
-						}
-
-						sendScreenshotWatchPlayerMessage(watchPlayerName);
-					}
-
-				}
-				catch (System.IO.FileNotFoundException)
-				{
-				}
-				catch (System.UnauthorizedAccessException)
-				{
-				}
-				catch (System.IO.DirectoryNotFoundException)
-				{
-				}
-				catch (System.InvalidOperationException)
-				{
-				}
-				catch (System.IO.IOException)
-				{
-				}
 			}
 		}
 

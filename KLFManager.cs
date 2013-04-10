@@ -36,8 +36,6 @@ namespace KLF
 		public const String INTEROP_PLUGIN_FILENAME = "interopplugin.txt";
 		public const String OUT_FILENAME = "out.txt";
 		public const String IN_FILENAME = "in.txt";
-		public const String CLIENT_DATA_FILENAME = "clientdata.txt";
-		public const String PLUGIN_DATA_FILENAME = "plugindata.txt";
 		public const String SCREENSHOT_OUT_FILENAME = "screenout.png";
 		public const String SCREENSHOT_IN_FILENAME = "screenin.png";
 
@@ -162,8 +160,8 @@ namespace KLF
 
 			if ((UnityEngine.Time.realtimeSinceStartup - lastPluginDataWriteTime) > PLUGIN_DATA_WRITE_INTERVAL)
 			{
-				if (writePluginData())
-					lastPluginDataWriteTime = UnityEngine.Time.realtimeSinceStartup;
+				writePluginData();
+				lastPluginDataWriteTime = UnityEngine.Time.realtimeSinceStartup;
 			}
 
 			//Save global settings periodically
@@ -218,8 +216,6 @@ namespace KLF
 
 		private void writePluginUpdate()
 		{
-			readClientData();
-
 			if (playerName == null || playerName.Length == 0)
 				return;
 
@@ -792,98 +788,47 @@ namespace KLF
 			}
 		}
 
-		private void readClientData()
+		private void writePluginData()
 		{
-			if (KSP.IO.File.Exists<KLFManager>(CLIENT_DATA_FILENAME))
+			//CurrentGameTitle
+			String current_game_title = String.Empty;
+			if (HighLogic.CurrentGame != null)
 			{
+				current_game_title = HighLogic.CurrentGame.Title;
 
-				byte[] bytes = null;
-
-				//Read the client data file
-				try
-				{
-					bytes = KSP.IO.File.ReadAllBytes<KLFManager>(CLIENT_DATA_FILENAME);
-
-					//Delete the update file now that it's been read
-					KSP.IO.File.Delete<KLFManager>(CLIENT_DATA_FILENAME);
-				}
-				catch
-				{
-					bytes = null;
-					Debug.LogWarning("*** Unable to read file " + CLIENT_DATA_FILENAME);
-				}
-
-				if (bytes != null && bytes.Length > 5)
-				{
-					//Read inactive vessels per update count
-					inactiveVesselsPerUpdate = bytes[0];
-
-					//Read screenshot height
-					KLFScreenshotDisplay.screenshotSettings.maxHeight = KLFCommon.intFromBytes(bytes, 1);
-
-					//Debug.Log("Inactive vessels per update: " + inactiveVesselsPerUpdate);
-					//Debug.Log("Screenshot height: " + KLFScreenshotDisplay.screenshotSettings.maxHeight);
-
-					//Read username
-					playerName = encoder.GetString(bytes, 5, bytes.Length - 5);
-				}
-			}
-		}
-
-		private bool writePluginData()
-		{
-			if (!KSP.IO.File.Exists<KLFManager>(PLUGIN_DATA_FILENAME))
-			{
-				try
-				{
-
-					KSP.IO.FileStream out_stream = null;
-					try
-					{
-						out_stream = KSP.IO.File.Create<KLFManager>(PLUGIN_DATA_FILENAME);
-
-						out_stream.Lock(0, long.MaxValue);
-
-						//CurrentGameTitle
-						String current_game_title = String.Empty;
-						if (HighLogic.CurrentGame != null)
-						{
-							current_game_title = HighLogic.CurrentGame.Title;
-
-							//Remove the (Sandbox) portion of the title
-							const String remove = " (Sandbox)";
-							if (current_game_title.Length > remove.Length)
-								current_game_title = current_game_title.Remove(current_game_title.Length - remove.Length);
-						}
-
-						byte[] bytes = encoder.GetBytes(current_game_title);
-						out_stream.Write(KLFCommon.intToBytes(bytes.Length), 0, 4);
-						out_stream.Write(bytes, 0, bytes.Length);
-
-						//Watch player name
-						String watch_player_name = String.Empty;
-						if (shouldDrawGUI && KLFScreenshotDisplay.windowEnabled)
-							watch_player_name = KLFScreenshotDisplay.watchPlayerName;
-
-						bytes = encoder.GetBytes(watch_player_name);
-						out_stream.Write(KLFCommon.intToBytes(bytes.Length), 0, 4);
-						out_stream.Write(bytes, 0, bytes.Length);
-
-						out_stream.Unlock(0, long.MaxValue);
-						out_stream.Flush();
-
-						return true;
-					}
-					finally
-					{
-						out_stream.Dispose();
-					}
-
-				}
-				catch { }
+				//Remove the (Sandbox) portion of the title
+				const String remove = " (Sandbox)";
+				if (current_game_title.Length > remove.Length)
+					current_game_title = current_game_title.Remove(current_game_title.Length - remove.Length);
 			}
 
-			return false;
+			byte[] title_bytes = encoder.GetBytes(current_game_title);
+
+			//Watch player name
+			String watch_player_name = String.Empty;
+			if (shouldDrawGUI && KLFScreenshotDisplay.windowEnabled)
+				watch_player_name = KLFScreenshotDisplay.watchPlayerName;
+
+			byte[] watch_bytes = encoder.GetBytes(watch_player_name);
+
+			//Build update byte array
+			byte[] update_bytes = new byte[4 + title_bytes.Length + 4 + watch_bytes.Length];
+
+			int index = 0;
+
+			KLFCommon.intToBytes(title_bytes.Length).CopyTo(update_bytes, index);
+			index += 4;
+
+			title_bytes.CopyTo(update_bytes, index);
+			index += title_bytes.Length;
+
+			KLFCommon.intToBytes(watch_bytes.Length).CopyTo(update_bytes, index);
+			index += 4;
+
+			watch_bytes.CopyTo(update_bytes, index);
+			index += watch_bytes.Length;
+
+			enqueuePluginInteropMessage(KLFCommon.PluginInteropMessageID.PLUGIN_DATA, update_bytes);
 		}
 
 		private VesselStatusInfo statusArrayToInfo(String[] status_array)
@@ -1264,6 +1209,25 @@ namespace KLF
 					if (data != null)
 					{
 						KLFChatDisplay.enqueueChatLine(encoder.GetString(data));
+					}
+
+					break;
+
+				case KLFCommon.ClientInteropMessageID.CLIENT_DATA:
+
+					if (data != null && data.Length > 5)
+					{
+						//Read inactive vessels per update count
+						inactiveVesselsPerUpdate = data[0];
+
+						//Read screenshot height
+						KLFScreenshotDisplay.screenshotSettings.maxHeight = KLFCommon.intFromBytes(data, 1);
+
+						//Debug.Log("Inactive vessels per update: " + inactiveVesselsPerUpdate);
+						//Debug.Log("Screenshot height: " + KLFScreenshotDisplay.screenshotSettings.maxHeight);
+
+						//Read username
+						playerName = encoder.GetString(data, 5, data.Length - 5);
 					}
 
 					break;

@@ -22,19 +22,6 @@ public class KLFCommon
 	public const byte CRAFT_TYPE_VAB = 0;
 	public const byte CRAFT_TYPE_SPH = 1;
 
-	/*ClientData format:
-	 * Byte - Inactive Vessels Per Update
-	 * Int32 - Screenshot Height
-	 * Player Name
-	 */
-
-	/*PluginData format:
-	 * Int32 - Current Game Title length
-	 * Current Game Title
-	 * Int32 - Screenshot watch player name length
-	 * Screenshot watch player name
-	 */
-
 	internal static string filteredFileName(string filename)
 	{
 		const String illegal = "\\/:*?\"<>|";
@@ -105,7 +92,7 @@ public class KLFCommon
 	public enum ClientInteropMessageID
 	{
 		NULL,
-		CLIENT_DATA,
+		CLIENT_DATA /*Byte - Inactive Vessels Per Update : Int32 - Screenshot Height : Player Name*/,
 		SCREENSHOT_RECEIVE,
 		CHAT_RECEIVE /*Message*/
 	}
@@ -113,7 +100,7 @@ public class KLFCommon
 	public enum PluginInteropMessageID
 	{
 		NULL,
-		PLUGIN_DATA,
+		PLUGIN_DATA /*Int32 - Current Game Title length : Current Game Title : Int32 - Screenshot watch player name length :Screenshot watch player name*/,
 		SCREENSHOT_SHARE,
 		CHAT_SEND
 	}
