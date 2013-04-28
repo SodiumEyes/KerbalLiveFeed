@@ -34,7 +34,8 @@ namespace KLFClient
 		public const String IP_LABEL = "ip";
 		public const String AUTO_RECONNECT_LABEL = "reconnect";
 		public const String FAVORITE_LABEL = "fav";
-
+        public const String AUTO_CONNECT_LABEL = "autoconnect";
+		
 		public const String INTEROP_CLIENT_FILENAME = "PluginData/kerballivefeed/interopclient.txt";
 		public const String INTEROP_PLUGIN_FILENAME = "PluginData/kerballivefeed/interopplugin.txt";
 		public const String CLIENT_CONFIG_FILENAME = "KLFClientConfig.txt";
@@ -86,6 +87,7 @@ namespace KLFClient
 		public static byte inactiveShipsPerUpdate = 0;
 		public static ScreenshotSettings screenshotSettings = new ScreenshotSettings();
 		public static String[] favorites = new String[8];
+        public static bool autoConnect = true;
 
 		//Connection
 		public static int clientID;
@@ -197,6 +199,40 @@ namespace KLFClient
 				Console.WriteLine("FAV to favorite current address, LIST to pick a favorite");
 				Console.WriteLine("C to connect, Q to quit");
 
+                if (autoConnect)
+                {
+                    bool launched = false;
+                    Process[] processes = Process.GetProcessesByName("KSP");
+                    if (processes.Length < 1)
+                    {
+                        Console.WriteLine("Attempting to launch kerbal space program...");
+                        try
+                        {
+                            Process firstProc = new Process();
+                            firstProc.StartInfo.FileName = "KSP.exe";
+                            firstProc.EnableRaisingEvents = true;
+
+                            firstProc.Start();
+                            launched = true;
+                        }
+                        catch
+                        {
+                            Console.WriteLine("Failed!");
+                            Console.WriteLine("Aborting auto connect");
+                            launched = false;
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("Kerbal Space Program already running.");
+                        launched = true;
+                    }
+                    if (launched)
+                    {
+                        connect();
+                    }
+                }
+
 				String in_string = Console.ReadLine().ToLower();
 
 				if (in_string == "q")
@@ -285,72 +321,76 @@ namespace KLFClient
 				}
 				else if (in_string == "c")
 				{
-
-					bool allow_reconnect = false;
-					reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
-
-					do
-					{
-
-						allow_reconnect = false;
-
-						try
-						{
-							//Run the connection loop then determine if a reconnect attempt should be made
-							if (connectionLoop())
-							{
-								reconnectAttempts = 0;
-								allow_reconnect = autoReconnect && !intentionalConnectionEnd;
-							}
-							else
-								allow_reconnect = autoReconnect && !intentionalConnectionEnd && reconnectAttempts < MAX_RECONNECT_ATTEMPTS;
-						}
-						catch (Exception e)
-						{
-
-							//Write an error log
-							TextWriter writer = File.CreateText("KLFClientlog.txt");
-							writer.WriteLine(e.ToString());
-							if (threadExceptionStackTrace != null && threadExceptionStackTrace.Length > 0)
-							{
-								writer.Write("Stacktrace: ");
-								writer.WriteLine(threadExceptionStackTrace);
-							}
-							writer.Close();
-
-							Console.ForegroundColor = ConsoleColor.Red;
-
-							Console.WriteLine();
-							Console.WriteLine(e.ToString());
-							if (threadExceptionStackTrace != null && threadExceptionStackTrace.Length > 0)
-							{
-								Console.Write("Stacktrace: ");
-								Console.WriteLine(threadExceptionStackTrace);
-							}
-
-							Console.WriteLine();
-							Console.WriteLine("Unexpected exception encountered! Crash report written to KLFClientlog.txt");
-							Console.WriteLine();
-
-							Console.ResetColor();
-
-							clearConnectionState();
-						}
-
-						if (allow_reconnect)
-						{
-							//Attempt a reconnect after a delay
-							Console.WriteLine("Attempting to reconnect...");
-							Thread.Sleep(RECONNECT_DELAY);
-							reconnectAttempts++;
-						}
-
-					} while (allow_reconnect);
+                    connect();
 				}
 
 			}
 			
 		}
+
+        static void connect()
+        {
+            bool allow_reconnect = false;
+            reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
+
+            do
+            {
+
+                allow_reconnect = false;
+
+                try
+                {
+                    //Run the connection loop then determine if a reconnect attempt should be made
+                    if (connectionLoop())
+                    {
+                        reconnectAttempts = 0;
+                        allow_reconnect = autoReconnect && !intentionalConnectionEnd;
+                    }
+                    else
+                        allow_reconnect = autoReconnect && !intentionalConnectionEnd && reconnectAttempts < MAX_RECONNECT_ATTEMPTS;
+                }
+                catch (Exception e)
+                {
+
+                    //Write an error log
+                    TextWriter writer = File.CreateText("KLFClientlog.txt");
+                    writer.WriteLine(e.ToString());
+                    if (threadExceptionStackTrace != null && threadExceptionStackTrace.Length > 0)
+                    {
+                        writer.Write("Stacktrace: ");
+                        writer.WriteLine(threadExceptionStackTrace);
+                    }
+                    writer.Close();
+
+                    Console.ForegroundColor = ConsoleColor.Red;
+
+                    Console.WriteLine();
+                    Console.WriteLine(e.ToString());
+                    if (threadExceptionStackTrace != null && threadExceptionStackTrace.Length > 0)
+                    {
+                        Console.Write("Stacktrace: ");
+                        Console.WriteLine(threadExceptionStackTrace);
+                    }
+
+                    Console.WriteLine();
+                    Console.WriteLine("Unexpected exception encountered! Crash report written to KLFClientlog.txt");
+                    Console.WriteLine();
+
+                    Console.ResetColor();
+
+                    clearConnectionState();
+                }
+
+                if (allow_reconnect)
+                {
+                    //Attempt a reconnect after a delay
+                    Console.WriteLine("Attempting to reconnect...");
+                    Thread.Sleep(RECONNECT_DELAY);
+                    reconnectAttempts++;
+                }
+
+            } while (allow_reconnect);
+        }
 
 		/// <summary>
 		/// Connect to the server and run a session until the connection ends
@@ -1475,6 +1515,8 @@ namespace KLFClient
 							if (int.TryParse(index_string, out index) && index >= 0 && index < favorites.Length)
 								favorites[index] = line;
 						}
+                        else if (label == AUTO_CONNECT_LABEL)
+                            bool.TryParse(line, out autoConnect);
 
 					}
 
@@ -1504,6 +1546,9 @@ namespace KLFClient
 			//port
 			writer.WriteLine(AUTO_RECONNECT_LABEL);
 			writer.WriteLine(autoReconnect);
+
+            writer.WriteLine(AUTO_CONNECT_LABEL);
+            writer.WriteLine(autoConnect);
 
 			//favorites
 			for (int i = 0; i < favorites.Length; i++)
