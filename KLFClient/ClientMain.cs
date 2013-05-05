@@ -168,6 +168,9 @@ namespace KLFClient
 
 			readConfigFile();
 
+			if (args.Length > 0 && args.First() == "connect")
+				connect();
+
 			while (true)
 			{
 				Console.WriteLine();
@@ -284,72 +287,74 @@ namespace KLFClient
 						Console.WriteLine("Invalid index.");
 				}
 				else if (in_string == "c")
-				{
-
-					bool allow_reconnect = false;
-					reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
-
-					do
-					{
-
-						allow_reconnect = false;
-
-						try
-						{
-							//Run the connection loop then determine if a reconnect attempt should be made
-							if (connectionLoop())
-							{
-								reconnectAttempts = 0;
-								allow_reconnect = autoReconnect && !intentionalConnectionEnd;
-							}
-							else
-								allow_reconnect = autoReconnect && !intentionalConnectionEnd && reconnectAttempts < MAX_RECONNECT_ATTEMPTS;
-						}
-						catch (Exception e)
-						{
-
-							//Write an error log
-							TextWriter writer = File.CreateText("KLFClientlog.txt");
-							writer.WriteLine(e.ToString());
-							if (threadExceptionStackTrace != null && threadExceptionStackTrace.Length > 0)
-							{
-								writer.Write("Stacktrace: ");
-								writer.WriteLine(threadExceptionStackTrace);
-							}
-							writer.Close();
-
-							Console.ForegroundColor = ConsoleColor.Red;
-
-							Console.WriteLine();
-							Console.WriteLine(e.ToString());
-							if (threadExceptionStackTrace != null && threadExceptionStackTrace.Length > 0)
-							{
-								Console.Write("Stacktrace: ");
-								Console.WriteLine(threadExceptionStackTrace);
-							}
-
-							Console.WriteLine();
-							Console.WriteLine("Unexpected exception encountered! Crash report written to KLFClientlog.txt");
-							Console.WriteLine();
-
-							Console.ResetColor();
-
-							clearConnectionState();
-						}
-
-						if (allow_reconnect)
-						{
-							//Attempt a reconnect after a delay
-							Console.WriteLine("Attempting to reconnect...");
-							Thread.Sleep(RECONNECT_DELAY);
-							reconnectAttempts++;
-						}
-
-					} while (allow_reconnect);
-				}
+					connect();
 
 			}
 			
+		}
+
+		static void connect()
+		{
+			bool allow_reconnect = false;
+			reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
+
+			do
+			{
+
+				allow_reconnect = false;
+
+				try
+				{
+					//Run the connection loop then determine if a reconnect attempt should be made
+					if (connectionLoop())
+					{
+						reconnectAttempts = 0;
+						allow_reconnect = autoReconnect && !intentionalConnectionEnd;
+					}
+					else
+						allow_reconnect = autoReconnect && !intentionalConnectionEnd && reconnectAttempts < MAX_RECONNECT_ATTEMPTS;
+				}
+				catch (Exception e)
+				{
+
+					//Write an error log
+					TextWriter writer = File.CreateText("KLFClientlog.txt");
+					writer.WriteLine(e.ToString());
+					if (threadExceptionStackTrace != null && threadExceptionStackTrace.Length > 0)
+					{
+						writer.Write("Stacktrace: ");
+						writer.WriteLine(threadExceptionStackTrace);
+					}
+					writer.Close();
+
+					Console.ForegroundColor = ConsoleColor.Red;
+
+					Console.WriteLine();
+					Console.WriteLine(e.ToString());
+					if (threadExceptionStackTrace != null && threadExceptionStackTrace.Length > 0)
+					{
+						Console.Write("Stacktrace: ");
+						Console.WriteLine(threadExceptionStackTrace);
+					}
+
+					Console.WriteLine();
+					Console.WriteLine("Unexpected exception encountered! Crash report written to KLFClientlog.txt");
+					Console.WriteLine();
+
+					Console.ResetColor();
+
+					clearConnectionState();
+				}
+
+				if (allow_reconnect)
+				{
+					//Attempt a reconnect after a delay
+					Console.WriteLine("Attempting to reconnect...");
+					Thread.Sleep(RECONNECT_DELAY);
+					reconnectAttempts++;
+				}
+
+			} while (allow_reconnect);
 		}
 
 		/// <summary>

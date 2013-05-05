@@ -1222,12 +1222,6 @@ namespace KLF
 						KLFInfoDisplay.infoWindowPos.x = KLFGlobalSettings.instance.infoDisplayWindowX;
 						KLFInfoDisplay.infoWindowPos.y = KLFGlobalSettings.instance.infoDisplayWindowY;
 
-						if (KLFGlobalSettings.instance.guiToggleKey == KeyCode.None)
-							KLFGlobalSettings.instance.guiToggleKey = KeyCode.F7;
-
-						if (KLFGlobalSettings.instance.screenshotKey != KeyCode.None)
-							KLFGlobalSettings.instance.guiToggleKey = KeyCode.F8;
-
 						KLFScreenshotDisplay.windowPos.x = KLFGlobalSettings.instance.screenshotDisplayWindowX;
 						KLFScreenshotDisplay.windowPos.y = KLFGlobalSettings.instance.screenshotDisplayWindowY;
 
