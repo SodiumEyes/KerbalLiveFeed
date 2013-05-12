@@ -36,6 +36,7 @@ namespace KLFServer
 		public const int ACTIVITY_RESET_DELAY = 10000;
 
 		public const String SCREENSHOT_DIR = "klfScreenshots";
+		public const String BAN_FILE = "banned.txt";
 
 		public int numClients
 		{
@@ -77,6 +78,8 @@ namespace KLFServer
 
 		public ServerClient[] clients;
 		public ConcurrentQueue<ClientMessage> clientMessageQueue;
+
+		public HashSet<IPAddress> bannedIPs = new HashSet<IPAddress>();
 
 		public ServerSettings settings;
 
@@ -304,6 +307,20 @@ namespace KLFServer
 			}
 		}
 
+		private void printCommands()
+		{
+			Console.WriteLine("Commands:");
+			Console.WriteLine("/quit - close server");
+			Console.WriteLine("/stop - stop hosting server");
+			Console.WriteLine("/list - list players");
+			Console.WriteLine("/count - display player counts");
+			Console.WriteLine("/kick <username> - kick a player");
+			Console.WriteLine("/ban <username> - ban a player");
+			Console.WriteLine("/banip <ip> - ban an ip");
+			Console.WriteLine("/unbanip <ip> - unban an ip");
+			Console.WriteLine("/clearbans - remove all bans");
+		}
+
 		//Threads
 
 		public void hostingLoop()
@@ -334,6 +351,8 @@ namespace KLFServer
 
 			threadException = null;
 
+			loadBanList();
+
 			tcpListener = new TcpListener(IPAddress.Any, settings.port);
 			listenThread.Start();
 
@@ -347,12 +366,7 @@ namespace KLFServer
 				udpClient = null;
 			}
 
-			Console.WriteLine("Commands:");
-			Console.WriteLine("/quit - close server");
-			Console.WriteLine("/stop - stop hosting server");
-			Console.WriteLine("/list - list players");
-			Console.WriteLine("/count - display player counts");
-			Console.WriteLine("/kick <username>");
+			Console.WriteLine("Enter /help to view server commands.");
 
 			commandThread.Start();
 			connectionThread.Start();
@@ -428,13 +442,52 @@ namespace KLFServer
 							}
 							else if (input.Length > 6 && input.Substring(0, 6) == "/kick ")
 							{
-								String kick_name = input.Substring(6, input.Length - 6).ToLower();
-								for (int i = 0; i < clients.Length; i++)
+								String name = input.Substring(6, input.Length - 6).ToLower();
+								int index = getClientIndexByName(name);
+								if (index >= 0)
+									disconnectClient(index, "You were kicked from the server.");
+								else
+									stampedConsoleWriteLine("Player " + name + " not found.");
+							}
+							else if (input.Length > 5 && input.Substring(0, 5) == "/ban ")
+							{
+								String name = input.Substring(5, input.Length - 5).ToLower();
+								int index = getClientIndexByName(name);
+								if (index >= 0)
+									banClient(index);
+								else
+									stampedConsoleWriteLine("Player " + name + " not found.");
+							}
+							else if (input.Length > 7 && input.Substring(0, 7) == "/banip ")
+							{
+								String ip_str = input.Substring(7, input.Length - 7).ToLower();
+								IPAddress address;
+								if (IPAddress.TryParse(ip_str, out address))
+									banIP(address);
+								else
+									stampedConsoleWriteLine("Invalid ip.");
+							}
+							else if (input.Length > 9 && input.Substring(0, 9) == "/unbanip ")
+							{
+								String ip_str = input.Substring(9, input.Length - 9).ToLower();
+								IPAddress address;
+								if (IPAddress.TryParse(ip_str, out address))
+									unbanIP(address);
+								else
+									stampedConsoleWriteLine("Invalid ip.");
+							}
+							else if (input == "/clearbans")
+							{
+								clearBans();
+								stampedConsoleWriteLine("All bans cleared.");
+							}
+							else if (input.Length > 4 && input.Substring(0, 4) == "/ip ")
+							{
+								String name = input.Substring(4, input.Length - 4).ToLower();
+								int index = getClientIndexByName(name);
+								if (index >= 0)
 								{
-									if (clientIsReady(i) && clients[i].username.ToLower() == kick_name)
-									{
-										disconnectClient(i, "You were kicked from the server.");
-									}
+									stampedConsoleWriteLine(clients[index].username + " ip: " + getClientIP(index).ToString());
 								}
 							}
 							else if (input == "/list")
@@ -464,6 +517,8 @@ namespace KLFServer
 									stampedConsoleWriteLine("In-Flight Clients: " + numInFlightClients);
 								}
 							}
+							else if (input == "/help")
+								printCommands();
 						}
 						else
 						{
@@ -514,32 +569,45 @@ namespace KLFServer
 
 					if (client != null && client.Connected)
 					{
-						//Try to add the client
-						int client_index = addClient(client);
-						if (client_index >= 0)
+						IPAddress client_address = ((IPEndPoint)client.Client.RemoteEndPoint).Address;
+
+						//Check if the client IP has been banned
+						if (bannedIPs.Contains(client_address))
 						{
-							if (clientIsValid(client_index))
-							{
-								//Send a handshake to the client
-								stampedConsoleWriteLine("Accepted client. Handshaking...");
-								sendHandshakeMessage(client_index);
-
-								sendMessageHeaderDirect(client, KLFCommon.ServerMessageID.NULL, 0);
-
-								//Send the join message to the client
-								if (settings.joinMessage.Length > 0)
-									sendServerMessage(client_index, settings.joinMessage);
-							}
-
-							//Send a server setting update to all clients
-							sendServerSettingsToAll();
+							//Client has been banned
+							stampedConsoleWriteLine("Banned client: " + client_address.ToString() + " attempted to connect.");
+							sendHandshakeRefusalMessageDirect(client, "You are banned from the server.");
+							client.Close();
 						}
 						else
 						{
-							//Client array is full
-							stampedConsoleWriteLine("Client attempted to connect, but server is full.");
-							sendHandshakeRefusalMessageDirect(client, "Server is currently full");
-							client.Close();
+							//Try to add the client
+							int client_index = addClient(client);
+							if (client_index >= 0)
+							{
+								if (clientIsValid(client_index))
+								{
+									//Send a handshake to the client
+									stampedConsoleWriteLine("Accepted client. Handshaking...");
+									sendHandshakeMessage(client_index);
+
+									sendMessageHeaderDirect(client, KLFCommon.ServerMessageID.NULL, 0);
+
+									//Send the join message to the client
+									if (settings.joinMessage.Length > 0)
+										sendServerMessage(client_index, settings.joinMessage);
+								}
+
+								//Send a server setting update to all clients
+								sendServerSettingsToAll();
+							}
+							else
+							{
+								//Client array is full
+								stampedConsoleWriteLine("Client attempted to connect, but server is full.");
+								sendHandshakeRefusalMessageDirect(client, "Server is currently full");
+								client.Close();
+							}
 						}
 					}
 					else
@@ -741,40 +809,41 @@ namespace KLFServer
 			{
 				clients[index].endReceivingMessages();
 				clients[index].tcpClient.Close();
+
+				if (clients[index].canBeReplaced)
+					return;
+
+				numClients--;
+
+				//Only send the disconnect message if the client performed handshake successfully
+				if (clients[index].receivedHandshake)
+				{
+					stampedConsoleWriteLine("Client #" + index + " " + clients[index].username + " has disconnected: " + message);
+
+					StringBuilder sb = new StringBuilder();
+
+					//Build disconnect message
+					sb.Clear();
+					sb.Append("User ");
+					sb.Append(clients[index].username);
+					sb.Append(" has disconnected : " + message);
+
+					//Send the disconnect message to all other clients
+					sendServerMessageToAll(sb.ToString());
+				}
+				else
+					stampedConsoleWriteLine("Client failed to handshake successfully: " + message);
+
+				clients[index].receivedHandshake = false;
+
+				if (clients[index].activityLevel != ServerClient.ActivityLevel.INACTIVE)
+					clientActivityLevelChanged(index);
+				else
+					sendServerSettingsToAll();
+
+				clients[index].disconnected();
+
 			}
-
-			if (clients[index].canBeReplaced)
-				return;
-
-			numClients--;
-
-			//Only send the disconnect message if the client performed handshake successfully
-			if (clients[index].receivedHandshake)
-			{
-				stampedConsoleWriteLine("Client #" + index + " " + clients[index].username + " has disconnected: " + message);
-
-				StringBuilder sb = new StringBuilder();
-
-				//Build disconnect message
-				sb.Clear();
-				sb.Append("User ");
-				sb.Append(clients[index].username);
-				sb.Append(" has disconnected : " + message);
-
-				//Send the disconnect message to all other clients
-				sendServerMessageToAll(sb.ToString());
-			}
-			else
-				stampedConsoleWriteLine("Client failed to handshake successfully: " + message);
-
-			clients[index].receivedHandshake = false;
-
-			if (clients[index].activityLevel != ServerClient.ActivityLevel.INACTIVE)
-				clientActivityLevelChanged(index);
-			else
-				sendServerSettingsToAll();
-			
-			clients[index].disconnected();
 		}
 
 		public void clientActivityLevelChanged(int index)
@@ -882,6 +951,100 @@ namespace KLFServer
 			}
 
 			return -1;
+		}
+
+		private IPAddress getClientIP(int index)
+		{
+			return ((IPEndPoint)clients[index].tcpClient.Client.RemoteEndPoint).Address;
+		}
+
+		//Bans
+
+		private void banClient(int index)
+		{
+			if (clientIsReady(index))
+			{
+				banIP(getClientIP(index));
+				saveBanList();
+				disconnectClient(index, "Banned from the server.");
+			}
+		}
+
+		private void banIP(IPAddress address)
+		{
+			if (bannedIPs.Add(address))
+			{
+				stampedConsoleWriteLine("Banned ip: " + address.ToString());
+				saveBanList();
+			}
+			else
+				stampedConsoleWriteLine("IP " + address.ToString() + " was already banned.");
+		}
+
+		private void unbanIP(IPAddress address)
+		{
+			if (bannedIPs.Remove(address))
+			{
+				stampedConsoleWriteLine("Unbanned ip: " + address.ToString());
+				saveBanList();
+			}
+			else
+				stampedConsoleWriteLine("IP " + address.ToString() + " not found in ban list.");
+		}
+
+		private void clearBans()
+		{
+			bannedIPs.Clear();
+			saveBanList();
+		}
+
+		private void loadBanList()
+		{
+			TextReader reader = null;
+			try
+			{
+				bannedIPs.Clear();
+
+				reader = File.OpenText(BAN_FILE);
+
+				String line;
+
+				do
+				{
+					line = reader.ReadLine();
+					if (line != null)
+					{
+						IPAddress address;
+						if (IPAddress.TryParse(line, out address))
+							bannedIPs.Add(address);
+					}
+
+				} while (line != null);
+
+			}
+			catch { }
+			finally
+			{
+				if (reader != null)
+					reader.Close();
+			}
+		}
+
+		private void saveBanList()
+		{
+			try
+			{
+				if (File.Exists(BAN_FILE))
+					File.Delete(BAN_FILE);
+
+				TextWriter writer = File.CreateText(BAN_FILE);
+
+				foreach (IPAddress address in bannedIPs)
+					writer.WriteLine(address.ToString());
+
+				writer.Close();
+			}
+			catch {}
 		}
 
 		//HTTP
@@ -1058,7 +1221,7 @@ namespace KLFServer
 						sendServerMessage(client_index, sb.ToString());
 						sendServerSettings(client_index);
 
-						stampedConsoleWriteLine(username + " has joined the server using client version " + version);
+						stampedConsoleWriteLine(username + " ("+getClientIP(client_index).ToString()+") has joined the server using client version " + version);
 
 						//Build join message
 						sb.Clear();
