@@ -1828,11 +1828,11 @@ namespace KLF
 				if (!MapView.MapIsEnabled)
 					MapView.EnterMapView();
 
-				foreach (Transform transform in planetariumCam.targets)
+				foreach (MapObject target in planetariumCam.targets)
 				{
-					if (transform.name == status.info.bodyName)
+					if (target.name == status.info.bodyName)
 					{
-						planetariumCam.setTarget(transform);
+						planetariumCam.setTarget(target);
 						break;
 					}
 				}
