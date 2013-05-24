@@ -84,7 +84,7 @@ namespace KLF
 						{
 							//Adjust for the movement of the vessel's parent body
 							Vector3 body_pos_at_ref = body_pos_at_ref = mainBody.orbit.getTruePositionAtUT(time);
-							Vector3 body_pos_now = body_pos_now = mainBody.orbit.getTruePositionAtUT(Planetarium.GetUniversalTime());
+							Vector3 body_pos_now = mainBody.orbit.getTruePositionAtUT(Planetarium.GetUniversalTime());
 
 							return body_pos_now + (orbitRenderer.orbit.getTruePositionAtUT(time) - body_pos_at_ref);
 						}
