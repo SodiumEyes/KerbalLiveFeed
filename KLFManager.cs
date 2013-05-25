@@ -1560,17 +1560,9 @@ namespace KLF
 			KLFScreenshotDisplay.scrollPos = GUILayout.BeginScrollView(KLFScreenshotDisplay.scrollPos, user_list_options);
 			GUILayout.BeginVertical();
 
-			String target_body_name = String.Empty;
-
 			foreach (KeyValuePair<String, VesselStatusInfo> pair in playerStatus)
 			{
 				screenshotWatchButton(pair.Key);
-
-				if (pair.Key == KLFScreenshotDisplay.watchPlayerName)
-				{
-					if (pair.Value.info != null)
-						target_body_name = pair.Value.info.bodyName;
-				}
 			}
 
 			GUILayout.EndVertical();

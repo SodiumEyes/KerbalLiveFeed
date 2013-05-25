@@ -591,7 +591,19 @@ namespace KLFServer
 									stampedConsoleWriteLine("Accepted client. Handshaking...");
 									sendHandshakeMessage(client_index);
 
-									sendMessageHeaderDirect(client, KLFCommon.ServerMessageID.NULL, 0);
+									try
+									{
+										sendMessageHeaderDirect(client, KLFCommon.ServerMessageID.NULL, 0);
+									}
+									catch (System.IO.IOException)
+									{
+									}
+									catch (System.ObjectDisposedException)
+									{
+									}
+									catch (System.InvalidOperationException)
+									{
+									}
 
 									//Send the join message to the client
 									if (settings.joinMessage.Length > 0)
@@ -1302,7 +1314,8 @@ namespace KLFServer
 
 				case KLFCommon.ClientMessageID.SCREENSHOT_SHARE:
 
-					if (data != null && data.Length <= settings.screenshotSettings.maxNumBytes && clientIsReady(client_index))
+					if (data != null && data.Length <= settings.screenshotSettings.maxNumBytes && clientIsReady(client_index) &&
+						!clients[client_index].screenshotsThrottled)
 					{
 						//Set the screenshot for the player
 						lock (clients[client_index].screenshotLock)
@@ -1322,6 +1335,20 @@ namespace KLFServer
 
 						if (settings.saveScreenshots)
 							saveScreenshot(data, clients[client_index].username);
+
+						clients[client_index].screenshotShared();
+
+						if (clients[client_index].screenshotsThrottled)
+						{
+							sb.Clear();
+							sb.Append(clients[client_index].username);
+							sb.Append(" has been restricted from sharing screenshots for " + (settings.screenshotFloodThrottleTime / 1000) + " seconds.");
+							sendServerMessageToAll(sb.ToString());
+							stampedConsoleWriteLine(sb.ToString());
+						}
+						else if (clients[client_index].screenshotFloodCounter == settings.screenshotFloodLimit - 1)
+							sendServerMessage(client_index, "Warning: You are sharing too many screenshots.");
+
 					}
 
 					break;

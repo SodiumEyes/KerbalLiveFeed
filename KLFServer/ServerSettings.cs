@@ -18,6 +18,8 @@ namespace KLFServer
 		public const String SERVER_INFO_LABEL = "serverInfo";
 		public const String UPDATES_PER_SECOND_LABEL = "updatesPerSecond";
 		public const String SCREENSHOT_INTERVAL_LABEL = "screenshotInterval";
+		public const String SCREENSHOT_FLOOD_LIMIT_LABEL = "screenshotFloodLimit";
+		public const String SCREENSHOT_FLOOD_THROTTLE_TIME_LABEL = "screenshotFloodThrottleTime";
 		public const String SAVE_SCREENSHOTS_LABEL = "saveScreenshots";
 		public const String AUTO_RESTART_LABEL = "autoRestart";
 		public const String AUTO_HOST_LABEL = "autoHost";
@@ -27,14 +29,16 @@ namespace KLFServer
 		public int port = 2075;
 		public int httpPort = 80;
 		public int maxClients = 32;
-		public float updatesPerSecond = 5;
+		public float updatesPerSecond = 10;
 		public int screenshotInterval = 3000;
+		public int screenshotFloodLimit = 10;
+		public int screenshotFloodThrottleTime = 300000;
 		public bool autoRestart = false;
 		public bool autoHost = false;
 		public bool saveScreenshots = false;
 		public String joinMessage = String.Empty;
 		public String serverInfo = String.Empty;
-		public byte totalInactiveShips = 10;
+		public byte totalInactiveShips = 20;
 		public ScreenshotSettings screenshotSettings = new ScreenshotSettings();
 
 		public const int MIN_UPDATE_INTERVAL = 200;
@@ -59,6 +63,16 @@ namespace KLFServer
 		public static bool validScreenshotInterval(int val)
 		{
 			return val >= MIN_SCREENSHOT_INTERVAL && val <= MAX_SCREENSHOT_INTERVAL;
+		}
+
+		public static bool validScreenshotFloodLimit(int val)
+		{
+			return val >= 2;
+		}
+
+		public static bool validScreenshotThrottleTime(int val)
+		{
+			return val >= 0;
 		}
 
 		public static bool validPort(int port)
@@ -121,6 +135,18 @@ namespace KLFServer
 							int new_val;
 							if (int.TryParse(line, out new_val) && validScreenshotInterval(new_val))
 								screenshotInterval = new_val;
+						}
+						else if (label == SCREENSHOT_FLOOD_LIMIT_LABEL)
+						{
+							int new_val;
+							if (int.TryParse(line, out new_val) && validScreenshotFloodLimit(new_val))
+								screenshotFloodLimit = new_val;
+						}
+						else if (label == SCREENSHOT_FLOOD_THROTTLE_TIME_LABEL)
+						{
+							int new_val;
+							if (int.TryParse(line, out new_val) && validScreenshotThrottleTime(new_val))
+								screenshotFloodThrottleTime = new_val;
 						}
 						else if (label == AUTO_RESTART_LABEL)
 						{
@@ -220,6 +246,14 @@ namespace KLFServer
 			//screenshot height
 			writer.WriteLine(SCREENSHOT_HEIGHT_LABEL);
 			writer.WriteLine(screenshotSettings.maxHeight);
+
+			//screenshot flood limit
+			writer.WriteLine(SCREENSHOT_FLOOD_LIMIT_LABEL);
+			writer.WriteLine(screenshotFloodLimit);
+
+			//screenshot throttle time
+			writer.WriteLine(SCREENSHOT_FLOOD_THROTTLE_TIME_LABEL);
+			writer.WriteLine(screenshotFloodThrottleTime);
 
 			writer.Close();
 		}

@@ -20,6 +20,7 @@ namespace KLFServer
 		}
 
 		public const int SEND_BUFFER_SIZE = 8192;
+		public const long SCREENSHOT_THROTTLE_INTERVAL = 60 * 1000;
 
 		//Properties
 
@@ -51,6 +52,18 @@ namespace KLFServer
 		public long lastInGameActivityTime;
 		public long lastInFlightActivityTime;
 		public ActivityLevel activityLevel;
+
+		public long screenshotFloodCounterTime;
+		public int screenshotFloodCounter;
+		public long screenshotThrottleUntilTime;
+
+		public bool screenshotsThrottled
+		{
+			get
+			{
+				return parent.currentMillisecond < screenshotThrottleUntilTime;
+			}
+		}
 
 		public TcpClient tcpClient;
 
@@ -95,6 +108,10 @@ namespace KLFServer
 			sharedCraftFile = null;
 			sharedCraftName = String.Empty;
 			sharedCraftType = 0;
+
+			screenshotFloodCounter = 0;
+			screenshotFloodCounterTime = 0;
+			screenshotThrottleUntilTime = 0;
 
 			lastUDPACKTime = 0;
 
@@ -434,5 +451,24 @@ namespace KLFServer
 				parent.clientActivityLevelChanged(clientIndex);
 		}
 
+		//Screenshot flood limit
+
+		public void screenshotShared()
+		{
+			//Reset the counter if enough time has passed
+			if (parent.currentMillisecond - screenshotFloodCounterTime > SCREENSHOT_THROTTLE_INTERVAL)
+			{
+				screenshotFloodCounter = 0;
+				screenshotFloodCounterTime = parent.currentMillisecond;
+			}
+
+			screenshotFloodCounter++;
+			if (screenshotFloodCounter >= parent.settings.screenshotFloodLimit)
+			{
+				//If the client has shared too many screenshots in the last interval, throttle them
+				screenshotThrottleUntilTime = parent.currentMillisecond + parent.settings.screenshotFloodThrottleTime;
+			}
+
+		}
 	}
 }
