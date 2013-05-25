@@ -57,7 +57,7 @@ namespace KLFClient
 		public const int MAX_QUEUED_CHAT_LINES = 8;
 		public const int DEFAULT_PORT = 2075;
 
-		public const String PLUGIN_DIRECTORY = "PluginData/KerbalLiveFeed/";
+		public const String PLUGIN_DIRECTORY = "Plugins/PluginData/KerbalLiveFeed/";
 
 		public static UnicodeEncoding encoder = new UnicodeEncoding();
 
