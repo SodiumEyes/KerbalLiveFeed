@@ -35,8 +35,8 @@ namespace KLFClient
 		public const String AUTO_RECONNECT_LABEL = "reconnect";
 		public const String FAVORITE_LABEL = "fav";
 
-		public const String INTEROP_CLIENT_FILENAME = "Plugins/PluginData/kerballivefeed/interopclient.txt";
-		public const String INTEROP_PLUGIN_FILENAME = "Plugins/PluginData/kerballivefeed/interopplugin.txt";
+		public const String INTEROP_CLIENT_FILENAME = "Plugins/PluginData/KerbalLiveFeed/interopclient.txt";
+		public const String INTEROP_PLUGIN_FILENAME = "Plugins/PluginData/KerbalLiveFeed/interopplugin.txt";
 		public const String CLIENT_CONFIG_FILENAME = "KLFClientConfig.txt";
 		public const String CRAFT_FILE_EXTENSION = ".craft";
 		
@@ -57,7 +57,7 @@ namespace KLFClient
 		public const int MAX_QUEUED_CHAT_LINES = 8;
 		public const int DEFAULT_PORT = 2075;
 
-		public const String PLUGIN_DIRECTORY = "PluginData/kerballivefeed/";
+		public const String PLUGIN_DIRECTORY = "PluginData/KerbalLiveFeed/";
 
 		public static UnicodeEncoding encoder = new UnicodeEncoding();
 
