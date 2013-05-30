@@ -31,6 +31,7 @@ namespace KLFServer
 		public const int SLEEP_TIME = 15;
 		public const int MAX_SCREENSHOT_COUNT = 10000;
 		public const int UDP_ACK_THROTTLE = 1000;
+		public const int MAX_SAVED_THROTTLE_STATES = 16;
 
 		public const float NOT_IN_FLIGHT_UPDATE_WEIGHT = 1.0f/4.0f;
 		public const int ACTIVITY_RESET_DELAY = 10000;
@@ -80,6 +81,8 @@ namespace KLFServer
 		public ConcurrentQueue<ClientMessage> clientMessageQueue;
 
 		public HashSet<IPAddress> bannedIPs = new HashSet<IPAddress>();
+
+		public Dictionary<IPAddress, ServerClient.ThrottleState> savedThrottleStates = new Dictionary<IPAddress, ServerClient.ThrottleState>();
 
 		public ServerSettings settings;
 
@@ -785,9 +788,14 @@ namespace KLFServer
 
 					//Add the client
 					client.tcpClient = tcp_client;
+					client.ip = ((IPEndPoint)tcp_client.Client.RemoteEndPoint).Address;
 
 					//Reset client properties
 					client.resetProperties();
+
+					//If the client's throttle state has been saved, retrieve it
+					if (savedThrottleStates.TryGetValue(client.ip, out client.throttleState))
+						savedThrottleStates.Remove(client.ip);
 
 					client.startReceivingMessages();
 					numClients++;
@@ -819,6 +827,7 @@ namespace KLFServer
 			//Close the socket
 			lock (clients[index].tcpClientLock)
 			{
+
 				clients[index].endReceivingMessages();
 				clients[index].tcpClient.Close();
 
@@ -832,16 +841,22 @@ namespace KLFServer
 				{
 					stampedConsoleWriteLine("Client #" + index + " " + clients[index].username + " has disconnected: " + message);
 
-					StringBuilder sb = new StringBuilder();
+					if (!clients[index].messagesThrottled)
+					{
 
-					//Build disconnect message
-					sb.Clear();
-					sb.Append("User ");
-					sb.Append(clients[index].username);
-					sb.Append(" has disconnected : " + message);
+						StringBuilder sb = new StringBuilder();
 
-					//Send the disconnect message to all other clients
-					sendServerMessageToAll(sb.ToString());
+						//Build disconnect message
+						sb.Clear();
+						sb.Append("User ");
+						sb.Append(clients[index].username);
+						sb.Append(" has disconnected : " + message);
+
+						//Send the disconnect message to all other clients
+						sendServerMessageToAll(sb.ToString());
+					}
+
+					messageFloodIncrement(index);
 				}
 				else
 					stampedConsoleWriteLine("Client failed to handshake successfully: " + message);
@@ -852,6 +867,20 @@ namespace KLFServer
 					clientActivityLevelChanged(index);
 				else
 					sendServerSettingsToAll();
+
+				//Save the client's throttle state
+				IPAddress ip = getClientIP(index);
+				if (savedThrottleStates.ContainsKey(ip))
+				{
+					savedThrottleStates[ip] = clients[index].throttleState;
+				}
+				else
+				{
+					if (savedThrottleStates.Count >= MAX_SAVED_THROTTLE_STATES)
+						savedThrottleStates.Clear();
+
+					savedThrottleStates.Add(ip, clients[index].throttleState);
+				}
 
 				clients[index].disconnected();
 
@@ -967,7 +996,7 @@ namespace KLFServer
 
 		private IPAddress getClientIP(int index)
 		{
-			return ((IPEndPoint)clients[index].tcpClient.Client.RemoteEndPoint).Address;
+			return clients[index].ip;
 		}
 
 		//Bans
@@ -1235,14 +1264,20 @@ namespace KLFServer
 
 						stampedConsoleWriteLine(username + " ("+getClientIP(client_index).ToString()+") has joined the server using client version " + version);
 
-						//Build join message
-						sb.Clear();
-						sb.Append("User ");
-						sb.Append(username);
-						sb.Append(" has joined the server.");
+						if (!clients[client_index].messagesThrottled)
+						{
 
-						//Send the join message to all other clients
-						sendServerMessageToAll(sb.ToString(), client_index);
+							//Build join message
+							sb.Clear();
+							sb.Append("User ");
+							sb.Append(username);
+							sb.Append(" has joined the server.");
+
+							//Send the join message to all other clients
+							sendServerMessageToAll(sb.ToString(), client_index);
+						}
+
+						messageFloodIncrement(client_index);
 
 					}
 
@@ -1314,39 +1349,42 @@ namespace KLFServer
 
 				case KLFCommon.ClientMessageID.SCREENSHOT_SHARE:
 
-					if (data != null && data.Length <= settings.screenshotSettings.maxNumBytes && clientIsReady(client_index) &&
-						!clients[client_index].screenshotsThrottled)
+					if (data != null && data.Length <= settings.screenshotSettings.maxNumBytes && clientIsReady(client_index))
 					{
-						//Set the screenshot for the player
-						lock (clients[client_index].screenshotLock)
+						if (!clients[client_index].screenshotsThrottled)
 						{
-							clients[client_index].screenshot = data;
-						}
+							StringBuilder sb = new StringBuilder();
 
-						StringBuilder sb = new StringBuilder();
-						sb.Append(clients[client_index].username);
-						sb.Append(" has shared a screenshot.");
+							//Set the screenshot for the player
+							lock (clients[client_index].screenshotLock)
+							{
+								clients[client_index].screenshot = data;
+							}
 
-						sendTextMessageToAll(sb.ToString());
-						stampedConsoleWriteLine(sb.ToString());
-
-						//Send the screenshot to every client watching the player
-						sendScreenshotToWatchers(client_index, data);
-
-						if (settings.saveScreenshots)
-							saveScreenshot(data, clients[client_index].username);
-
-						clients[client_index].screenshotShared();
-
-						if (clients[client_index].screenshotsThrottled)
-						{
-							sb.Clear();
 							sb.Append(clients[client_index].username);
-							sb.Append(" has been restricted from sharing screenshots for " + (settings.screenshotFloodThrottleTime / 1000) + " seconds.");
-							sendServerMessageToAll(sb.ToString());
+							sb.Append(" has shared a screenshot.");
+
+							sendTextMessageToAll(sb.ToString());
 							stampedConsoleWriteLine(sb.ToString());
+
+							//Send the screenshot to every client watching the player
+							sendScreenshotToWatchers(client_index, data);
+
+							if (settings.saveScreenshots)
+								saveScreenshot(data, clients[client_index].username);
 						}
-						else if (clients[client_index].screenshotFloodCounter == settings.screenshotFloodLimit - 1)
+
+						bool was_throttled = clients[client_index].screenshotsThrottled;
+
+						clients[client_index].screenshotFloodIncrement();
+
+						if (!was_throttled && clients[client_index].screenshotsThrottled)
+						{
+							long throttle_secs = settings.screenshotFloodThrottleTime / 1000;
+							sendServerMessage(client_index, "You have been restricted from sharing screenshots for " + throttle_secs + " seconds.");
+							stampedConsoleWriteLine(clients[client_index].username + " has been restricted from sharing screenshots for " + throttle_secs + " seconds.");
+						}
+						else if (clients[client_index].throttleState.messageFloodCounter == settings.screenshotFloodLimit - 1)
 							sendServerMessage(client_index, "Warning: You are sharing too many screenshots.");
 
 					}
@@ -1367,6 +1405,14 @@ namespace KLFServer
 					if (clientIsReady(client_index) && data != null
 						&& data.Length > 5 && (data.Length - 5) <= KLFCommon.MAX_CRAFT_FILE_BYTES)
 					{
+						if (clients[client_index].messagesThrottled)
+						{
+							messageFloodIncrement(client_index);
+							break;
+						}
+
+						messageFloodIncrement(client_index);
+
 						//Read craft name length
 						byte craft_type = data[0];
 						int craft_name_length = KLFCommon.intFromBytes(data, 1);
@@ -1432,6 +1478,14 @@ namespace KLFServer
 
 		public void handleClientTextMessage(int client_index, String message_text)
 		{
+			if (clients[client_index].messagesThrottled)
+			{
+				messageFloodIncrement(client_index);
+				return;
+			}
+
+			messageFloodIncrement(client_index);
+
 			StringBuilder sb = new StringBuilder();
 
 			if (message_text.Length > 0 && message_text.First() == '!')
@@ -1744,6 +1798,21 @@ namespace KLFServer
 			bytes[12] = inactiveShipsPerClient; //Inactive ships per client
 
 			return bytes;
+		}
+
+		//Flood limit
+
+		void messageFloodIncrement(int index)
+		{
+			bool was_throttled = clients[index].messagesThrottled;
+			clients[index].messageFloodIncrement();
+
+			if (clientIsValid(index) && !was_throttled && clients[index].messagesThrottled)
+			{
+				long throttle_secs = settings.messageFloodThrottleTime / 1000;
+				sendServerMessage(index, "You have been restricted from sending messages for " + throttle_secs + " seconds.");
+				stampedConsoleWriteLine(clients[index].username + " has been restricted from sending messages for " + throttle_secs + " seconds.");
+			}
 		}
 
 	}

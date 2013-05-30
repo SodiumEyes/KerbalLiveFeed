@@ -86,7 +86,7 @@ namespace KLF
 			}
 		}
 
-		public bool shouldDrawGUI
+		public bool sceneIsValid
 		{
 			get
 			{
@@ -98,12 +98,20 @@ namespace KLF
 					case GameScenes.SPH:
 					case GameScenes.TRACKSTATION:
 					case GameScenes.QUICKFLIGHT:
-						return KLFInfoDisplay.infoDisplayActive && globalUIToggle;
+						return true;
 
 					default:
 						return false;
 				}
-				
+
+			}
+		}
+
+		public bool shouldDrawGUI
+		{
+			get
+			{
+				return sceneIsValid && KLFInfoDisplay.infoDisplayActive && globalUIToggle;
 			}
 		}
 
@@ -195,7 +203,10 @@ namespace KLF
 				if ((UnityEngine.Time.realtimeSinceStartup-entry.lastUpdateTime) <= VESSEL_TIMEOUT_DELAY
 					&& entry.vessel != null && entry.vessel.gameObj != null)
 				{
-					entry.vessel.updateRenderProperties(!KLFGlobalSettings.instance.showInactiveShips && entry.vessel.info.state != State.ACTIVE);
+					entry.vessel.updateRenderProperties(
+						!KLFGlobalSettings.instance.showOtherShips ||
+						(!KLFGlobalSettings.instance.showInactiveShips && entry.vessel.info.state != State.ACTIVE)
+						);
 					entry.vessel.updatePosition();
 				}
 				else
@@ -1241,7 +1252,7 @@ namespace KLF
 		{
 			DontDestroyOnLoad(this);
 			CancelInvoke();
-			InvokeRepeating("updateStep", 1/60.0f, 1/60.0f);
+			InvokeRepeating("updateStep", 1 / 60.0f, 1 / 60.0f);
 
 			//Delete remnant in files
 			safeDelete(INTEROP_CLIENT_FILENAME);
@@ -1489,8 +1500,15 @@ namespace KLF
 					KLFGlobalSettings.instance.chatColors
 						= GUILayout.Toggle(KLFGlobalSettings.instance.chatColors, "Chat Colors", GUI.skin.button);
 
+					GUILayout.EndHorizontal();
+
+					GUILayout.BeginHorizontal();
+
+					KLFGlobalSettings.instance.showOtherShips
+						= GUILayout.Toggle(KLFGlobalSettings.instance.showOtherShips, "Ships Icons", GUI.skin.button);
+
 					KLFGlobalSettings.instance.showInactiveShips
-						= GUILayout.Toggle(KLFGlobalSettings.instance.showInactiveShips, "Inactive Ships", GUI.skin.button);
+						= GUILayout.Toggle(KLFGlobalSettings.instance.showInactiveShips, "Inactive Icons", GUI.skin.button);
 
 					GUILayout.EndHorizontal();
 

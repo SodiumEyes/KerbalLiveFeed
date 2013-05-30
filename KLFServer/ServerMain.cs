@@ -129,7 +129,7 @@ namespace KLFServer
 					Console.Write("Enter the Port: ");
 
 					int new_port;
-					if (int.TryParse(Console.ReadLine(), out new_port) && ServerSettings.validPort(new_port))
+					if (int.TryParse(Console.ReadLine(), out new_port))
 					{
 						settings.port = new_port;
 						settings.writeConfigFile();
@@ -146,7 +146,7 @@ namespace KLFServer
 					Console.Write("Enter the HTTP Port: ");
 
 					int new_port;
-					if (int.TryParse(Console.ReadLine(), out new_port) && ServerSettings.validPort(new_port))
+					if (int.TryParse(Console.ReadLine(), out new_port))
 					{
 						settings.httpPort = new_port;
 						settings.writeConfigFile();
@@ -187,7 +187,7 @@ namespace KLFServer
 				{
 					Console.Write("Enter the number of updates to receive per second: ");
 					float new_value;
-					if (float.TryParse(Console.ReadLine(), out new_value) && ServerSettings.validUpdatesPerSecond(new_value))
+					if (float.TryParse(Console.ReadLine(), out new_value))
 					{
 						settings.updatesPerSecond = new_value;
 						settings.writeConfigFile();
@@ -217,16 +217,10 @@ namespace KLFServer
 				{
 					Console.Write("Enter the screenshot interval: ");
 					int new_value;
-					if (int.TryParse(Console.ReadLine(), out new_value) && ServerSettings.validScreenshotInterval(new_value))
+					if (int.TryParse(Console.ReadLine(), out new_value))
 					{
 						settings.screenshotInterval = new_value;
 						settings.writeConfigFile();
-					}
-					else
-					{
-						Console.WriteLine("Invalid screenshot interval ["
-							+ ServerSettings.MIN_SCREENSHOT_INTERVAL + '-'
-							+ ServerSettings.MAX_SCREENSHOT_INTERVAL + ']');
 					}
 				}
 				else if (in_string == "is")

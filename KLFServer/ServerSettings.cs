@@ -11,6 +11,7 @@ namespace KLFServer
 	public class ServerSettings
 	{
 		public const String SERVER_CONFIG_FILENAME = "KLFServerConfig.txt";
+		public const String LOCAL_ADDRESS_LABEL = "localAddress";
 		public const String PORT_LABEL = "port";
 		public const String HTTP_PORT_LABEL = "httpPort";
 		public const String MAX_CLIENTS_LABEL = "maxClients";
@@ -20,19 +21,64 @@ namespace KLFServer
 		public const String SCREENSHOT_INTERVAL_LABEL = "screenshotInterval";
 		public const String SCREENSHOT_FLOOD_LIMIT_LABEL = "screenshotFloodLimit";
 		public const String SCREENSHOT_FLOOD_THROTTLE_TIME_LABEL = "screenshotFloodThrottleTime";
+		public const String MESSAGE_FLOOD_LIMIT_LABEL = "messageFloodLimit";
+		public const String MESSAGE_FLOOD_THROTTLE_TIME_LABEL = "messageFloodThrottleTime";
 		public const String SAVE_SCREENSHOTS_LABEL = "saveScreenshots";
 		public const String AUTO_RESTART_LABEL = "autoRestart";
 		public const String AUTO_HOST_LABEL = "autoHost";
 		public const String TOTAL_INACTIVE_SHIPS_LABEL = "totalInactiveShips";
 		public const String SCREENSHOT_HEIGHT_LABEL = "screenshotHeight";
 
-		public int port = 2075;
-		public int httpPort = 80;
+		public IPAddress localAddress = IPAddress.Any;
+
+		public int _port = 2075;
+		public int port
+		{
+			get
+			{
+				return _port;
+			}
+
+			set
+			{
+				_port = Math.Max(IPEndPoint.MinPort, Math.Min(IPEndPoint.MaxPort, value));
+			}
+		}
+
+		public int _httpPort = 80;
+		public int httpPort
+		{
+			get
+			{
+				return _httpPort;
+			}
+
+			set
+			{
+				_httpPort = Math.Max(IPEndPoint.MinPort, Math.Min(IPEndPoint.MaxPort, value));
+			}
+		}
+
 		public int maxClients = 32;
-		public float updatesPerSecond = 10;
+
+		public float _updatesPerSecond = 10;
+		public float updatesPerSecond
+		{
+			get
+			{
+				return _updatesPerSecond;
+			}
+			set
+			{
+				_updatesPerSecond = Math.Max(MIN_UPDATES_PER_SECOND, Math.Min(MAX_UPDATES_PER_SECOND, value));
+			}
+		}
+
 		public int screenshotInterval = 3000;
 		public int screenshotFloodLimit = 10;
 		public int screenshotFloodThrottleTime = 300000;
+		public int messageFloodLimit = 15;
+		public int messageFloodThrottleTime = 120000;
 		public bool autoRestart = false;
 		public bool autoHost = false;
 		public bool saveScreenshots = false;
@@ -46,39 +92,6 @@ namespace KLFServer
 
 		public const float MIN_UPDATES_PER_SECOND = 0.5f;
 		public const float MAX_UPDATES_PER_SECOND = 1000.0f;
-
-		public const int MIN_SCREENSHOT_INTERVAL = 500;
-		public const int MAX_SCREENSHOT_INTERVAL = 10000;
-
-		public static bool validUpdateInterval(int val)
-		{
-			return val >= MIN_UPDATE_INTERVAL && val <= MAX_UPDATE_INTERVAL;
-		}
-
-		public static bool validUpdatesPerSecond(float val)
-		{
-			return val >= MIN_UPDATES_PER_SECOND && val <= MAX_UPDATES_PER_SECOND;
-		}
-
-		public static bool validScreenshotInterval(int val)
-		{
-			return val >= MIN_SCREENSHOT_INTERVAL && val <= MAX_SCREENSHOT_INTERVAL;
-		}
-
-		public static bool validScreenshotFloodLimit(int val)
-		{
-			return val >= 2;
-		}
-
-		public static bool validScreenshotThrottleTime(int val)
-		{
-			return val >= 0;
-		}
-
-		public static bool validPort(int port)
-		{
-			return port >= IPEndPoint.MinPort && port <= IPEndPoint.MaxPort;
-		}
 
 		//Config
 
@@ -101,14 +114,20 @@ namespace KLFServer
 						if (label == PORT_LABEL)
 						{
 							int new_port;
-							if (int.TryParse(line, out new_port) && validPort(new_port))
+							if (int.TryParse(line, out new_port))
 								port = new_port;
 						}
 						else if (label == HTTP_PORT_LABEL)
 						{
 							int new_port;
-							if (int.TryParse(line, out new_port) && validPort(new_port))
+							if (int.TryParse(line, out new_port))
 								httpPort = new_port;
+						}
+						else if (label == LOCAL_ADDRESS_LABEL)
+						{
+							IPAddress new_address;
+							if (IPAddress.TryParse(line, out new_address))
+								localAddress = new_address;
 						}
 						else if (label == MAX_CLIENTS_LABEL)
 						{
@@ -133,20 +152,32 @@ namespace KLFServer
 						else if (label == SCREENSHOT_INTERVAL_LABEL)
 						{
 							int new_val;
-							if (int.TryParse(line, out new_val) && validScreenshotInterval(new_val))
+							if (int.TryParse(line, out new_val))
 								screenshotInterval = new_val;
 						}
 						else if (label == SCREENSHOT_FLOOD_LIMIT_LABEL)
 						{
 							int new_val;
-							if (int.TryParse(line, out new_val) && validScreenshotFloodLimit(new_val))
+							if (int.TryParse(line, out new_val))
 								screenshotFloodLimit = new_val;
 						}
 						else if (label == SCREENSHOT_FLOOD_THROTTLE_TIME_LABEL)
 						{
 							int new_val;
-							if (int.TryParse(line, out new_val) && validScreenshotThrottleTime(new_val))
+							if (int.TryParse(line, out new_val))
 								screenshotFloodThrottleTime = new_val;
+						}
+						else if (label == MESSAGE_FLOOD_LIMIT_LABEL)
+						{
+							int new_val;
+							if (int.TryParse(line, out new_val))
+								messageFloodLimit = new_val;
+						}
+						else if (label == MESSAGE_FLOOD_THROTTLE_TIME_LABEL)
+						{
+							int new_val;
+							if (int.TryParse(line, out new_val))
+								messageFloodThrottleTime = new_val;
 						}
 						else if (label == AUTO_RESTART_LABEL)
 						{
@@ -203,9 +234,13 @@ namespace KLFServer
 			writer.WriteLine(PORT_LABEL);
 			writer.WriteLine(port);
 
-			//port
+			//http port
 			writer.WriteLine(HTTP_PORT_LABEL);
 			writer.WriteLine(httpPort);
+
+			//local address
+			writer.WriteLine(LOCAL_ADDRESS_LABEL);
+			writer.WriteLine(localAddress);
 
 			//max clients
 			writer.WriteLine(MAX_CLIENTS_LABEL);
@@ -254,6 +289,14 @@ namespace KLFServer
 			//screenshot throttle time
 			writer.WriteLine(SCREENSHOT_FLOOD_THROTTLE_TIME_LABEL);
 			writer.WriteLine(screenshotFloodThrottleTime);
+
+			//message flood limit
+			writer.WriteLine(MESSAGE_FLOOD_LIMIT_LABEL);
+			writer.WriteLine(messageFloodLimit);
+
+			//message throttle time
+			writer.WriteLine(MESSAGE_FLOOD_THROTTLE_TIME_LABEL);
+			writer.WriteLine(messageFloodThrottleTime);
 
 			writer.Close();
 		}

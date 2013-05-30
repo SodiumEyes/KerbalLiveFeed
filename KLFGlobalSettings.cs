@@ -37,6 +37,9 @@ namespace KLF
 		[OptionalField(VersionAdded = 2)]
 		public bool showInactiveShips = true;
 
+		[OptionalField(VersionAdded = 2)]
+		public bool showOtherShips = true;
+
 		[OnDeserializing]
 		private void SetDefault(StreamingContext sc)
 		{
@@ -45,6 +48,7 @@ namespace KLF
 			screenshotKey = KeyCode.F8;
 			chatColors = true;
 			showInactiveShips = true;
+			showOtherShips = true;
 		}
 
 		public static KLFGlobalSettings instance = new KLFGlobalSettings();

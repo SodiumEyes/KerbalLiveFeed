@@ -12,6 +12,29 @@ namespace KLFServer
 {
 	class ServerClient
 	{
+		public struct ThrottleState
+		{
+			public long messageFloodCounterTime;
+			public int messageFloodCounter;
+			public long messageFloodThrottleUntilTime;
+
+			public long screenshotFloodCounterTime;
+			public int screenshotFloodCounter;
+			public long screenshotThrottleUntilTime;
+
+			public void reset()
+			{
+				screenshotFloodCounter = 0;
+				screenshotFloodCounterTime = 0;
+				screenshotThrottleUntilTime = 0;
+
+				messageFloodCounterTime = 0;
+				messageFloodCounter = 0;
+				messageFloodThrottleUntilTime = 0;
+			}
+
+		}
+
 		public enum ActivityLevel
 		{
 			INACTIVE,
@@ -21,6 +44,7 @@ namespace KLFServer
 
 		public const int SEND_BUFFER_SIZE = 8192;
 		public const long SCREENSHOT_THROTTLE_INTERVAL = 60 * 1000;
+		public const long MESSAGE_THROTTLE_INTERVAL = 60 * 1000;
 
 		//Properties
 
@@ -53,19 +77,10 @@ namespace KLFServer
 		public long lastInFlightActivityTime;
 		public ActivityLevel activityLevel;
 
-		public long screenshotFloodCounterTime;
-		public int screenshotFloodCounter;
-		public long screenshotThrottleUntilTime;
-
-		public bool screenshotsThrottled
-		{
-			get
-			{
-				return parent.currentMillisecond < screenshotThrottleUntilTime;
-			}
-		}
+		public ThrottleState throttleState;
 
 		public TcpClient tcpClient;
+		public IPAddress ip;
 
 		public object tcpClientLock = new object();
 		public object timestampLock = new object();
@@ -109,9 +124,7 @@ namespace KLFServer
 			sharedCraftName = String.Empty;
 			sharedCraftType = 0;
 
-			screenshotFloodCounter = 0;
-			screenshotFloodCounterTime = 0;
-			screenshotThrottleUntilTime = 0;
+			throttleState.reset();
 
 			lastUDPACKTime = 0;
 
@@ -451,24 +464,56 @@ namespace KLFServer
 				parent.clientActivityLevelChanged(clientIndex);
 		}
 
-		//Screenshot flood limit
+		//Flood limit
 
-		public void screenshotShared()
+		public bool screenshotsThrottled
+		{
+			get
+			{
+				return parent.currentMillisecond < throttleState.screenshotThrottleUntilTime;
+			}
+		}
+
+		public bool messagesThrottled
+		{
+			get
+			{
+				return parent.currentMillisecond < throttleState.messageFloodThrottleUntilTime;
+			}
+		}
+
+		public void screenshotFloodIncrement()
 		{
 			//Reset the counter if enough time has passed
-			if (parent.currentMillisecond - screenshotFloodCounterTime > SCREENSHOT_THROTTLE_INTERVAL)
+			if (parent.currentMillisecond - throttleState.screenshotFloodCounterTime > SCREENSHOT_THROTTLE_INTERVAL)
 			{
-				screenshotFloodCounter = 0;
-				screenshotFloodCounterTime = parent.currentMillisecond;
+				throttleState.screenshotFloodCounter = 0;
+				throttleState.screenshotFloodCounterTime = parent.currentMillisecond;
 			}
 
-			screenshotFloodCounter++;
-			if (screenshotFloodCounter >= parent.settings.screenshotFloodLimit)
+			throttleState.screenshotFloodCounter++;
+			if (throttleState.screenshotFloodCounter >= parent.settings.screenshotFloodLimit)
 			{
 				//If the client has shared too many screenshots in the last interval, throttle them
-				screenshotThrottleUntilTime = parent.currentMillisecond + parent.settings.screenshotFloodThrottleTime;
+				throttleState.screenshotThrottleUntilTime = parent.currentMillisecond + parent.settings.screenshotFloodThrottleTime;
 			}
 
+		}
+
+		public void messageFloodIncrement()
+		{
+			//Reset the counter if enough time has passed
+			if (parent.currentMillisecond - throttleState.messageFloodCounterTime > MESSAGE_THROTTLE_INTERVAL)
+			{
+				throttleState.messageFloodCounter = 0;
+				throttleState.messageFloodCounterTime = parent.currentMillisecond;
+			}
+
+			throttleState.messageFloodCounter++;
+			if (throttleState.messageFloodCounter >= parent.settings.messageFloodLimit)
+			{
+				throttleState.messageFloodThrottleUntilTime = parent.currentMillisecond + parent.settings.messageFloodThrottleTime;
+			}
 		}
 	}
 }
