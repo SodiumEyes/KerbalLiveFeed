@@ -5,5 +5,5 @@ mcs \
 -r:Assembly-CSharp-firstpass.dll \
 -r:UnityEngine.dll \
 -t:library \
-*.cs -out:bin/colour.dll
+*.cs -out:bin/KerbalLiveFeed.dll
 #-r:KSP_Data/Managed/System.dll \

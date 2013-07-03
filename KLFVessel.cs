@@ -244,19 +244,26 @@ namespace KLF
 		public static Color generateActiveColor(int seed)
 		{
                     //default high-passes:  saturation and value
-                    return controlledColor(seed, (Single)0.25, (Single)0.85);
+                    return controlledColor(seed, (Single)0.25, (Single)0.75);
                 }
 
                 /* controlledColor - return RGBA Color Obj from a string seed.
                  * - control some aspects of the random colors with high-pass filters
                  * - alpha, opaque
                  * - hue, full spectrum, uniform distribution
+                 *   * Needs complex sine function to map out problematic hues
                  * - saturation, high-pass, scaled in some way
+                 *   * Needs to be adjusted depending on hue selected
                  * - value, high-pass
                  * - recreate Random object every time to ensure deterministic random
                  *   * same colours for same username
                  * - retrigger random value between h, s, and v to reduce correlations
                  *
+                 * TODO notes:
+                 * - build a function that modifies s for some values of h and s.
+                 *   Used to reduce saturation on colours that are difficult to see over gray.
+                 *   e.g.  a complex sine function using positive slopes over particular
+                 *   hues from 0 to 360 to scale the saturation down for those hues.
                  */
                 public static Color controlledColor(int seed, Single sBand, Single vBand)
                 {
@@ -268,17 +275,12 @@ namespace KLF
                     h = (Single)r.NextDouble() * 360.0f;
 
                     // Saturation:  map to 1f, apply high-pass filter
-                    // - I want to fudge the random numbers and reduce the rate of 'middle' saturation colours
-                    //   The idea is to sacrifice the number of possible variations to create more distinct variety
-                    //   It has to be a gentle curve, e.g. low slope - high slope - low slope, sigmoidalesque
-                    //   I just googled 'sigmoidalesque', apparently one other person has said this.
-                    s = (Single)r.NextDouble() * (1f - sBand) + sBand;
+                    // high-pass filter:
+                    //   random * (range - sBand) + sBand
+                    // sigmoidal distribution reduces intermediate saturations, improving colour distinction
+                    s = (Single)(1 / (1 + Math.Pow(Math.E, -12 * (r.NextDouble() - 0.5)))) * (1f - sBand) + sBand;
 
                     // Value:  map to 1f, apply high-pass filter
-                    //  - Value should be partially associated with the Hue band.  This is because
-                    //    some colours don't "pop" well off a gray background (the KLF window colour).
-                    //    I'm not sure how to go about this, and I suppose I could get someone who isn't
-                    //    partially colourblind to help. lol
                     v = (Single)r.NextDouble() * (1f - vBand) + vBand;
 
                     return colorFromHSV(h,s,v);
