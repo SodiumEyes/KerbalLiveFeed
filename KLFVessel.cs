@@ -243,63 +243,35 @@ namespace KLF
 			return generateActiveColor(Math.Abs(val));
 		}
 
-		public static Color generateActiveColor(int val)
+		public static Color generateActiveColor(int seed)
 		{
-			switch (val % 17)
-			{
-				case 0:
-					return Color.red;
-
-				case 1:
-					return new Color(1, 0, 0.5f, 1); //Rosy pink
-					
-				case 2:
-					return new Color(0.6f, 0, 0.5f, 1); //OU Crimson
-					
-				case 3:
-					return new Color(1, 0.5f, 0, 1); //Orange
-					
-				case 4:
-					return Color.yellow;
-					
-				case 5:
-					return new Color(1, 0.84f, 0, 1); //Gold
-					
-				case 6:
-					return Color.green;
-					
-				case 7:
-					return new Color(0, 0.651f, 0.576f, 1); //Persian Green
-					
-				case 8:
-					return new Color(0, 0.651f, 0.576f, 1); //Persian Green
-					
-				case 9:
-					return new Color(0, 0.659f, 0.420f, 1); //Jade
-					
-				case 10:
-					return new Color(0.043f, 0.855f, 0.318f, 1); //Malachite
-					
-				case 11:
-					return Color.cyan;					
-
-				case 12:
-					return new Color(0.537f, 0.812f, 0.883f, 1); //Baby blue;
-
-				case 13:
-					return new Color(0, 0.529f, 0.741f, 1); //NCS blue
-					
-				case 14:
-					return new Color(0.255f, 0.412f, 0.882f, 1); //Royal Blue
-					
-				case 15:
-					return new Color(0.5f, 0, 1, 1); //Violet
-					
-				default:
-					return Color.magenta;
-					
-			}
+                    //default high-passes:  saturation and value
+                    return controlledColor(seed, (Single)0.25, (Single)0.85);
 		}
+
+                //all colour generation based on seed
+                public static Color controlledColor(int seed, Single sBand, Single vBand)
+                {   
+                    Single h,s,v;
+                    //Hue, map random to degrees
+                    //Saturation, map to 1f, use filter
+                    //Value map to 1f, use (different?) filter
+                    return colorFromHSV(h,s,v);
+                }
+
+                public static Color ColorFromHSV(Single hue, Single saturation, Single lValue)
+                {
+                    //use conversion as described here: http://en.wikipedia.org/wiki/HSL_and_HSV
+                    //developed by PARC, NYIT, and described by Alvy Ray Smith?
+                    //select colour sector from degrees
+                    //select minor degree component within sector
+                    //map HSV components to RGB
+                    //Transpose RGB components based on hue sector
+                    //sample implementation in c here:
+                    //  http://www.cs.rit.edu/~ncs/color/t_convert.html
+                    return new Color(1f,1f,1f,1f);//placeholder
+                }
+
 
         public void setOrbitalData(CelestialBody body, Vector3 local_pos, Vector3 local_vel, Vector3 local_dir) {
 
