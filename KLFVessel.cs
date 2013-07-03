@@ -278,7 +278,9 @@ namespace KLF
                     // high-pass filter:
                     //   random * (range - sBand) + sBand
                     // sigmoidal distribution reduces intermediate saturations, improving colour distinction
-                    s = (Single)(1 / (1 + Math.Pow(Math.E, -12 * (r.NextDouble() - 0.5)))) * (1f - sBand) + sBand;
+                    // drop this into wolframalpha.com to see the distribution with default high-pass of 0.25
+                    //   plot (1 / (1 + e^(-12 * (x - 0.38)) )) * (1.0 - 0.25) + 0.25, x=0 to 1
+                    s = (Single)(1 / (1 + Math.Pow(Math.E, -12 * (r.NextDouble() - 0.38)))) * (1f - sBand) + sBand;
 
                     // Value:  map to 1f, apply high-pass filter
                     v = (Single)r.NextDouble() * (1f - vBand) + vBand;
