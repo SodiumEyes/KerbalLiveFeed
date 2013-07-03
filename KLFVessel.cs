@@ -234,12 +234,10 @@ namespace KLF
 		public static Color generateActiveColor(String str)
 		{
 			int val = 5381;
-
 			foreach (char c in str)
 			{
 				val = ((val << 5) + val) + c;
 			}
-
 			return generateActiveColor(Math.Abs(val));
 		}
 
@@ -247,31 +245,49 @@ namespace KLF
 		{
                     //default high-passes:  saturation and value
                     return controlledColor(seed, (Single)0.25, (Single)0.85);
+                }
+
+                public static Color controlledColor(int seed, Single sBand, Single vBand)
+                {
+                    Single h,s,v;
+                    System.Random r = new System.Random(seed);
+
+                    //Hue:  map random to degrees
+                    h = (Single)r.NextDouble() * 360.0f;
+                    //Saturation:  map to 1f, TODO: apply high-pass filter
+                    s = (Single)r.NextDouble();//TODO
+                    //Value:  map to 1f, TODO: apply high-pass filter
+                    v = (Single)r.NextDouble();//TODO
+                    return colorFromHSV(h,s,v);
 		}
 
-                //all colour generation based on seed
-                public static Color controlledColor(int seed, Single sBand, Single vBand)
-                {   
-                    Single h,s,v;
-                    //Hue, map random to degrees
-                    //Saturation, map to 1f, use filter
-                    //Value map to 1f, use (different?) filter
-                    return colorFromHSV(h,s,v);
-                }
-
-                public static Color ColorFromHSV(Single hue, Single saturation, Single lValue)
+                /* ColorObjFromHSV - converts HSV to RGBA (UnityEngine)
+                 * - HSV designed by Palo Alto Research Center Incorporated
+                 *   and New York Institute of Technologyas
+                 * - Formally described by Alvy Ray Smith, 1978.
+                 *   * http://en.wikipedia.org/wiki/HSL_and_HSV
+                 * - sample implementations:
+                 *   http://www.cs.rit.edu/~ncs/color/t_convert.html
+                 *   http://stackoverflow.com/a/1626175
+                 * - not sure about camelcaps in method name...
+                 *
+                 */
+                public static Color colorFromHSV(Single hue, Single saturation, Single lValue)
                 {
-                    //use conversion as described here: http://en.wikipedia.org/wiki/HSL_and_HSV
-                    //developed by PARC, NYIT, and described by Alvy Ray Smith?
-                    //select colour sector from degrees
+                    //select colour sector (from degrees to 6 facets)
+                    int hSector = ((int)Math.Floor(hue / 60)) % 6;
                     //select minor degree component within sector
-                    //map HSV components to RGB
-                    //Transpose RGB components based on hue sector
-                    //sample implementation in c here:
-                    //  http://www.cs.rit.edu/~ncs/color/t_convert.html
-                    return new Color(1f,1f,1f,1f);//placeholder
-                }
+                    Single hMinor = hue / 60f - (Single)Math.Floor(hue / 60);
 
+                    //map HSV components to RGB
+                    Single v = lValue;
+                    Single p = lValue * 1f;//TODO
+                    Single q = lValue * 1f;//TODO
+                    Single t = lValue * 1f;//TODO
+
+                    //TODO transpose RGB components based on hue sector
+                    return new Color(v, p, q, 1f);//opaque alpha
+                }
 
         public void setOrbitalData(CelestialBody body, Vector3 local_pos, Vector3 local_vel, Vector3 local_dir) {
 
