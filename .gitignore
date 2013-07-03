@@ -14,12 +14,14 @@ KLFClient/bin
 KLFClient/obj
 KLFServer/bin
 KLFServer/obj
+KSP_Data
 
 # Windows runtime
 *.exe
 *.ilk
 *.pdb
 *.msi
+*.dll
 
 # Windows clutter
 *.db
