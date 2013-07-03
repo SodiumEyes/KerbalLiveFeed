@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+mcs \
+-langversion:4 \
+-r:KSP_Data/Managed/Assembly-CSharp.dll \
+-r:KSP_Data/Managed/System.dll \
+-r:KSP_Data/Managed/UnityEngine.dll \
+colour.cs -out:colour.exe
+#-t:library \
