@@ -254,9 +254,9 @@ namespace KLF
 
                     //Hue:  map random to degrees
                     h = (Single)r.NextDouble() * 360.0f;
-                    //Saturation:  map to 1f, TODO: apply high-pass filter
+                    //Saturation:  map to 1f, apply high-pass filter
                     s = (Single)r.NextDouble();//TODO
-                    //Value:  map to 1f, TODO: apply high-pass filter
+                    //Value:  map to 1f, apply high-pass filter
                     v = (Single)r.NextDouble();//TODO
                     return colorFromHSV(h,s,v);
 		}
@@ -269,10 +269,11 @@ namespace KLF
                  * - sample implementations:
                  *   http://www.cs.rit.edu/~ncs/color/t_convert.html
                  *   http://stackoverflow.com/a/1626175
-                 * - not sure about camelcaps in method name...
+                 * - not implementing achromatic check optimization.
+                 *   We prevent dull input anyway. :)
                  *
                  */
-                public static Color colorFromHSV(Single hue, Single saturation, Single lValue)
+                public static Color colorFromHSV(Single hue, Single saturation, Single lumValue)
                 {
                     //select colour sector (from degrees to 6 facets)
                     int hSector = ((int)Math.Floor(hue / 60)) % 6;
@@ -280,13 +281,24 @@ namespace KLF
                     Single hMinor = hue / 60f - (Single)Math.Floor(hue / 60);
 
                     //map HSV components to RGB
-                    Single v = lValue;
-                    Single p = lValue * 1f;//TODO
-                    Single q = lValue * 1f;//TODO
-                    Single t = lValue * 1f;//TODO
+                    Single v = lumValue;
+                    Single p = lumValue * (1f - saturation);
+                    Single q = lumValue * (1f - saturation * hMinor);
+                    Single t = lumValue * (1f - saturation * (1f - hMinor));
 
-                    //TODO transpose RGB components based on hue sector
-                    return new Color(v, p, q, 1f);//opaque alpha
+                    //transpose RGB components based on hue sector
+                    if(hSector == 0)
+                        return new Color(v, t, p, 1f);
+                    else if (hSector == 1)
+                        return new Color(q, v, p, 1f);
+                    else if (hSector == 2)
+                        return new Color(p, v, t, 1f);
+                    else if (hSector == 3)
+                        return new Color(p, q, v, 1f);
+                    else if (hSector == 4)
+                        return new Color(t, p, v, 1f);
+                    else
+                        return new Color(v, p, q, 1f);
                 }
 
         public void setOrbitalData(CelestialBody body, Vector3 local_pos, Vector3 local_vel, Vector3 local_dir) {
