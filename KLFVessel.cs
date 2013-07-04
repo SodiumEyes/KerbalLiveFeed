@@ -244,45 +244,29 @@ namespace KLF
 		public static Color generateActiveColor(int seed)
 		{
                     //default high-passes:  saturation and value
-                    return controlledColor(seed, (Single)0.25, (Single)0.75);
+                    return controlledColor(seed, (Single)0.30, (Single)0.55);
                 }
 
                 /* controlledColor - return RGBA Color Obj from a string seed.
-                 * - control some aspects of the random colors with high-pass filters
-                 * - alpha, opaque
+                 * - alpha: always opaque
                  * - hue, full spectrum, uniform distribution
-                 *   * Needs complex sine function to map out problematic hues
-                 * - saturation, high-pass, scaled in some way
-                 *   * Needs to be adjusted depending on hue selected
-                 * - value, high-pass
-                 * - recreate Random object every time to ensure deterministic random
-                 *   * same colours for same username
+                 * - saturation, high-pass parameter, sigmoidal distribution
+                 *   * Needs to be adjusted depending on hue selected (blue,indigo,purple)
+                 * - value, high-pass parameter
                  * - retrigger random value between h, s, and v to reduce correlations
-                 *
-                 * TODO notes:
-                 * - build a function that modifies s for some values of h and s.
-                 *   Used to reduce saturation on colours that are difficult to see over gray.
-                 *   e.g.  a complex sine function using positive slopes over particular
-                 *   hues from 0 to 360 to scale the saturation down for those hues.
                  */
                 public static Color controlledColor(int seed, Single sBand, Single vBand)
                 {
                     Single h,s,v;
+                    //deterministic random (same colour for same seed)
                     System.Random r = new System.Random(seed);
 
-                    // Hue:  map random to degrees
-                    // - maybe craft a sine-wave function to scale/reduce the occurance of some colours (e.g. indigo)
+                    //Hue:  uniform distribution
                     h = (Single)r.NextDouble() * 360.0f;
-
-                    // Saturation:  map to 1f, apply high-pass filter
-                    // high-pass filter:
-                    //   random * (range - sBand) + sBand
-                    // sigmoidal distribution reduces intermediate saturations, improving colour distinction
-                    // drop this into wolframalpha.com to see the distribution with default high-pass of 0.25
+                    //Saturation:  sigmoigal distribution, high-pass filter
                     //   plot (1 / (1 + e^(-12 * (x - 0.38)) )) * (1.0 - 0.25) + 0.25, x=0 to 1
                     s = (Single)(1 / (1 + Math.Pow(Math.E, -12 * (r.NextDouble() - 0.38)))) * (1f - sBand) + sBand;
-
-                    // Value:  map to 1f, apply high-pass filter
+                    //Value:  uniform distribution, high-pass filter
                     v = (Single)r.NextDouble() * (1f - vBand) + vBand;
 
                     return colorFromHSV(h,s,v);
