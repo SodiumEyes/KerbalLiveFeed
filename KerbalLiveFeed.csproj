@@ -53,6 +53,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="KerbalLiveFeedModule.cs" />
+    <Compile Include="KLFCameraScript.cs" />
     <Compile Include="KLFChatDisplay.cs" />
     <Compile Include="KLFCommon.cs" />
     <Compile Include="KLFGlobalSettings.cs" />
