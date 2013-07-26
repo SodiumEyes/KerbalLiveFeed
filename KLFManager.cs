@@ -97,7 +97,6 @@ namespace KLF
 					case GameScenes.FLIGHT:
 					case GameScenes.SPH:
 					case GameScenes.TRACKSTATION:
-					case GameScenes.QUICKFLIGHT:
 						return true;
 
 					default:
@@ -153,6 +152,12 @@ namespace KLF
 		{
 			if (HighLogic.LoadedScene == GameScenes.LOADING)
 				return; //Don't do anything while the game is loading
+	
+			if (Camera.mainCamera != null && Camera.mainCamera.gameObject.GetComponent<KLFCameraScript>() == null)
+			{
+				KLFCameraScript script = Camera.main.gameObject.AddComponent<KLFCameraScript>();
+				script.manager = this;
+			}
 
 			//Handle all queued vessel updates
 			while (vesselUpdateQueue.Count > 0)
@@ -193,7 +198,6 @@ namespace KLF
 			}
 
 			//Update the positions of all the vessels
-
 			List<String> delete_list = new List<String>();
 
 			foreach (KeyValuePair<String, VesselEntry> pair in vessels) {
@@ -276,7 +280,7 @@ namespace KLF
 					&& EditorLogic.fetch != null
 					&& EditorLogic.fetch.ship != null && EditorLogic.fetch.ship.Count > 0
 					&& EditorLogic.fetch.shipNameField != null
-					&& EditorLogic.fetch.shipNameField.text != null && EditorLogic.fetch.shipNameField.text.Length > 0;
+					&& EditorLogic.fetch.shipNameField.Text != null && EditorLogic.fetch.shipNameField.Text.Length > 0;
 
 				String[] status_array = null;
 
@@ -285,7 +289,7 @@ namespace KLF
 					status_array = new String[3];
 
 					//Vessel name
-					String shipname = EditorLogic.fetch.shipNameField.text;
+					String shipname = EditorLogic.fetch.shipNameField.Text;
 
 					if (shipname.Length > MAX_VESSEL_NAME_LENGTH)
 						shipname = shipname.Substring(0, MAX_VESSEL_NAME_LENGTH); //Limit vessel name length
@@ -864,7 +868,7 @@ namespace KLF
 					vessels[vessel_key] = new_entry;
 				}
 			}
-				
+			
 			if (vessel == null) {
 				//Add the vessel to the dictionary
 				vessel = new KLFVessel(vessel_update.name, vessel_update.player, vessel_update.id);
@@ -931,7 +935,7 @@ namespace KLF
 				status.vesselName = vessel_update.name;
 
 				if (vessel.orbitValid)
-					status.orbit = vessel.orbitRenderer.orbit;
+					status.orbit = vessel.orbitRenderer.driver.orbit;
 
 				status.lastUpdateTime = UnityEngine.Time.realtimeSinceStartup;
 				status.color = KLFVessel.generateActiveColor(status.ownerName);
@@ -974,6 +978,15 @@ namespace KLF
 			{
 				enqueuePluginInteropMessage(KLFCommon.PluginInteropMessageID.CHAT_SEND, encoder.GetBytes(line));
 				KLFChatDisplay.enqueueChatLine("[" + playerName + "] " + line);
+			}
+		}
+
+		public void updateVesselPositions()
+		{
+			foreach (KeyValuePair<String, VesselEntry> pair in vessels)
+			{
+				if (pair.Value.vessel != null)
+					pair.Value.vessel.updatePosition();
 			}
 		}
 
@@ -1510,6 +1523,9 @@ namespace KLF
 					KLFGlobalSettings.instance.showInactiveShips
 						= GUILayout.Toggle(KLFGlobalSettings.instance.showInactiveShips, "Inactive Icons", GUI.skin.button);
 
+					KLFGlobalSettings.instance.showOrbits
+						= GUILayout.Toggle(KLFGlobalSettings.instance.showOrbits, "Orbits", GUI.skin.button);
+
 					GUILayout.EndHorizontal();
 
 					//Key mapping
@@ -1842,7 +1858,7 @@ namespace KLF
 				{
 					if (target.name == status.info.bodyName)
 					{
-						planetariumCam.setTarget(target);
+						planetariumCam.SetTarget(target);
 						break;
 					}
 				}

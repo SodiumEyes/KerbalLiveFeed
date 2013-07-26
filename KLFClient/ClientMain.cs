@@ -35,8 +35,8 @@ namespace KLFClient
 		public const String AUTO_RECONNECT_LABEL = "reconnect";
 		public const String FAVORITE_LABEL = "fav";
 
-		public const String INTEROP_CLIENT_FILENAME = "Plugins/PluginData/KerbalLiveFeed/interopclient.txt";
-		public const String INTEROP_PLUGIN_FILENAME = "Plugins/PluginData/KerbalLiveFeed/interopplugin.txt";
+		public const String INTEROP_CLIENT_FILENAME = "GameData/KLF/Plugins/PluginData/KerbalLiveFeed/interopclient.txt";
+		public const String INTEROP_PLUGIN_FILENAME = "GameData/KLF/Plugins/PluginData/KerbalLiveFeed/interopplugin.txt";
 		public const String CLIENT_CONFIG_FILENAME = "KLFClientConfig.txt";
 		public const String CRAFT_FILE_EXTENSION = ".craft";
 		
