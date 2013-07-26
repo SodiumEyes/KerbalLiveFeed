@@ -796,8 +796,6 @@ namespace KLFClient
 								enqueueTextMessage("Error reading craft file: " + filename);
 							}
 						}
-						else
-							enqueueTextMessage("Craft file not found: " + craft_name);
 					}
 
 				}
@@ -1411,6 +1409,7 @@ namespace KLFClient
 		static String findCraftFilename(String craft_name, ref byte craft_type)
 		{
 			String vab_filename = getCraftFilename(craft_name, KLFCommon.CRAFT_TYPE_VAB);
+
 			if (vab_filename != null && File.Exists(vab_filename))
 			{
 				craft_type = KLFCommon.CRAFT_TYPE_VAB;
@@ -1424,6 +1423,8 @@ namespace KLFClient
 				return sph_filename;
 			}
 
+            enqueueTextMessage("Craft file not found: " + craft_name + " Detected Save Name : " + currentGameTitle);
+            enqueueTextMessage("If the Save Name does not match your current game, update persistent.sfs");
 			return null;
 
 		}
