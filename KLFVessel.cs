@@ -262,7 +262,7 @@ namespace KLF
 
                     //Hue:  uniform distribution
                     h = (Single)r.NextDouble() * 360.0f;
-                    //Saturation:  sigmoigal distribution, high-pass filter
+                    //Saturation:  sigmoidal distribution, high-pass filter
                     //   plot (1 / (1 + e^(-12 * (x - 0.38)) )) * (1.0 - 0.25) + 0.25, x=0 to 1
                     s = (Single)(1 / (1 + Math.Pow(Math.E, -12 * (r.NextDouble() - 0.38)))) * (1f - sBand) + sBand;
                     //Value:  uniform distribution, high-pass filter
