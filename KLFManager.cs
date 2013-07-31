@@ -153,9 +153,10 @@ namespace KLF
 			if (HighLogic.LoadedScene == GameScenes.LOADING)
 				return; //Don't do anything while the game is loading
 	
-			if (Camera.mainCamera != null && Camera.mainCamera.gameObject.GetComponent<KLFCameraScript>() == null)
+			if (planetariumCam != null && planetariumCam.gameObject.GetComponent<KLFCameraScript>() == null)
 			{
-				KLFCameraScript script = Camera.main.gameObject.AddComponent<KLFCameraScript>();
+				Debug.Log("Added KLF Camera Script");
+				KLFCameraScript script = planetariumCam.gameObject.AddComponent<KLFCameraScript>();
 				script.manager = this;
 			}
 
