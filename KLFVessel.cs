@@ -86,12 +86,12 @@ namespace KLF
 							Vector3 body_pos_at_ref = mainBody.orbit.getTruePositionAtUT(time);
 							Vector3 body_pos_now = mainBody.orbit.getTruePositionAtUT(Planetarium.GetUniversalTime());
 
-							return body_pos_now + (orbitRenderer.orbit.getTruePositionAtUT(time) - body_pos_at_ref);
+							return body_pos_now + (orbitRenderer.driver.orbit.getTruePositionAtUT(time) - body_pos_at_ref);
 						}
 						else
 						{
 							//Vessel is probably orbiting the sun
-							return orbitRenderer.orbit.getTruePositionAtUT(time);
+							return orbitRenderer.driver.orbit.getTruePositionAtUT(time);
 						}
 
 					}
@@ -150,7 +150,7 @@ namespace KLF
 				if (!orbitValid || situationIsGrounded(info.situation))
 					return false;
 				else
-					return info.state == State.ACTIVE || orbitRenderer.mouseOver;
+					return (info.state == State.ACTIVE && KLFGlobalSettings.instance.showOrbits) || orbitRenderer.mouseOver;
             }
         }
 
@@ -198,6 +198,7 @@ namespace KLF
 
             line = gameObj.AddComponent<LineRenderer>();
             orbitRenderer = gameObj.AddComponent<OrbitRenderer>();
+			orbitRenderer.driver = new OrbitDriver();
 
             line.transform.parent = gameObj.transform;
             line.transform.localPosition = Vector3.zero;
@@ -207,8 +208,6 @@ namespace KLF
             line.material = new Material(Shader.Find("Particles/Alpha Blended Premultiply"));
             line.SetVertexCount(2);
             line.enabled = false;
-
-            orbitRenderer.forceDraw = true;
 
             mainBody = null;
 
@@ -429,15 +428,13 @@ namespace KLF
             line.SetPosition(1, ScaledSpace.LocalToScaledSpace(worldPosition + line_half_dir));
 
 			if (!situationIsGrounded(info.situation))
-				orbitRenderer.orbit.UpdateFromUT(adjustedUT);
+				orbitRenderer.driver.orbit.UpdateFromUT(adjustedUT);
         }
 
         public void updateOrbitProperties()
         {
-
 			if (mainBody != null)
             {
-
                 Vector3 orbit_pos = translationFromBody;
                 Vector3 orbit_vel = worldVelocity;
 
@@ -451,10 +448,9 @@ namespace KLF
                 orbit_vel.z = temp;
 
                 //Update orbit
-                orbitRenderer.orbit.UpdateFromStateVectors(orbit_pos, orbit_vel, mainBody, Planetarium.GetUniversalTime());
+                orbitRenderer.driver.orbit.UpdateFromStateVectors(orbit_pos, orbit_vel, mainBody, Planetarium.GetUniversalTime());
 				referenceUT = Planetarium.GetUniversalTime();
 				referenceFixedTime = UnityEngine.Time.fixedTime;
-                
             }
         }
 
@@ -462,10 +458,12 @@ namespace KLF
         {
 			line.enabled = !force_hide && orbitValid && gameObj != null && MapView.MapIsEnabled;
 
+			OrbitRenderer.DrawMode draw_mode = OrbitRenderer.DrawMode.OFF;
 			if (gameObj != null && !force_hide && shouldShowOrbit)
-				orbitRenderer.drawMode = OrbitRenderer.DrawMode.REDRAW_AND_RECALCULATE;
-			else
-				orbitRenderer.drawMode = OrbitRenderer.DrawMode.OFF;
+				draw_mode = OrbitRenderer.DrawMode.REDRAW_AND_RECALCULATE;
+
+			if (orbitRenderer.drawMode != draw_mode)
+				orbitRenderer.drawMode = draw_mode;
 
 			//Determine the color
 			Color color = activeColor;
@@ -502,8 +500,6 @@ namespace KLF
 				orbitRenderer.drawIcons = OrbitRenderer.DrawIcons.OBJ_PE_AP;
 			else
 				orbitRenderer.drawIcons = OrbitRenderer.DrawIcons.OBJ;
-
-
         }
 
 		public static bool situationIsGrounded(Situation situation) {

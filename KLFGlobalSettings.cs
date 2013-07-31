@@ -40,6 +40,9 @@ namespace KLF
 		[OptionalField(VersionAdded = 2)]
 		public bool showOtherShips = true;
 
+		[OptionalField(VersionAdded = 3)]
+		public bool showOrbits = true;
+
 		[OnDeserializing]
 		private void SetDefault(StreamingContext sc)
 		{
@@ -49,6 +52,7 @@ namespace KLF
 			chatColors = true;
 			showInactiveShips = true;
 			showOtherShips = true;
+			showOrbits = true;
 		}
 
 		public static KLFGlobalSettings instance = new KLFGlobalSettings();
