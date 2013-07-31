@@ -244,7 +244,7 @@ namespace KLF
 		public static Color generateActiveColor(int seed)
 		{
                     //default high-passes:  saturation and value
-                    return controlledColor(seed, (Single)0.30, (Single)0.55);
+                    return controlledColor(seed, (Single)0.45, (Single)0.45);
                 }
 
                 /* controlledColor - return RGBA Color Obj from a string seed.
