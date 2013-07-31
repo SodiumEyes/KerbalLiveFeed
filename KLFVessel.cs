@@ -263,7 +263,7 @@ namespace KLF
                     //Hue:  uniform distribution
                     h = (Single)r.NextDouble() * 360.0f;
                     //Saturation:  sigmoidal distribution, high-pass filter
-                    //   plot (1 / (1 + e^(-12 * (x - 0.38)) )) * (1.0 - 0.25) + 0.25, x=0 to 1
+                    //   plot (1 / (1 + e^(-12 * (x - 0.38)) )) * (1.0 - 0.45) + 0.45, x=0 to 1
                     s = (Single)(1 / (1 + Math.Pow(Math.E, -12 * (r.NextDouble() - 0.38)))) * (1f - sBand) + sBand;
                     //Value:  uniform distribution, high-pass filter
                     v = (Single)r.NextDouble() * (1f - vBand) + vBand;
@@ -273,7 +273,7 @@ namespace KLF
 
                 /* colorFromHSV - converts HSV to RGBA (UnityEngine)
                  * - HSV designed by Palo Alto Research Center Incorporated
-                 *   and New York Institute of Technologyas
+                 *   and New York Institute of Technologies
                  * - Formally described by Alvy Ray Smith, 1978.
                  *   * http://en.wikipedia.org/wiki/HSL_and_HSV
                  * - sample implementations:
