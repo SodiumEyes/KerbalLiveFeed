@@ -15,7 +15,6 @@ KLFClient/obj
 KLFServer/bin
 KLFServer/obj
 
-
 # Windows runtime
 *.exe
 *.ilk
