@@ -1,10 +1,10 @@
-KerbalLiveFeed Plugin, Client and Server v0.5.0
+KerbalLiveFeed Plugin, Client and Server v0.6.7
 Created by Alfred Lam
 
 ======= Installation ===========================================
 
 Place KLFClient.exe in your KSP install folder
-Place KerbalLiveFeed.dll in your KSP plugin folder
+Place KLF folder in your GameData folder
 
 ======= How to use ===========================================
 
