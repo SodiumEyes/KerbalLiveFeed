@@ -61,8 +61,11 @@ namespace KLF
 				{
 					name_length = name_length - 1;
 					String name = line.Substring(1, name_length);
-					chat_line.color = KLFVessel.generateActiveColor(name) * NAME_COLOR_SATURATION_FACTOR
-						+ Color.white * (1.0f-NAME_COLOR_SATURATION_FACTOR);
+					if (name == "Server")
+						chat_line.color = Color.cyan;
+					else
+						chat_line.color = KLFVessel.generateActiveColor(name) * NAME_COLOR_SATURATION_FACTOR
+							+ Color.white * (1.0f-NAME_COLOR_SATURATION_FACTOR);
 				}
 			}
 

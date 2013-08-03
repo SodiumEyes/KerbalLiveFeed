@@ -1336,7 +1336,6 @@ namespace KLFServer
 
 							if (screenshot != null && screenshot.index != current_index)
 							{
-								stampedConsoleWriteLine("Screen send!");
 								sendScreenshot(client_index, screenshot);
 							}
 						}
