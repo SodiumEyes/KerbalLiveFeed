@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+mcs \
+-langversion:4 \
+-r:Assembly-CSharp.dll \
+-r:Assembly-CSharp-firstpass.dll \
+-r:UnityEngine.dll \
+-t:library \
+*.cs -out:bin/KerbalLiveFeed.dll
+#-r:KSP_Data/Managed/System.dll \

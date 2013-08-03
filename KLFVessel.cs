@@ -83,7 +83,7 @@ namespace KLF
 						if (mainBody.referenceBody != null && mainBody.referenceBody != mainBody && mainBody.orbit != null)
 						{
 							//Adjust for the movement of the vessel's parent body
-							Vector3 body_pos_at_ref = body_pos_at_ref = mainBody.orbit.getTruePositionAtUT(time);
+							Vector3 body_pos_at_ref = mainBody.orbit.getTruePositionAtUT(time);
 							Vector3 body_pos_now = mainBody.orbit.getTruePositionAtUT(Planetarium.GetUniversalTime());
 
 							return body_pos_now + (orbitRenderer.driver.orbit.getTruePositionAtUT(time) - body_pos_at_ref);
@@ -233,72 +233,83 @@ namespace KLF
 		public static Color generateActiveColor(String str)
 		{
 			int val = 5381;
-
 			foreach (char c in str)
 			{
 				val = ((val << 5) + val) + c;
 			}
-
 			return generateActiveColor(Math.Abs(val));
 		}
 
-		public static Color generateActiveColor(int val)
+		public static Color generateActiveColor(int seed)
 		{
-			switch (val % 17)
-			{
-				case 0:
-					return Color.red;
+                    //default high-passes:  saturation and value
+                    return controlledColor(seed, (Single)0.45, (Single)0.45);
+                }
 
-				case 1:
-					return new Color(1, 0, 0.5f, 1); //Rosy pink
-					
-				case 2:
-					return new Color(0.6f, 0, 0.5f, 1); //OU Crimson
-					
-				case 3:
-					return new Color(1, 0.5f, 0, 1); //Orange
-					
-				case 4:
-					return Color.yellow;
-					
-				case 5:
-					return new Color(1, 0.84f, 0, 1); //Gold
-					
-				case 6:
-					return Color.green;
-					
-				case 7:
-					return new Color(0, 0.651f, 0.576f, 1); //Persian Green
-					
-				case 8:
-					return new Color(0, 0.651f, 0.576f, 1); //Persian Green
-					
-				case 9:
-					return new Color(0, 0.659f, 0.420f, 1); //Jade
-					
-				case 10:
-					return new Color(0.043f, 0.855f, 0.318f, 1); //Malachite
-					
-				case 11:
-					return Color.cyan;					
+                /* controlledColor - return RGBA Color Obj from a string seed.
+                 * - alpha: always opaque
+                 * - hue, full spectrum, uniform distribution
+                 * - saturation, high-pass parameter, sigmoidal distribution
+                 *   * Needs to be adjusted depending on hue selected (blue,indigo,purple)
+                 * - value, high-pass parameter
+                 * - retrigger random value between h, s, and v to reduce correlations
+                 */
+                public static Color controlledColor(int seed, Single sBand, Single vBand)
+                {
+                    Single h,s,v;
+                    //deterministic random (same colour for same seed)
+                    System.Random r = new System.Random(seed);
 
-				case 12:
-					return new Color(0.537f, 0.812f, 0.883f, 1); //Baby blue;
+                    //Hue:  uniform distribution
+                    h = (Single)r.NextDouble() * 360.0f;
+                    //Saturation:  sigmoidal distribution, high-pass filter
+                    //   plot (1 / (1 + e^(-12 * (x - 0.38)) )) * (1.0 - 0.45) + 0.45, x=0 to 1
+                    s = (Single)(1 / (1 + Math.Pow(Math.E, -12 * (r.NextDouble() - 0.38)))) * (1f - sBand) + sBand;
+                    //Value:  uniform distribution, high-pass filter
+                    v = (Single)r.NextDouble() * (1f - vBand) + vBand;
 
-				case 13:
-					return new Color(0, 0.529f, 0.741f, 1); //NCS blue
-					
-				case 14:
-					return new Color(0.255f, 0.412f, 0.882f, 1); //Royal Blue
-					
-				case 15:
-					return new Color(0.5f, 0, 1, 1); //Violet
-					
-				default:
-					return Color.magenta;
-					
-			}
+                    return colorFromHSV(h,s,v);
 		}
+
+                /* colorFromHSV - converts HSV to RGBA (UnityEngine)
+                 * - HSV designed by Palo Alto Research Center Incorporated
+                 *   and New York Institute of Technologies
+                 * - Formally described by Alvy Ray Smith, 1978.
+                 *   * http://en.wikipedia.org/wiki/HSL_and_HSV
+                 * - sample implementations:
+                 *   http://www.cs.rit.edu/~ncs/color/t_convert.html
+                 *   http://stackoverflow.com/a/1626175
+                 * - not implementing achromatic check optimization.
+                 *   We prevent dull input anyway. :)
+                 *
+                 */
+                public static Color colorFromHSV(Single hue, Single saturation, Single lumValue)
+                {
+                    //select colour sector (from degrees to 6 facets)
+                    int hSector = ((int)Math.Floor(hue / 60)) % 6;
+                    //select minor degree component within sector
+                    Single hMinor = hue / 60f - (Single)Math.Floor(hue / 60);
+
+                    //map HSV components to RGB
+                    Single v = lumValue;
+                    Single p = lumValue * (1f - saturation);
+                    Single q = lumValue * (1f - saturation * hMinor);
+                    Single t = lumValue * (1f - saturation * (1f - hMinor));
+
+                    //transpose RGB components based on hue sector
+                    if(hSector == 0)
+                        return new Color(v, t, p, 1f);
+                    else if (hSector == 1)
+                        return new Color(q, v, p, 1f);
+                    else if (hSector == 2)
+                        return new Color(p, v, t, 1f);
+                    else if (hSector == 3)
+                        return new Color(p, q, v, 1f);
+                    else if (hSector == 4)
+                        return new Color(t, p, v, 1f);
+                    else
+                        return new Color(v, p, q, 1f);
+                }
 
         public void setOrbitalData(CelestialBody body, Vector3 local_pos, Vector3 local_vel, Vector3 local_dir) {
 
