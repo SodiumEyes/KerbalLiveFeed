@@ -84,6 +84,12 @@ namespace KLFServer
 				Console.WriteLine(settings.screenshotInterval + "ms");
 
 				Console.ForegroundColor = ConsoleColor.Green;
+				Console.Write("Screenshot Backlog: ");
+
+				Console.ResetColor();
+				Console.WriteLine(settings.screenshotBacklog);
+
+				Console.ForegroundColor = ConsoleColor.Green;
 				Console.Write("Save Screenshots: ");
 
 				Console.ResetColor();
@@ -105,7 +111,8 @@ namespace KLFServer
 				Console.WriteLine();
 				Console.WriteLine("P: change port, HP: change http port, M: change max clients");
 				Console.WriteLine("J: join message, IF: server info, U: updates per second, IS: total inactive ships");
-				Console.WriteLine("SH: screenshot height, SI: screenshot interval, SV: save screenshots");
+				Console.WriteLine("SH: screenshot height, SI: screenshot interval");
+				Console.WriteLine("SV: screenshot save, SB: screenshot backlog");
 				Console.WriteLine("AR: toggle auto-restart, AH: toggle auto-host");
 				Console.WriteLine("H: begin hosting, Q: quit");
 
@@ -220,6 +227,16 @@ namespace KLFServer
 					if (int.TryParse(Console.ReadLine(), out new_value))
 					{
 						settings.screenshotInterval = new_value;
+						settings.writeConfigFile();
+					}
+				}
+				else if (in_string == "sb")
+				{
+					Console.Write("Enter the screenshot backlog: ");
+					int new_value;
+					if (int.TryParse(Console.ReadLine(), out new_value) && new_value >= 1)
+					{
+						settings.screenshotBacklog = new_value;
 						settings.writeConfigFile();
 					}
 				}

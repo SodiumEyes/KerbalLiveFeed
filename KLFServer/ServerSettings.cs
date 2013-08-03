@@ -21,6 +21,7 @@ namespace KLFServer
 		public const String SCREENSHOT_INTERVAL_LABEL = "screenshotInterval";
 		public const String SCREENSHOT_FLOOD_LIMIT_LABEL = "screenshotFloodLimit";
 		public const String SCREENSHOT_FLOOD_THROTTLE_TIME_LABEL = "screenshotFloodThrottleTime";
+		public const String SCREENSHOT_BACKLOG_LABEL = "screenshotBacklog";
 		public const String MESSAGE_FLOOD_LIMIT_LABEL = "messageFloodLimit";
 		public const String MESSAGE_FLOOD_THROTTLE_TIME_LABEL = "messageFloodThrottleTime";
 		public const String SAVE_SCREENSHOTS_LABEL = "saveScreenshots";
@@ -74,6 +75,7 @@ namespace KLFServer
 			}
 		}
 
+		public int screenshotBacklog = 4;
 		public int screenshotInterval = 3000;
 		public int screenshotFloodLimit = 10;
 		public int screenshotFloodThrottleTime = 300000;
@@ -166,6 +168,12 @@ namespace KLFServer
 							int new_val;
 							if (int.TryParse(line, out new_val))
 								screenshotFloodThrottleTime = new_val;
+						}
+						else if (label == SCREENSHOT_BACKLOG_LABEL)
+						{
+							int new_val;
+							if (int.TryParse(line, out new_val))
+								screenshotBacklog = new_val;
 						}
 						else if (label == MESSAGE_FLOOD_LIMIT_LABEL)
 						{
@@ -289,6 +297,10 @@ namespace KLFServer
 			//screenshot throttle time
 			writer.WriteLine(SCREENSHOT_FLOOD_THROTTLE_TIME_LABEL);
 			writer.WriteLine(screenshotFloodThrottleTime);
+
+			//screenshot backlog
+			writer.WriteLine(SCREENSHOT_BACKLOG_LABEL);
+			writer.WriteLine(screenshotBacklog);
 
 			//message flood limit
 			writer.WriteLine(MESSAGE_FLOOD_LIMIT_LABEL);

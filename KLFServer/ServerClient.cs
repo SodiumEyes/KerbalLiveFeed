@@ -63,7 +63,8 @@ namespace KLFServer
 		public bool receivedHandshake;
 		public bool canBeReplaced;
 
-		public byte[] screenshot;
+		public Screenshot[] screenshots;
+		public int watchPlayerIndex;
 		public String watchPlayerName;
 		public byte[] sharedCraftFile;
 		public String sharedCraftName;
@@ -115,8 +116,9 @@ namespace KLFServer
 		public void resetProperties()
 		{
 			username = "new user";
-			screenshot = null;
+			screenshots = new Screenshot[parent.settings.screenshotBacklog];
 			watchPlayerName = String.Empty;
+			watchPlayerIndex = 0;
 			canBeReplaced = false;
 			receivedHandshake = false;
 
@@ -155,7 +157,7 @@ namespace KLFServer
 		public void disconnected()
 		{
 			canBeReplaced = true;
-			screenshot = null;
+			screenshots = null;
 			watchPlayerName = String.Empty;
 
 			sharedCraftFile = null;
@@ -513,6 +515,65 @@ namespace KLFServer
 			if (throttleState.messageFloodCounter >= parent.settings.messageFloodLimit)
 			{
 				throttleState.messageFloodThrottleUntilTime = parent.currentMillisecond + parent.settings.messageFloodThrottleTime;
+			}
+		}
+	
+		//Screenshots
+
+		public Screenshot getScreenshot(int index)
+		{
+			foreach (Screenshot screenshot in screenshots)
+			{
+				if (screenshot != null && screenshot.index == index)
+					return screenshot;
+			}
+
+			return null;
+		}
+
+		public Screenshot lastScreenshot
+		{
+			get
+			{
+				return screenshots[0];
+			}
+		}
+
+		public void pushScreenshot(Screenshot screenshot)
+		{
+			int last_index = lastScreenshotIndex;
+
+			for (int i = 0; i < screenshots.Length - 1; i++)
+			{
+				screenshots[i + 1] = screenshots[i];
+			}
+
+			screenshots[0] = screenshot;
+			screenshots[0].index = last_index + 1;
+		}
+
+		public int lastScreenshotIndex
+		{
+			get
+			{
+				if (screenshots[0] != null)
+					return screenshots[0].index;
+				else
+					return 0;
+			}
+		}
+
+		public int firstScreenshotIndex
+		{
+			get
+			{
+				for (int i = screenshots.Length - 1; i >= 0; i--)
+				{
+					if (screenshots[i] != null)
+						return screenshots[i].index;
+				}
+
+				return -1;
 			}
 		}
 	}

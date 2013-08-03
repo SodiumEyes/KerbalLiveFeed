@@ -178,6 +178,7 @@ namespace KLF
 			if ((UnityEngine.Time.realtimeSinceStartup - lastPluginDataWriteTime) > PLUGIN_DATA_WRITE_INTERVAL)
 			{
 				writePluginData();
+				writeScreenshotWatchUpdate();
 				lastPluginDataWriteTime = UnityEngine.Time.realtimeSinceStartup;
 			}
 
@@ -667,15 +668,8 @@ namespace KLF
 
 			byte[] title_bytes = encoder.GetBytes(current_game_title);
 
-			//Watch player name
-			String watch_player_name = String.Empty;
-			if (shouldDrawGUI && KLFScreenshotDisplay.windowEnabled)
-				watch_player_name = KLFScreenshotDisplay.watchPlayerName;
-
-			byte[] watch_bytes = encoder.GetBytes(watch_player_name);
-
 			//Build update byte array
-			byte[] update_bytes = new byte[1 + 4 + title_bytes.Length + 4 + watch_bytes.Length];
+			byte[] update_bytes = new byte[1 + 4 + title_bytes.Length];
 
 			int index = 0;
 
@@ -690,14 +684,27 @@ namespace KLF
 			title_bytes.CopyTo(update_bytes, index);
 			index += title_bytes.Length;
 
-			//Watch player name
-			KLFCommon.intToBytes(watch_bytes.Length).CopyTo(update_bytes, index);
-			index += 4;
-
-			watch_bytes.CopyTo(update_bytes, index);
-			index += watch_bytes.Length;
-
 			enqueuePluginInteropMessage(KLFCommon.PluginInteropMessageID.PLUGIN_DATA, update_bytes);
+		}
+
+		private void writeScreenshotWatchUpdate()
+		{
+			String watch_player_name = "";
+			if (KLFScreenshotDisplay.windowEnabled && shouldDrawGUI)
+				watch_player_name = KLFScreenshotDisplay.watchPlayerName;
+
+			byte[] name_bytes = new UnicodeEncoding().GetBytes(watch_player_name);
+
+			int current_index = -1;
+			if (KLFScreenshotDisplay.screenshot != null && KLFScreenshotDisplay.screenshot.player == watch_player_name)
+				current_index = KLFScreenshotDisplay.screenshot.index;
+
+			byte[] bytes = new byte[8 + name_bytes.Length];
+			KLFCommon.intToBytes(KLFScreenshotDisplay.watchPlayerIndex).CopyTo(bytes, 0);
+			KLFCommon.intToBytes(current_index).CopyTo(bytes, 4);
+			name_bytes.CopyTo(bytes, 8);
+
+			enqueuePluginInteropMessage(KLFCommon.PluginInteropMessageID.SCREENSHOT_WATCH_UPDATE, bytes);
 		}
 
 		private VesselStatusInfo statusArrayToInfo(String[] status_array)
@@ -725,7 +732,6 @@ namespace KLF
 
 		private void shareScreenshot()
 		{
-
 			//Determine the scaled-down dimensions of the screenshot
 			int w = 0;
 			int h = 0;
@@ -766,24 +772,14 @@ namespace KLF
 
 			byte[] data = resized_tex.EncodeToPNG();
 
-			//Build the description
-			StringBuilder sb = new StringBuilder();
-			sb.Append(playerName);
-			if (isInFlight)
-			{
-				sb.Append(" - ");
-				sb.Append(FlightGlobals.ActiveVessel.vesselName);
-			}
+			Screenshot screenshot = new Screenshot();
+			screenshot.player = playerName;
+			if (FlightGlobals.ready && FlightGlobals.ActiveVessel != null)
+				screenshot.description = FlightGlobals.ActiveVessel.vesselName;
+			screenshot.image = data;
 
-			byte[] description = encoder.GetBytes(sb.ToString());
-
-			//Build the message data
-			byte[] bytes = new byte[4 + description.Length + data.Length];
-			KLFCommon.intToBytes(description.Length).CopyTo(bytes, 0);
-			description.CopyTo(bytes, 4);
-			data.CopyTo(bytes, 4 + description.Length);
-
-			enqueuePluginInteropMessage(KLFCommon.PluginInteropMessageID.SCREENSHOT_SHARE, bytes);
+			Debug.Log("Sharing screenshot");
+			enqueuePluginInteropMessage(KLFCommon.PluginInteropMessageID.SCREENSHOT_SHARE, screenshot.toByteArray());
 		}
 
 		private void handleUpdate(object obj)
@@ -1145,24 +1141,15 @@ namespace KLF
 				case KLFCommon.ClientInteropMessageID.SCREENSHOT_RECEIVE:
 					if (data != null)
 					{
-						//Read description length
-						int description_length = KLFCommon.intFromBytes(data, 0);
+						Debug.Log("Received screenshot");
+						KLFScreenshotDisplay.screenshot.setFromByteArray(data);
 
-						//Read description
-						String description = encoder.GetString(data, 4, description_length);
-
-						//Read data
-						byte[] image_data = new byte[data.Length - 4 - description_length];
-						Array.Copy(data, 4 + description_length, image_data, 0, image_data.Length);
-
-						if (image_data.Length <= KLFScreenshotDisplay.screenshotSettings.maxNumBytes)
+						if (KLFScreenshotDisplay.screenshot.image.Length <= KLFScreenshotDisplay.screenshotSettings.maxNumBytes)
 						{
 							if (KLFScreenshotDisplay.texture == null)
 								KLFScreenshotDisplay.texture = new Texture2D(4, 4, TextureFormat.RGB24, false, true);
 
-							KLFScreenshotDisplay.description = description;
-
-							if (KLFScreenshotDisplay.texture.LoadImage(image_data))
+							if (KLFScreenshotDisplay.texture.LoadImage(KLFScreenshotDisplay.screenshot.image))
 							{
 								KLFScreenshotDisplay.texture.Apply();
 
@@ -1170,15 +1157,15 @@ namespace KLF
 								if (KLFScreenshotDisplay.texture.width > KLFScreenshotDisplay.screenshotSettings.maxWidth
 									|| KLFScreenshotDisplay.texture.height > KLFScreenshotDisplay.screenshotSettings.maxHeight)
 								{
-									KLFScreenshotDisplay.texture = null;
-									KLFScreenshotDisplay.description = String.Empty;
+									KLFScreenshotDisplay.screenshot.clear();
 								}
 							}
 							else
 							{
-								KLFScreenshotDisplay.texture = null;
-								KLFScreenshotDisplay.description = String.Empty;
+								KLFScreenshotDisplay.screenshot.clear();
 							}
+
+							KLFScreenshotDisplay.screenshot.image = null;
 						}
 					}
 					break;
@@ -1581,7 +1568,39 @@ namespace KLF
 			if (KLFScreenshotDisplay.texture != null)
 			{
 				GUILayout.Box(KLFScreenshotDisplay.texture, screenshot_box_options);
-				GUILayout.Label(KLFScreenshotDisplay.description, screenshotDescriptionStyle);
+
+				GUILayout.BeginHorizontal();
+
+				//Nav buttons
+				if (KLFScreenshotDisplay.screenshot != null && KLFScreenshotDisplay.screenshot.player == KLFScreenshotDisplay.watchPlayerName) {
+
+					bool pressed = false;
+
+					if (KLFScreenshotDisplay.screenshot.index > 0 && GUILayout.Button("Prev", GUILayout.ExpandWidth(false)))
+					{
+						KLFScreenshotDisplay.watchPlayerIndex = KLFScreenshotDisplay.screenshot.index - 1;
+						pressed = true;
+					}
+
+					if (GUILayout.Button("Next", GUILayout.ExpandWidth(false)))
+					{
+						KLFScreenshotDisplay.watchPlayerIndex = KLFScreenshotDisplay.screenshot.index + 1;
+						pressed = true;
+					}
+
+					if (pressed)
+						writeScreenshotWatchUpdate();
+					
+				}
+				
+				//Description
+				StringBuilder sb = new StringBuilder();
+				sb.Append(KLFScreenshotDisplay.screenshot.player);
+				if (KLFScreenshotDisplay.screenshot.description.Length > 0)
+					sb.Append(KLFScreenshotDisplay.screenshot.description);
+				GUILayout.Label(sb.ToString(), screenshotDescriptionStyle);
+
+				GUILayout.EndHorizontal();
 			}
 			else
 				GUILayout.Box(GUIContent.none, screenshot_box_options);
@@ -1875,8 +1894,9 @@ namespace KLF
 					KLFScreenshotDisplay.watchPlayerName = name; //Set watch player name
 				else
 					KLFScreenshotDisplay.watchPlayerName = String.Empty;
+				KLFScreenshotDisplay.watchPlayerIndex = -1;
 
-				lastPluginDataWriteTime = 0.0f; //Force re-write of plugin data
+				writeScreenshotWatchUpdate();
 			}
 		}
 

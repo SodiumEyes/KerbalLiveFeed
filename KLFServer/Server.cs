@@ -240,7 +240,7 @@ namespace KLFServer
 
 		}
 
-		public void saveScreenshot(byte[] bytes, String player)
+		public void saveScreenshot(Screenshot screenshot, String player)
 		{
 			if (!Directory.Exists(SCREENSHOT_DIR))
 			{
@@ -271,14 +271,7 @@ namespace KLFServer
 			{
 				try
 				{
-					//Read description length
-					int description_length = KLFCommon.intFromBytes(bytes, 0);
-
-					//Trim the description bytes from the image
-					byte[] trimmed_bytes = new byte[bytes.Length - 4 - description_length];
-					Array.Copy(bytes, 4 + description_length, trimmed_bytes, 0, trimmed_bytes.Length);
-
-					File.WriteAllBytes(filename, trimmed_bytes);
+					File.WriteAllBytes(filename, screenshot.image);
 				}
 				catch (Exception)
 				{
@@ -1306,41 +1299,46 @@ namespace KLFServer
 
 				case KLFCommon.ClientMessageID.SCREEN_WATCH_PLAYER:
 
-					if (!clientIsReady(client_index))
+					if (!clientIsReady(client_index) || data == null || data.Length < 9)
 						break;
 
-					String watch_name = String.Empty;
-
-					if (data != null)
-						watch_name = encoder.GetString(data);
+					bool send_screenshot = data[0] != 0;
+					int watch_index = KLFCommon.intFromBytes(data, 1);
+					int current_index = KLFCommon.intFromBytes(data, 5);
+					String watch_name = encoder.GetString(data, 9, data.Length - 9);
 
 					bool watch_name_changed = false;
 
 					lock (clients[client_index].watchPlayerNameLock)
 					{
-						if (watch_name != clients[client_index].watchPlayerName)
+						if (watch_name != clients[client_index].watchPlayerName || watch_index != clients[client_index].watchPlayerIndex)
 						{
 							//Set the watch player name
+							clients[client_index].watchPlayerIndex = watch_index;
 							clients[client_index].watchPlayerName = watch_name;
 							watch_name_changed = true;
 						}
 					}
 
-					if (watch_name_changed && watch_name.Length > 0
-						&& watch_name != clients[client_index].username)
+					if (send_screenshot && watch_name_changed && watch_name.Length > 0)
 					{
 						//Try to find the player the client is watching and send that player's current screenshot
-						int watch_index = getClientIndexByName(watch_name);
-						if (clientIsReady(watch_index))
+						int watched_index = getClientIndexByName(watch_name);
+						if (clientIsReady(watched_index))
 						{
-							byte[] screenshot = null;
-							lock (clients[watch_index].screenshotLock)
+							Screenshot screenshot = null;
+							lock (clients[watched_index].screenshotLock)
 							{
-								screenshot = clients[watch_index].screenshot;
+								screenshot = clients[watched_index].getScreenshot(watch_index);
+								if (screenshot == null && watch_index == -1)
+									screenshot = clients[watched_index].lastScreenshot;
 							}
 
-							if (screenshot != null)
-								sendScreenshot(client_index, clients[watch_index].screenshot);
+							if (screenshot != null && screenshot.index != current_index)
+							{
+								stampedConsoleWriteLine("Screen send!");
+								sendScreenshot(client_index, screenshot);
+							}
 						}
 					}
 					
@@ -1355,10 +1353,13 @@ namespace KLFServer
 						{
 							StringBuilder sb = new StringBuilder();
 
+							Screenshot screenshot = new Screenshot();
+							screenshot.setFromByteArray(data);
+
 							//Set the screenshot for the player
 							lock (clients[client_index].screenshotLock)
 							{
-								clients[client_index].screenshot = data;
+								clients[client_index].pushScreenshot(screenshot);
 							}
 
 							sb.Append(clients[client_index].username);
@@ -1368,10 +1369,10 @@ namespace KLFServer
 							stampedConsoleWriteLine(sb.ToString());
 
 							//Send the screenshot to every client watching the player
-							sendScreenshotToWatchers(client_index, data);
+							sendScreenshotToWatchers(client_index, screenshot);
 
 							if (settings.saveScreenshots)
-								saveScreenshot(data, clients[client_index].username);
+								saveScreenshot(screenshot, clients[client_index].username);
 						}
 
 						bool was_throttled = clients[client_index].screenshotsThrottled;
@@ -1714,19 +1715,19 @@ namespace KLFServer
 			}
 		}
 
-		private void sendScreenshot(int client_index, byte[] bytes)
+		private void sendScreenshot(int client_index, Screenshot screenshot)
 		{
-			clients[client_index].queueOutgoingMessage(KLFCommon.ServerMessageID.SCREENSHOT_SHARE, bytes);
+			clients[client_index].queueOutgoingMessage(KLFCommon.ServerMessageID.SCREENSHOT_SHARE, screenshot.toByteArray());
 		}
 
-		private void sendScreenshotToWatchers(int client_index, byte[] bytes)
+		private void sendScreenshotToWatchers(int client_index, Screenshot screenshot)
 		{
 			//Create a list of valid watchers
 			List<int> watcher_indices = new List<int>();
 
 			for (int i = 0; i < clients.Length; i++)
 			{
-				if (i != client_index && clientIsReady(i) && clients[i].activityLevel != ServerClient.ActivityLevel.INACTIVE)
+				if (clientIsReady(i) && clients[i].activityLevel != ServerClient.ActivityLevel.INACTIVE)
 				{
 					bool match = false;
 
@@ -1743,7 +1744,7 @@ namespace KLFServer
 			if (watcher_indices.Count > 0)
 			{
 				//Build the message and send it to all watchers
-				byte[] message_bytes = buildMessageArray(KLFCommon.ServerMessageID.SCREENSHOT_SHARE, bytes);
+				byte[] message_bytes = buildMessageArray(KLFCommon.ServerMessageID.SCREENSHOT_SHARE, screenshot.toByteArray());
 				foreach (int i in watcher_indices)
 				{
 					clients[i].queueOutgoingMessage(message_bytes);

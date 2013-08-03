@@ -55,6 +55,7 @@ namespace KLFClient
 		public const int INTEROP_MAX_QUEUE_SIZE = 128;
 
 		public const int MAX_QUEUED_CHAT_LINES = 8;
+		public const int MAX_CACHED_SCREENSHOTS = 8;
 		public const int DEFAULT_PORT = 2075;
 
 		public const String PLUGIN_DIRECTORY = "Plugins/PluginData/KerbalLiveFeed/";
@@ -111,9 +112,10 @@ namespace KLFClient
 		public static long lastScreenshotShareTime;
 
 		public static byte[] queuedOutScreenshot;
-		public static byte[] lastSharedScreenshot;
+		public static List<Screenshot> cachedScreenshots;
 
 		public static String currentGameTitle;
+		public static int watchPlayerIndex;
 		public static String watchPlayerName;
 
 		public static long lastClientDataWriteTime;
@@ -154,7 +156,6 @@ namespace KLFClient
 
 		static void Main(string[] args)
 		{
-
 			Console.Title = "KLF Client " + KLFCommon.PROGRAM_VERSION;
 			Console.WriteLine("KLF Client version " + KLFCommon.PROGRAM_VERSION);
 			Console.WriteLine("Created by Alfred Lam");
@@ -426,12 +427,12 @@ namespace KLFClient
 					interopOutQueue = new ConcurrentQueue<byte[]>();
 
 					receivedMessageQueue = new ConcurrentQueue<ServerMessage>();
+					cachedScreenshots = new List<Screenshot>();
 
 					threadException = null;
 
 					currentGameTitle = String.Empty;
 					watchPlayerName = String.Empty;
-					lastSharedScreenshot = null;
 					lastScreenshotShareTime = 0;
 					lastTCPMessageSendTime = 0;
 					lastClientDataWriteTime = 0;
@@ -634,22 +635,21 @@ namespace KLFClient
 									lastClientDataChangeTime = stopwatch.ElapsedMilliseconds;
 								}
 							}
-
-							/*
-							Console.WriteLine("Update interval: " + updateInterval);
-							Console.WriteLine("Screenshot interval: " + screenshotInterval);
-							Console.WriteLine("Inactive ships per update: " + inactiveShipsPerUpdate);
-							 */
 						}
 					}
 
 					break;
 
 				case KLFCommon.ServerMessageID.SCREENSHOT_SHARE:
-
 					if (data != null && data.Length > 0 && data.Length < screenshotSettings.maxNumBytes
-						&& watchPlayerName.Length > 0 && watchPlayerName != username)
+						&& watchPlayerName.Length > 0)
 					{
+						//Cache the screenshot
+						Screenshot screenshot = new Screenshot();
+						screenshot.setFromByteArray(data);
+						cacheScreenshot(screenshot);
+
+						//Send the screenshot to the client
 						enqueueClientInteropMessage(KLFCommon.ClientInteropMessageID.SCREENSHOT_RECEIVE, data);
 					}
 					break;
@@ -845,13 +845,8 @@ namespace KLFClient
 							{
 								//Share the screenshot
 								sendShareScreenshotMesssage(queuedOutScreenshot);
-								lastSharedScreenshot = queuedOutScreenshot;
 								queuedOutScreenshot = null;
 								lastScreenshotShareTime = stopwatch.ElapsedMilliseconds;
-
-								//Send the screenshot back to the plugin if the player is watching themselves
-								if (watchPlayerName == username)
-									enqueueClientInteropMessage(KLFCommon.ClientInteropMessageID.SCREENSHOT_RECEIVE, lastSharedScreenshot);
 							}
 						}
 					}
@@ -877,10 +872,6 @@ namespace KLFClient
 				while (true)
 				{
 					writeClientData();
-
-					//readPluginUpdates();
-
-					//writeQueuedUpdates();
 
 					int sleep_time = 0;
 					lock (serverSettingsLock)
@@ -1252,28 +1243,11 @@ namespace KLFClient
 						currentGameTitle = encoder.GetString(data, index, current_game_title_length);
 						index += current_game_title_length;
 
-						//Read the watch player name
-						int watch_player_name_length = KLFCommon.intFromBytes(data, index);
-						index += 4;
-
-						new_watch_player_name = encoder.GetString(data, index, watch_player_name_length);
-						index += watch_player_name_length;
-
 						//Send the activity status to the server
 						if (in_flight)
 							sendMessageTCP(KLFCommon.ClientMessageID.ACTIVITY_UPDATE_IN_FLIGHT, null);
 						else
 							sendMessageTCP(KLFCommon.ClientMessageID.ACTIVITY_UPDATE_IN_GAME, null);
-					}
-
-					if (watchPlayerName != new_watch_player_name)
-					{
-						watchPlayerName = new_watch_player_name;
-
-						if (watchPlayerName == username && lastSharedScreenshot != null)
-							enqueueClientInteropMessage(KLFCommon.ClientInteropMessageID.SCREENSHOT_RECEIVE, lastSharedScreenshot);
-
-						sendScreenshotWatchPlayerMessage(watchPlayerName);
 					}
 					break;
 
@@ -1295,6 +1269,28 @@ namespace KLFClient
 						}
 					}
 
+					break;
+
+				case KLFCommon.PluginInteropMessageID.SCREENSHOT_WATCH_UPDATE:
+					if (data != null && data.Length >= 8)
+					{
+						int index = KLFCommon.intFromBytes(data, 0);
+						int current_index = KLFCommon.intFromBytes(data, 4);
+						String name = encoder.GetString(data, 8, data.Length - 8);
+
+						if (watchPlayerName != name || watchPlayerIndex != index)
+						{
+							watchPlayerName = name;
+							watchPlayerIndex = index;
+
+							//Look in the screenshot cache for the requested screenshot
+							Screenshot cached = getCachedScreenshot(watchPlayerIndex, watchPlayerName);
+							if (cached != null)
+								enqueueClientInteropMessage(KLFCommon.ClientInteropMessageID.SCREENSHOT_RECEIVE, cached.toByteArray());
+							
+							sendScreenshotWatchPlayerMessage((cached == null), current_index, watchPlayerIndex, watchPlayerName);
+						}
+					}
 					break;
 				
 			}
@@ -1447,6 +1443,35 @@ namespace KLFClient
 
 			return null;
 
+		}
+
+		static void cacheScreenshot(Screenshot screenshot)
+		{
+			foreach (Screenshot cached_screenshot in cachedScreenshots)
+			{
+				if (cached_screenshot.index == screenshot.index && cached_screenshot.player == screenshot.player)
+					return;
+			}
+
+			cachedScreenshots.Add(screenshot);
+			while (cachedScreenshots.Count > MAX_CACHED_SCREENSHOTS)
+				cachedScreenshots.RemoveAt(0);
+		}
+
+		static Screenshot getCachedScreenshot(int index, string player)
+		{
+			foreach (Screenshot cached_screenshot in cachedScreenshots)
+			{
+				if (cached_screenshot.index == index && cached_screenshot.player == player)
+				{
+					//Put the screenshot at the end of the list to keep it from being uncached a little longer
+					cachedScreenshots.Remove(cached_screenshot);
+					cachedScreenshots.Add(cached_screenshot);
+					return cached_screenshot;
+				}
+			}
+
+			return null;
 		}
 
 		//Config
@@ -1732,10 +1757,16 @@ namespace KLFClient
 				sendMessageTCP(KLFCommon.ClientMessageID.SCREENSHOT_SHARE, data);
 		}
 
-		private static void sendScreenshotWatchPlayerMessage(String name)
+		private static void sendScreenshotWatchPlayerMessage(bool send_screenshot, int current_index, int index, String name)
 		{
-			//Encode name
-			byte[] bytes = encoder.GetBytes(name);
+			byte[] name_bytes = encoder.GetBytes(name);
+
+			byte[] bytes = new byte[9 + name_bytes.Length];
+
+			bytes[0] = send_screenshot ? (byte)1 : (byte)0;
+			KLFCommon.intToBytes(index).CopyTo(bytes, 1);
+			KLFCommon.intToBytes(current_index).CopyTo(bytes, 5);
+			name_bytes.CopyTo(bytes, 9);
 
 			sendMessageTCP(KLFCommon.ClientMessageID.SCREEN_WATCH_PLAYER, bytes);
 		}
@@ -1857,7 +1888,6 @@ namespace KLFClient
 			for (int i = 0; i < favorites.Length; i++)
 				Console.WriteLine(i + ": " + favorites[i]);
 		}
-
 	}
 
 }

@@ -45,6 +45,9 @@
     <Compile Include="..\KLFCommon.cs">
       <Link>KLFCommon.cs</Link>
     </Compile>
+    <Compile Include="..\Screenshot.cs">
+      <Link>Screenshot.cs</Link>
+    </Compile>
     <Compile Include="..\ScreenshotSettings.cs">
       <Link>ScreenshotSettings.cs</Link>
     </Compile>

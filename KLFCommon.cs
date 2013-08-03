@@ -6,9 +6,9 @@ using System.Text;
 public class KLFCommon
 {
 
-	public const String PROGRAM_VERSION = "0.6.8";
-	public const Int32 FILE_FORMAT_VERSION = 7;
-	public const Int32 NET_PROTOCOL_VERSION = 8;
+	public const String PROGRAM_VERSION = "0.7.0";
+	public const Int32 FILE_FORMAT_VERSION = 8;
+	public const Int32 NET_PROTOCOL_VERSION = 9;
 	public const int MSG_HEADER_LENGTH = 8;
 	public const int INTEROP_MSG_HEADER_LENGTH = 8;
 
@@ -65,8 +65,8 @@ public class KLFCommon
 		PRIMARY_PLUGIN_UPDATE /*data*/,
 		SECONDARY_PLUGIN_UPDATE /*data*/,
 		TEXT_MESSAGE /*Message text*/,
-		SCREEN_WATCH_PLAYER /*Player name*/,
-		SCREENSHOT_SHARE /*Description Length : Description : data*/,
+		SCREEN_WATCH_PLAYER /*Byte - Send Screenshot : Int32 Index : Int32 Current Index :  Player name*/,
+		SCREENSHOT_SHARE /*Screenshot*/,
 		KEEPALIVE,
 		CONNECTION_END /*Message*/ ,
 		UDP_PROBE,
@@ -85,7 +85,7 @@ public class KLFCommon
 		TEXT_MESSAGE /*Message text*/,
 		PLUGIN_UPDATE /*data*/,
 		SERVER_SETTINGS /*UpdateInterval (4) : Screenshot Interval (4) : Screenshot Height (4): InactiveShips (1)*/,
-		SCREENSHOT_SHARE /*Description Length : Description : data*/,
+		SCREENSHOT_SHARE /*Screenshot*/,
 		KEEPALIVE,
 		CONNECTION_END /*Message*/,
 		UDP_ACKNOWLEDGE,
@@ -98,7 +98,7 @@ public class KLFCommon
 	{
 		NULL,
 		CLIENT_DATA /*Byte - Inactive Vessels Per Update : Screenshot Height : UpdateInterval : Player Name*/,
-		SCREENSHOT_RECEIVE /*Description Length : Description : data*/,
+		SCREENSHOT_RECEIVE /*Screenshot*/,
 		CHAT_RECEIVE /*Message*/,
 		PLUGIN_UPDATE /*data*/
 	}
@@ -106,11 +106,12 @@ public class KLFCommon
 	public enum PluginInteropMessageID
 	{
 		NULL,
-		PLUGIN_DATA /*Byte - In-Flight : Int32 - Current Game Title length : Current Game Title : Int32 - Screenshot watch player name length : Screenshot watch player name*/,
-		SCREENSHOT_SHARE /*Description Length : Description : data*/,
+		PLUGIN_DATA /*Byte - In-Flight : Int32 - Current Game Title length : Current Game Title*/,
+		SCREENSHOT_SHARE /*Screenshot*/,
 		CHAT_SEND /*Message*/,
 		PRIMARY_PLUGIN_UPDATE /*data*/,
-		SECONDARY_PLUGIN_UPDATE /*data*/
+		SECONDARY_PLUGIN_UPDATE /*data*/,
+		SCREENSHOT_WATCH_UPDATE /*Int32 index : Int32 current index : Watch Name*/
 	}
 
 }
