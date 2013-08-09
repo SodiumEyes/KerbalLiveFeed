@@ -9,20 +9,13 @@ using System.Threading;
 using System.Diagnostics;
 
 using System.IO;
-using System.Collections.Concurrent;
 
-class Client
+abstract class Client
 {
 	public struct InTextMessage
 	{
 		public bool fromServer;
 		public String message;
-	}
-
-	public struct ServerMessage
-	{
-		public KLFCommon.ServerMessageID id;
-		public byte[] data;
 	}
 
 	public struct InteropMessage
@@ -58,7 +51,6 @@ class Client
 	public static UnicodeEncoding encoder = new UnicodeEncoding();
 
 	private ClientSettings clientSettings;
-	private bool useFileInterop;
 
 	//Connection
 	public int clientID;
@@ -68,7 +60,6 @@ class Client
 	public TcpClient tcpClient;
 	public long lastTCPMessageSendTime;
 	public bool quitHelperMessageShow;
-	public int reconnectAttempts;
 	public Socket udpSocket;
 	public bool udpConnected;
 	public long lastUDPMessageSendTime;
@@ -80,134 +71,63 @@ class Client
 	public byte inactiveShipsPerUpdate = 0;
 	public ScreenshotSettings screenshotSettings = new ScreenshotSettings();
 
-	//Plugin Interop
-	public ConcurrentQueue<InteropMessage> interopInQueue;
-	public ConcurrentQueue<InteropMessage> interopOutQueue;
-	public long lastInteropWriteTime;
+	protected long lastScreenshotShareTime;
 
-	private ConcurrentQueue<byte[]> pluginUpdateInQueue;
-	private ConcurrentQueue<InTextMessage> textMessageQueue;
-	private long lastScreenshotShareTime;
+	protected byte[] queuedOutScreenshot;
+	protected List<Screenshot> cachedScreenshots;
 
-	private byte[] queuedOutScreenshot;
-	private List<Screenshot> cachedScreenshots;
+	protected String currentGameTitle;
+	protected int watchPlayerIndex;
+	protected String watchPlayerName;
 
-	private String currentGameTitle;
-	private int watchPlayerIndex;
-	private String watchPlayerName;
-
-	private long lastClientDataWriteTime;
-	private long lastClientDataChangeTime;
+	protected long lastClientDataWriteTime;
+	protected long lastClientDataChangeTime;
 
 	//Messages
 
-	private ConcurrentQueue<ServerMessage> receivedMessageQueue;
+	protected byte[] currentMessageHeader = new byte[KLFCommon.MSG_HEADER_LENGTH];
+	protected int currentMessageHeaderIndex;
+	protected byte[] currentMessageData;
+	protected int currentMessageDataIndex;
+	protected KLFCommon.ServerMessageID currentMessageID;
 
-	private byte[] currentMessageHeader = new byte[KLFCommon.MSG_HEADER_LENGTH];
-	private int currentMessageHeaderIndex;
-	private byte[] currentMessageData;
-	private int currentMessageDataIndex;
-	private KLFCommon.ServerMessageID currentMessageID;
-
-	private byte[] receiveBuffer = new byte[8192];
-	private int receiveIndex = 0;
-	private int receiveHandleIndex = 0;
+	protected byte[] receiveBuffer = new byte[8192];
+	protected int receiveIndex = 0;
+	protected int receiveHandleIndex = 0;
 
 	//Threading
 
-	private object tcpSendLock = new object();
-	private object serverSettingsLock = new object();
-	private object screenshotOutLock = new object();
-	private object threadExceptionLock = new object();
-	private object clientDataLock = new object();
-	private object udpTimestampLock = new object();
+	protected object tcpSendLock = new object();
+	protected object serverSettingsLock = new object();
+	protected object screenshotOutLock = new object();
+	protected object threadExceptionLock = new object();
+	protected object clientDataLock = new object();
+	protected object udpTimestampLock = new object();
 
-	private String threadExceptionStackTrace;
-	private Exception threadException;
+	protected Stopwatch stopwatch;
+	protected Stopwatch pingStopwatch = new Stopwatch();
 
-	private Thread interopThread;
-	private Thread chatThread;
-	private Thread connectionThread;
-
-	private Stopwatch stopwatch;
-	private Stopwatch pingStopwatch = new Stopwatch();
-
-	public Client(bool use_file_interop = true)
-	{
-		useFileInterop = use_file_interop;
-	}
-
-	public void connect(ClientSettings settings)
+	public Client()
 	{
 		stopwatch = new Stopwatch();
 		stopwatch.Start();
+	}
 
-		bool allow_reconnect = false;
-		reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
+	public bool isConnected
+	{
+		get
+		{
+			return !endSession && tcpClient != null && !intentionalConnectionEnd && tcpClient.Connected;
+		}
+	}
+
+	public bool connectToServer(ClientSettings settings)
+	{
+		if (isConnected)
+			return false;
 
 		clientSettings = settings;
 
-		do
-		{
-
-			allow_reconnect = false;
-
-			try
-			{
-				//Run the connection loop then determine if a reconnect attempt should be made
-				if (connectionLoop())
-				{
-					reconnectAttempts = 0;
-					allow_reconnect = settings.autoReconnect && !intentionalConnectionEnd;
-				}
-				else
-					allow_reconnect = settings.autoReconnect && !intentionalConnectionEnd && reconnectAttempts < MAX_RECONNECT_ATTEMPTS;
-			}
-			catch (Exception e)
-			{
-
-				//Write an error log
-				TextWriter writer = File.CreateText("KLFClientlog.txt");
-				writer.WriteLine(e.ToString());
-				if (threadExceptionStackTrace != null && threadExceptionStackTrace.Length > 0)
-				{
-					writer.Write("Stacktrace: ");
-					writer.WriteLine(threadExceptionStackTrace);
-				}
-				writer.Close();
-
-				Console.ForegroundColor = ConsoleColor.Red;
-
-				Console.WriteLine();
-				Console.WriteLine(e.ToString());
-				if (threadExceptionStackTrace != null && threadExceptionStackTrace.Length > 0)
-				{
-					Console.Write("Stacktrace: ");
-					Console.WriteLine(threadExceptionStackTrace);
-				}
-
-				Console.WriteLine();
-				Console.WriteLine("Unexpected exception encountered! Crash report written to KLFClientlog.txt");
-				Console.WriteLine();
-
-				Console.ResetColor();
-
-				clearConnectionState();
-			}
-
-			if (allow_reconnect)
-			{
-				//Attempt a reconnect after a delay
-				Console.WriteLine("Attempting to reconnect...");
-				Thread.Sleep(RECONNECT_DELAY);
-				reconnectAttempts++;
-			}
-
-		} while (allow_reconnect);
-	}
-
-	bool connectionLoop()
-	{
 		tcpClient = new TcpClient();
 
 		//Look for a port-number in the hostname
@@ -259,33 +179,7 @@ class Client
 		{
 			tcpClient.Connect(endpoint);
 
-			if (tcpClient.Connected)
-			{
-
-				clientID = -1;
-				endSession = false;
-				intentionalConnectionEnd = false;
-				handshakeCompleted = false;
-
-				pluginUpdateInQueue = new ConcurrentQueue<byte[]>();
-				textMessageQueue = new ConcurrentQueue<InTextMessage>();
-				interopOutQueue = new ConcurrentQueue<InteropMessage>();
-				interopInQueue = new ConcurrentQueue<InteropMessage>();
-
-				receivedMessageQueue = new ConcurrentQueue<ServerMessage>();
-				cachedScreenshots = new List<Screenshot>();
-
-				threadException = null;
-
-				currentGameTitle = String.Empty;
-				watchPlayerName = String.Empty;
-				lastScreenshotShareTime = 0;
-				lastTCPMessageSendTime = 0;
-				lastClientDataWriteTime = 0;
-				lastClientDataChangeTime = stopwatch.ElapsedMilliseconds;
-				lastInteropWriteTime = 0;
-
-				quitHelperMessageShow = true;
+			if (tcpClient.Connected) {
 
 				//Init udp socket
 				try
@@ -305,59 +199,10 @@ class Client
 				lastUDPAckReceiveTime = 0;
 				lastUDPMessageSendTime = stopwatch.ElapsedMilliseconds;
 
-				//Create the plugin directory if it doesn't exist
-				if (!Directory.Exists(PLUGIN_DIRECTORY))
-				{
-					Directory.CreateDirectory(PLUGIN_DIRECTORY);
-				}
-
-				//Create a thread to handle chat
-				chatThread = new Thread(new ThreadStart(handleChat));
-				chatThread.Start();
-
-				//Create a thread to handle client interop
-				interopThread = new Thread(new ThreadStart(handlePluginInterop));
-				interopThread.Start();
-
-				//Create a thread to handle disconnection
-				connectionThread = new Thread(new ThreadStart(handleConnection));
-				connectionThread.Start();
-
-				beginAsyncRead();
-
-				Console.WriteLine("Connected to server! Handshaking...");
-
-				while (!endSession && !intentionalConnectionEnd && tcpClient.Connected)
-				{
-					//Check for exceptions thrown by threads
-					lock (threadExceptionLock)
-					{
-						if (threadException != null)
-						{
-							Exception e = threadException;
-							threadExceptionStackTrace = e.StackTrace;
-							throw e;
-						}
-					}
-
-					Thread.Sleep(SLEEP_TIME);
-				}
-
-				clearConnectionState();
-
-				Console.ForegroundColor = ConsoleColor.Red;
-				Console.WriteLine();
-
-				if (intentionalConnectionEnd)
-					enqueuePluginChatMessage("Closed connection with server", true);
-				else
-					enqueuePluginChatMessage("Lost connection with server", true);
-
-				Console.ResetColor();
+				connectionStarted();
 
 				return true;
 			}
-
 		}
 		catch (SocketException e)
 		{
@@ -368,15 +213,41 @@ class Client
 			Console.WriteLine("Exception: " + e.ToString());
 		}
 
-		Console.WriteLine("Unable to connect to server");
-
-		clearConnectionState();
-
 		return false;
-
 	}
 
-	void handleMessage(KLFCommon.ServerMessageID id, byte[] data)
+	public void endConnection()
+	{
+		connectionEnded();
+	}
+
+	protected virtual void connectionStarted() {
+
+		clientID = -1;
+		endSession = false;
+		intentionalConnectionEnd = false;
+		handshakeCompleted = false;
+
+		cachedScreenshots = new List<Screenshot>();
+
+		currentGameTitle = String.Empty;
+		watchPlayerName = String.Empty;
+		lastScreenshotShareTime = 0;
+		lastTCPMessageSendTime = 0;
+		lastClientDataWriteTime = 0;
+		lastClientDataChangeTime = stopwatch.ElapsedMilliseconds;
+
+		quitHelperMessageShow = true;
+
+		beginAsyncRead();
+	}
+
+	protected virtual void connectionEnded()
+	{
+		clearConnectionState();
+	}
+
+	protected void handleMessage(KLFCommon.ServerMessageID id, byte[] data)
 	{
 
 		switch (id)
@@ -448,7 +319,7 @@ class Client
 			case KLFCommon.ServerMessageID.PLUGIN_UPDATE:
 
 				if (data != null)
-					enqueueClientInteropMessage(KLFCommon.ClientInteropMessageID.PLUGIN_UPDATE, data);
+					sendClientInteropMessage(KLFCommon.ClientInteropMessageID.PLUGIN_UPDATE, data);
 
 				break;
 
@@ -493,7 +364,7 @@ class Client
 					cacheScreenshot(screenshot);
 
 					//Send the screenshot to the client
-					enqueueClientInteropMessage(KLFCommon.ClientInteropMessageID.SCREENSHOT_RECEIVE, data);
+					sendClientInteropMessage(KLFCommon.ClientInteropMessageID.SCREENSHOT_RECEIVE, data);
 				}
 				break;
 
@@ -568,13 +439,9 @@ class Client
 		}
 	}
 
-	void clearConnectionState()
+	protected void clearConnectionState()
 	{
-		//Abort all threads
-		safeAbort(chatThread, true);
-		safeAbort(connectionThread, true);
-		safeAbort(interopThread, true);
-
+		
 		//Close the socket if it's still open
 		if (tcpClient != null)
 			tcpClient.Close();
@@ -585,7 +452,7 @@ class Client
 		udpSocket = null;
 	}
 
-	void handleChatInput(String line)
+	protected void handleChatInput(String line)
 	{
 		if (line.Length > 0)
 		{
@@ -651,423 +518,32 @@ class Client
 		}
 	}
 
-	void passExceptionToMain(Exception e)
-	{
-		lock (threadExceptionLock)
-		{
-			if (threadException == null)
-				threadException = e;
-		}
-	}
-
-	//Threads
-
-	bool writePluginInterop()
-	{
-		bool success = false;
-
-		if (interopOutQueue.Count > 0 && !File.Exists(INTEROP_CLIENT_FILENAME))
-		{
-			FileStream stream = null;
-			try
-			{
-
-				stream = File.OpenWrite(INTEROP_CLIENT_FILENAME);
-
-				//Write file format version
-				stream.Write(KLFCommon.intToBytes(KLFCommon.FILE_FORMAT_VERSION), 0, 4);
-
-				success = true;
-
-				while (interopOutQueue.Count > 0)
-				{
-					InteropMessage message;
-					if (interopOutQueue.TryDequeue(out message))
-					{
-						byte[] bytes = encodeInteropMessage(message.id, message.data);
-						stream.Write(bytes, 0, bytes.Length);
-					}
-					else
-						break;
-				}
-
-			}
-			catch (System.IO.FileNotFoundException)
-			{
-			}
-			catch (System.UnauthorizedAccessException)
-			{
-			}
-			catch (System.IO.DirectoryNotFoundException)
-			{
-			}
-			catch (System.InvalidOperationException)
-			{
-			}
-			catch (System.IO.IOException)
-			{
-			}
-			finally
-			{
-				if (stream != null)
-					stream.Close();
-			}
-
-		}
-
-		return success;
-	}
-
-	void readPluginInterop()
-	{
-
-		byte[] bytes = null;
-
-		if (File.Exists(INTEROP_PLUGIN_FILENAME))
-		{
-
-			try
-			{
-				bytes = File.ReadAllBytes(INTEROP_PLUGIN_FILENAME);
-				File.Delete(INTEROP_PLUGIN_FILENAME);
-			}
-			catch (System.IO.FileNotFoundException)
-			{
-			}
-			catch (System.UnauthorizedAccessException)
-			{
-			}
-			catch (System.IO.DirectoryNotFoundException)
-			{
-			}
-			catch (System.InvalidOperationException)
-			{
-			}
-			catch (System.IO.IOException)
-			{
-			}
-
-		}
-
-		if (bytes != null && bytes.Length > 0)
-		{
-			//Read the file-format version
-			int file_version = KLFCommon.intFromBytes(bytes, 0);
-
-			if (file_version != KLFCommon.FILE_FORMAT_VERSION)
-			{
-				//Incompatible client version
-				Console.WriteLine("KLF Client incompatible with plugin");
-				return;
-			}
-
-			//Parse the messages
-			int index = 4;
-			while (index < bytes.Length - KLFCommon.INTEROP_MSG_HEADER_LENGTH)
-			{
-				//Read the message id
-				int id_int = KLFCommon.intFromBytes(bytes, index);
-
-				KLFCommon.PluginInteropMessageID id = KLFCommon.PluginInteropMessageID.NULL;
-				if (id_int >= 0 && id_int < Enum.GetValues(typeof(KLFCommon.PluginInteropMessageID)).Length)
-					id = (KLFCommon.PluginInteropMessageID)id_int;
-
-				//Read the length of the message data
-				int data_length = KLFCommon.intFromBytes(bytes, index + 4);
-
-				index += KLFCommon.INTEROP_MSG_HEADER_LENGTH;
-
-				if (data_length <= 0)
-					handleInteropMessage(id, null);
-				else if (data_length <= (bytes.Length - index))
-				{
-
-					//Copy the message data
-					byte[] data = new byte[data_length];
-					Array.Copy(bytes, index, data, 0, data.Length);
-
-					handleInteropMessage(id, data);
-				}
-
-				if (data_length > 0)
-					index += data_length;
-			}
-		}
-
-		while (interopInQueue.Count > 0)
-		{
-			InteropMessage message;
-			if (interopInQueue.TryDequeue(out message))
-				handleInteropMessage(message.id, message.data);
-			else
-				break;
-		}
-
-	}
-
-
-	void handlePluginInterop()
-	{
-		try
-		{
-
-			while (true)
-			{
-				writeClientData();
-
-				if (useFileInterop)
-				{
-					readPluginInterop();
-
-					if (stopwatch.ElapsedMilliseconds - lastInteropWriteTime >= INTEROP_WRITE_INTERVAL)
-					{
-						if (writePluginInterop())
-							lastInteropWriteTime = stopwatch.ElapsedMilliseconds;
-					}
-				}
-
-				//Throttle the rate at which you can share screenshots
-				if (stopwatch.ElapsedMilliseconds - lastScreenshotShareTime > screenshotInterval)
-				{
-					lock (screenshotOutLock)
-					{
-						if (queuedOutScreenshot != null)
-						{
-							//Share the screenshot
-							sendShareScreenshotMesssage(queuedOutScreenshot);
-							queuedOutScreenshot = null;
-							lastScreenshotShareTime = stopwatch.ElapsedMilliseconds;
-						}
-					}
-				}
-
-				Thread.Sleep(SLEEP_TIME);
-			}
-
-		}
-		catch (ThreadAbortException)
-		{
-		}
-		catch (Exception e)
-		{
-			passExceptionToMain(e);
-		}
-	}
-
-	void handlePluginUpdates()
-	{
-		try
-		{
-
-			while (true)
-			{
-				writeClientData();
-
-				int sleep_time = 0;
-				lock (serverSettingsLock)
-				{
-					sleep_time = updateInterval;
-				}
-
-				Thread.Sleep(sleep_time);
-			}
-
-		}
-		catch (ThreadAbortException)
-		{
-		}
-		catch (Exception e)
-		{
-			passExceptionToMain(e);
-		}
-	}
-
-	void handleConnection()
-	{
-		try
-		{
-
-			while (true)
-			{
-				if (pingStopwatch.IsRunning && pingStopwatch.ElapsedMilliseconds > PING_TIMEOUT_DELAY)
-				{
-					enqueueTextMessage("Ping timed out.", true);
-					pingStopwatch.Stop();
-					pingStopwatch.Reset();
-				}
-
-				//Send a keep-alive message to prevent timeout
-				if (stopwatch.ElapsedMilliseconds - lastTCPMessageSendTime >= KEEPALIVE_DELAY)
-					sendMessageTCP(KLFCommon.ClientMessageID.KEEPALIVE, null);
-
-				//Handle received messages
-				while (receivedMessageQueue.Count > 0)
-				{
-					ServerMessage message;
-					if (receivedMessageQueue.TryDequeue(out message))
-						handleMessage(message.id, message.data);
-					else
-						break;
-				}
-
-				if (udpSocket != null && handshakeCompleted)
-				{
-
-					//Update the status of the udp connection
-					long last_udp_ack = 0;
-					long last_udp_send = 0;
-					lock (udpTimestampLock)
-					{
-						last_udp_ack = lastUDPAckReceiveTime;
-						last_udp_send = lastUDPMessageSendTime;
-					}
-
-					bool udp_should_be_connected =
-						last_udp_ack > 0 && (stopwatch.ElapsedMilliseconds - last_udp_ack) < UDP_TIMEOUT_DELAY;
-
-					if (udpConnected != udp_should_be_connected)
-					{
-						if (udp_should_be_connected)
-							enqueueTextMessage("UDP connection established.", false, true);
-						else
-							enqueueTextMessage("UDP connection lost.", false, true);
-
-						udpConnected = udp_should_be_connected;
-					}
-
-					//Send a probe message to try to establish a udp connection
-					if ((stopwatch.ElapsedMilliseconds - last_udp_send) > UDP_PROBE_DELAY)
-						sendUDPProbeMessage();
-
-				}
-
-				Thread.Sleep(SLEEP_TIME);
-			}
-
-		}
-		catch (ThreadAbortException)
-		{
-		}
-		catch (Exception e)
-		{
-			passExceptionToMain(e);
-		}
-	}
-
-	void handleChat()
-	{
-
-		try
-		{
-
-			StringBuilder sb = new StringBuilder();
-
-			while (true)
-			{
-
-				//Handle outgoing messsages
-				if (Console.KeyAvailable)
-				{
-					ConsoleKeyInfo key = Console.ReadKey();
-
-					switch (key.Key)
-					{
-
-						case ConsoleKey.Enter:
-
-							String line = sb.ToString();
-
-							handleChatInput(line);
-
-							sb.Clear();
-							Console.WriteLine();
-							break;
-
-						case ConsoleKey.Backspace:
-						case ConsoleKey.Delete:
-							if (sb.Length > 0)
-							{
-								sb.Remove(sb.Length - 1, 1);
-								Console.Write(' ');
-								if (Console.CursorLeft > 0)
-									Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
-							}
-							break;
-
-						default:
-							if (key.KeyChar != '\0')
-								sb.Append(key.KeyChar);
-							else if (Console.CursorLeft > 0)
-								Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
-							break;
-
-					}
-				}
-
-				if (sb.Length == 0)
-				{
-					//Handle incoming messages
-					try
-					{
-						while (textMessageQueue.Count > 0)
-						{
-							InTextMessage message;
-							if (textMessageQueue.TryDequeue(out message))
-							{
-								if (message.fromServer)
-								{
-									Console.ForegroundColor = ConsoleColor.Green;
-									Console.Write("[Server] ");
-									Console.ResetColor();
-								}
-
-								Console.WriteLine(message.message);
-							}
-							else
-								break;
-						}
-					}
-					catch (System.IO.IOException)
-					{
-					}
-				}
-
-				Thread.Sleep(SLEEP_TIME);
-			}
-
-		}
-		catch (ThreadAbortException)
-		{
-		}
-		catch (Exception e)
-		{
-			passExceptionToMain(e);
-		}
-	}
-
-	void safeAbort(Thread thread, bool join = false)
-	{
-		if (thread != null)
-		{
-			try
-			{
-				thread.Abort();
-				if (join)
-					thread.Join();
-			}
-			catch (ThreadStateException) { }
-			catch (ThreadInterruptedException) { }
-		}
-	}
-
 	//Plugin Interop
 
-	void handleInteropMessage(int id, byte[] data)
+	public void throttledShareScreenshots()
+	{
+		//Throttle the rate at which you can share screenshots
+		if (stopwatch.ElapsedMilliseconds - lastScreenshotShareTime > screenshotInterval)
+		{
+			lock (screenshotOutLock)
+			{
+				if (queuedOutScreenshot != null)
+				{
+					//Share the screenshot
+					sendShareScreenshotMesssage(queuedOutScreenshot);
+					queuedOutScreenshot = null;
+					lastScreenshotShareTime = stopwatch.ElapsedMilliseconds;
+				}
+			}
+		}
+	}
+
+	protected void handleInteropMessage(int id, byte[] data)
 	{
 		handleInteropMessage((KLFCommon.PluginInteropMessageID)id, data);
 	}
 
-	void handleInteropMessage(KLFCommon.PluginInteropMessageID id, byte[] data)
+	protected void handleInteropMessage(KLFCommon.PluginInteropMessageID id, byte[] data)
 	{
 		switch (id)
 		{
@@ -1151,7 +627,7 @@ class Client
 						//Look in the screenshot cache for the requested screenshot
 						Screenshot cached = getCachedScreenshot(watchPlayerIndex, watchPlayerName);
 						if (cached != null)
-							enqueueClientInteropMessage(KLFCommon.ClientInteropMessageID.SCREENSHOT_RECEIVE, cached.toByteArray());
+							sendClientInteropMessage(KLFCommon.ClientInteropMessageID.SCREENSHOT_RECEIVE, cached.toByteArray());
 
 						sendScreenshotWatchPlayerMessage((cached == null), current_index, watchPlayerIndex, watchPlayerName);
 					}
@@ -1161,23 +637,9 @@ class Client
 		}
 	}
 
-	void enqueueClientInteropMessage(KLFCommon.ClientInteropMessageID id, byte[] data)
-	{
-		InteropMessage message = new InteropMessage();
-		message.id = (int)id;
-		message.data = data;
+	protected abstract void sendClientInteropMessage(KLFCommon.ClientInteropMessageID id, byte[] data);
 
-		interopOutQueue.Enqueue(message);
-
-		//Enforce max queue size
-		while (interopOutQueue.Count > INTEROP_MAX_QUEUE_SIZE)
-		{
-			if (!interopOutQueue.TryDequeue(out message))
-				break;
-		}
-	}
-
-	byte[] encodeInteropMessage(int id, byte[] data)
+	protected byte[] encodeInteropMessage(int id, byte[] data)
 	{
 		int msg_data_length = 0;
 		if (data != null)
@@ -1193,7 +655,7 @@ class Client
 		return message_bytes;
 	}
 
-	void writeClientData()
+	protected void writeClientData()
 	{
 
 		lock (clientDataLock)
@@ -1212,7 +674,7 @@ class Client
 				KLFCommon.intToBytes(updateInterval).CopyTo(bytes, 5);
 				username_bytes.CopyTo(bytes, 9);
 
-				enqueueClientInteropMessage(KLFCommon.ClientInteropMessageID.CLIENT_DATA, bytes);
+				sendClientInteropMessage(KLFCommon.ClientInteropMessageID.CLIENT_DATA, bytes);
 
 				lastClientDataWriteTime = stopwatch.ElapsedMilliseconds;
 			}
@@ -1220,7 +682,7 @@ class Client
 
 	}
 
-	void enqueueTextMessage(String message, bool from_server = false, bool to_plugin = true)
+	protected void enqueueTextMessage(String message, bool from_server = false, bool to_plugin = true)
 	{
 		InTextMessage text_message = new InTextMessage();
 		text_message.message = message;
@@ -1228,17 +690,8 @@ class Client
 		enqueueTextMessage(text_message, to_plugin);
 	}
 
-	void enqueueTextMessage(InTextMessage message, bool to_plugin = true)
+	protected virtual void enqueueTextMessage(InTextMessage message, bool to_plugin = true)
 	{
-		//Dequeue an old text message if there are a lot of messages backed up
-		if (textMessageQueue.Count >= MAX_TEXT_MESSAGE_QUEUE)
-		{
-			InTextMessage old_message;
-			textMessageQueue.TryDequeue(out old_message);
-		}
-
-		textMessageQueue.Enqueue(message);
-
 		if (to_plugin)
 		{
 			if (message.fromServer)
@@ -1248,10 +701,10 @@ class Client
 		}
 	}
 
-	void enqueuePluginChatMessage(String message, bool print = false)
+	protected void enqueuePluginChatMessage(String message, bool print = false)
 	{
 
-		enqueueClientInteropMessage(
+		sendClientInteropMessage(
 			KLFCommon.ClientInteropMessageID.CHAT_RECEIVE,
 			encoder.GetBytes(message)
 			);
@@ -1260,7 +713,7 @@ class Client
 			Console.WriteLine(message);
 	}
 
-	void safeDelete(String filename)
+	protected void safeDelete(String filename)
 	{
 		if (File.Exists(filename))
 		{
@@ -1277,7 +730,7 @@ class Client
 		}
 	}
 
-	String findCraftFilename(String craft_name, ref byte craft_type)
+	protected String findCraftFilename(String craft_name, ref byte craft_type)
 	{
 		String vab_filename = getCraftFilename(craft_name, KLFCommon.CRAFT_TYPE_VAB);
 		if (vab_filename != null && File.Exists(vab_filename))
@@ -1297,7 +750,7 @@ class Client
 
 	}
 
-	String getCraftFilename(String craft_name, byte craft_type)
+	protected String getCraftFilename(String craft_name, byte craft_type)
 	{
 		//Filter the craft name for illegal characters
 		String filtered_craft_name = KLFCommon.filteredFileName(craft_name.Replace('.', '_'));
@@ -1318,7 +771,7 @@ class Client
 
 	}
 
-	void cacheScreenshot(Screenshot screenshot)
+	protected void cacheScreenshot(Screenshot screenshot)
 	{
 		foreach (Screenshot cached_screenshot in cachedScreenshots)
 		{
@@ -1331,7 +784,7 @@ class Client
 			cachedScreenshots.RemoveAt(0);
 	}
 
-	Screenshot getCachedScreenshot(int index, string player)
+	protected Screenshot getCachedScreenshot(int index, string player)
 	{
 		foreach (Screenshot cached_screenshot in cachedScreenshots)
 		{
@@ -1349,7 +802,7 @@ class Client
 
 	//Messages
 
-	private void beginAsyncRead()
+	protected void beginAsyncRead()
 	{
 		try
 		{
@@ -1374,13 +827,9 @@ class Client
 		catch (System.IO.IOException)
 		{
 		}
-		catch (Exception e)
-		{
-			passExceptionToMain(e);
-		}
 	}
 
-	private void asyncReceive(IAsyncResult result)
+	protected void asyncReceive(IAsyncResult result)
 	{
 		try
 		{
@@ -1409,14 +858,10 @@ class Client
 		catch (ThreadAbortException)
 		{
 		}
-		catch (Exception e)
-		{
-			passExceptionToMain(e);
-		}
 
 	}
 
-	private void handleReceive()
+	protected void handleReceive()
 	{
 
 		while (receiveHandleIndex < receiveIndex)
@@ -1502,16 +947,9 @@ class Client
 		receiveIndex = 0;
 	}
 
-	private void messageReceived(KLFCommon.ServerMessageID id, byte[] data)
-	{
-		ServerMessage message;
-		message.id = id;
-		message.data = data;
+	protected abstract void messageReceived(KLFCommon.ServerMessageID id, byte[] data);
 
-		receivedMessageQueue.Enqueue(message);
-	}
-
-	private void sendHandshakeMessage()
+	protected void sendHandshakeMessage()
 	{
 		//Encode username
 		byte[] username_bytes = encoder.GetBytes(clientSettings.username);
@@ -1526,7 +964,7 @@ class Client
 		sendMessageTCP(KLFCommon.ClientMessageID.HANDSHAKE, message_data);
 	}
 
-	private void sendTextMessage(String message)
+	protected void sendTextMessage(String message)
 	{
 		//Encode message
 		byte[] message_bytes = encoder.GetBytes(message);
@@ -1534,7 +972,7 @@ class Client
 		sendMessageTCP(KLFCommon.ClientMessageID.TEXT_MESSAGE, message_bytes);
 	}
 
-	private void sendPluginUpdate(byte[] data, bool primary)
+	protected void sendPluginUpdate(byte[] data, bool primary)
 	{
 		if (data != null && data.Length > 0)
 		{
@@ -1549,13 +987,13 @@ class Client
 		}
 	}
 
-	private void sendShareScreenshotMesssage(byte[] data)
+	protected void sendShareScreenshotMesssage(byte[] data)
 	{
 		if (data != null && data.Length > 0)
 			sendMessageTCP(KLFCommon.ClientMessageID.SCREENSHOT_SHARE, data);
 	}
 
-	private void sendScreenshotWatchPlayerMessage(bool send_screenshot, int current_index, int index, String name)
+	protected void sendScreenshotWatchPlayerMessage(bool send_screenshot, int current_index, int index, String name)
 	{
 		byte[] name_bytes = encoder.GetBytes(name);
 
@@ -1569,7 +1007,7 @@ class Client
 		sendMessageTCP(KLFCommon.ClientMessageID.SCREEN_WATCH_PLAYER, bytes);
 	}
 
-	private void sendConnectionEndMessage(String message)
+	protected void sendConnectionEndMessage(String message)
 	{
 		//Encode message
 		byte[] message_bytes = encoder.GetBytes(message);
@@ -1577,7 +1015,7 @@ class Client
 		sendMessageTCP(KLFCommon.ClientMessageID.CONNECTION_END, message_bytes);
 	}
 
-	private void sendShareCraftMessage(String craft_name, byte[] data, byte type)
+	protected void sendShareCraftMessage(String craft_name, byte[] data, byte type)
 	{
 		//Encode message
 		byte[] name_bytes = encoder.GetBytes(craft_name);
@@ -1601,7 +1039,7 @@ class Client
 
 	}
 
-	private void sendMessageTCP(KLFCommon.ClientMessageID id, byte[] data)
+	protected void sendMessageTCP(KLFCommon.ClientMessageID id, byte[] data)
 	{
 		byte[] message_bytes = buildMessageByteArray(id, data);
 
@@ -1620,12 +1058,12 @@ class Client
 		lastTCPMessageSendTime = stopwatch.ElapsedMilliseconds;
 	}
 
-	private void sendUDPProbeMessage()
+	protected void sendUDPProbeMessage()
 	{
 		sendMessageUDP(KLFCommon.ClientMessageID.UDP_PROBE, null);
 	}
 
-	private void sendMessageUDP(KLFCommon.ClientMessageID id, byte[] data)
+	protected void sendMessageUDP(KLFCommon.ClientMessageID id, byte[] data)
 	{
 		if (udpSocket != null)
 		{
@@ -1644,7 +1082,7 @@ class Client
 		}
 	}
 
-	private byte[] buildMessageByteArray(KLFCommon.ClientMessageID id, byte[] data, byte[] prefix = null)
+	protected byte[] buildMessageByteArray(KLFCommon.ClientMessageID id, byte[] data, byte[] prefix = null)
 	{
 		int prefix_length = 0;
 		if (prefix != null)

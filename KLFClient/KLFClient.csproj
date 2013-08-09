@@ -55,6 +55,7 @@
     <Compile Include="Client.cs" />
     <Compile Include="ClientMain.cs" />
     <Compile Include="ClientSettings.cs" />
+    <Compile Include="ConsoleClient.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

@@ -55,6 +55,8 @@
     <Compile Include="KerbalLiveFeedModule.cs" />
     <Compile Include="KLFCameraScript.cs" />
     <Compile Include="KLFChatDisplay.cs" />
+    <Compile Include="KLFClient\Client.cs" />
+    <Compile Include="KLFClient\ClientSettings.cs" />
     <Compile Include="KLFCommon.cs" />
     <Compile Include="KLFGlobalSettings.cs" />
     <Compile Include="KLFInfoDisplay.cs" />
