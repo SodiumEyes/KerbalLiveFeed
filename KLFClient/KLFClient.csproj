@@ -52,7 +52,9 @@
     <Compile Include="..\ScreenshotSettings.cs">
       <Link>ScreenshotSettings.cs</Link>
     </Compile>
+    <Compile Include="Client.cs" />
     <Compile Include="ClientMain.cs" />
+    <Compile Include="ClientSettings.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
