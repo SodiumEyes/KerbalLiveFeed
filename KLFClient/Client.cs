@@ -58,20 +58,21 @@ class Client
 	public static UnicodeEncoding encoder = new UnicodeEncoding();
 
 	private ClientSettings clientSettings;
+	private bool useFileInterop;
 
 	//Connection
-	public static int clientID;
-	public static bool endSession;
-	public static bool intentionalConnectionEnd;
-	public static bool handshakeCompleted;
-	public static TcpClient tcpClient;
-	public static long lastTCPMessageSendTime;
-	public static bool quitHelperMessageShow;
-	public static int reconnectAttempts;
-	public static Socket udpSocket;
-	public static bool udpConnected;
-	public static long lastUDPMessageSendTime;
-	public static long lastUDPAckReceiveTime;
+	public int clientID;
+	public bool endSession;
+	public bool intentionalConnectionEnd;
+	public bool handshakeCompleted;
+	public TcpClient tcpClient;
+	public long lastTCPMessageSendTime;
+	public bool quitHelperMessageShow;
+	public int reconnectAttempts;
+	public Socket udpSocket;
+	public bool udpConnected;
+	public long lastUDPMessageSendTime;
+	public long lastUDPAckReceiveTime;
 
 	//Server Settings
 	public int updateInterval = 500;
@@ -80,8 +81,9 @@ class Client
 	public ScreenshotSettings screenshotSettings = new ScreenshotSettings();
 
 	//Plugin Interop
-	public static ConcurrentQueue<InteropMessage> interopOutQueue;
-	public static long lastInteropWriteTime;
+	public ConcurrentQueue<InteropMessage> interopInQueue;
+	public ConcurrentQueue<InteropMessage> interopOutQueue;
+	public long lastInteropWriteTime;
 
 	private ConcurrentQueue<byte[]> pluginUpdateInQueue;
 	private ConcurrentQueue<InTextMessage> textMessageQueue;
@@ -129,6 +131,11 @@ class Client
 
 	private Stopwatch stopwatch;
 	private Stopwatch pingStopwatch = new Stopwatch();
+
+	public Client(bool use_file_interop = true)
+	{
+		useFileInterop = use_file_interop;
+	}
 
 	public void connect(ClientSettings settings)
 	{
@@ -263,6 +270,7 @@ class Client
 				pluginUpdateInQueue = new ConcurrentQueue<byte[]>();
 				textMessageQueue = new ConcurrentQueue<InTextMessage>();
 				interopOutQueue = new ConcurrentQueue<InteropMessage>();
+				interopInQueue = new ConcurrentQueue<InteropMessage>();
 
 				receivedMessageQueue = new ConcurrentQueue<ServerMessage>();
 				cachedScreenshots = new List<Screenshot>();
@@ -786,6 +794,15 @@ class Client
 			}
 		}
 
+		while (interopInQueue.Count > 0)
+		{
+			InteropMessage message;
+			if (interopInQueue.TryDequeue(out message))
+				handleInteropMessage(message.id, message.data);
+			else
+				break;
+		}
+
 	}
 
 
@@ -798,12 +815,15 @@ class Client
 			{
 				writeClientData();
 
-				readPluginInterop();
-
-				if (stopwatch.ElapsedMilliseconds - lastInteropWriteTime >= INTEROP_WRITE_INTERVAL)
+				if (useFileInterop)
 				{
-					if (writePluginInterop())
-						lastInteropWriteTime = stopwatch.ElapsedMilliseconds;
+					readPluginInterop();
+
+					if (stopwatch.ElapsedMilliseconds - lastInteropWriteTime >= INTEROP_WRITE_INTERVAL)
+					{
+						if (writePluginInterop())
+							lastInteropWriteTime = stopwatch.ElapsedMilliseconds;
+					}
 				}
 
 				//Throttle the rate at which you can share screenshots
@@ -1042,7 +1062,7 @@ class Client
 
 	//Plugin Interop
 
-	void handleInteropCallback(int id, byte[] data)
+	void handleInteropMessage(int id, byte[] data)
 	{
 		handleInteropMessage((KLFCommon.PluginInteropMessageID)id, data);
 	}
