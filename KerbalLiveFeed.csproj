@@ -66,6 +66,7 @@
     <Compile Include="KLFScreenshotDisplay.cs" />
     <Compile Include="KLFVesselUpdate.cs" />
     <Compile Include="KLFVessel.cs" />
+    <Compile Include="PluginClient.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Screenshot.cs" />
     <Compile Include="ScreenshotSettings.cs" />

@@ -24,6 +24,12 @@ abstract class Client
 		public byte[] data;
 	}
 
+	public struct ServerMessage
+	{
+		public KLFCommon.ServerMessageID id;
+		public byte[] data;
+	}
+
 	//Constants
 	public const String CRAFT_FILE_EXTENSION = ".craft";
 
@@ -515,6 +521,44 @@ abstract class Client
 			{
 				sendTextMessage(line);
 			}
+		}
+	}
+
+	protected void handleConnection()
+	{
+		//Send a keep-alive message to prevent timeout
+		if (stopwatch.ElapsedMilliseconds - lastTCPMessageSendTime >= KEEPALIVE_DELAY)
+			sendMessageTCP(KLFCommon.ClientMessageID.KEEPALIVE, null);
+
+		if (udpSocket != null && handshakeCompleted)
+		{
+
+			//Update the status of the udp connection
+			long last_udp_ack = 0;
+			long last_udp_send = 0;
+			lock (udpTimestampLock)
+			{
+				last_udp_ack = lastUDPAckReceiveTime;
+				last_udp_send = lastUDPMessageSendTime;
+			}
+
+			bool udp_should_be_connected =
+				last_udp_ack > 0 && (stopwatch.ElapsedMilliseconds - last_udp_ack) < UDP_TIMEOUT_DELAY;
+
+			if (udpConnected != udp_should_be_connected)
+			{
+				if (udp_should_be_connected)
+					enqueueTextMessage("UDP connection established.", false, true);
+				else
+					enqueueTextMessage("UDP connection lost.", false, true);
+
+				udpConnected = udp_should_be_connected;
+			}
+
+			//Send a probe message to try to establish a udp connection
+			if ((stopwatch.ElapsedMilliseconds - last_udp_send) > UDP_PROBE_DELAY)
+				sendUDPProbeMessage();
+
 		}
 	}
 
