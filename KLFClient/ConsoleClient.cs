@@ -273,20 +273,9 @@ class ConsoleClient : Client
 				}
 
 			}
-			catch (System.IO.FileNotFoundException)
+			catch (Exception e)
 			{
-			}
-			catch (System.UnauthorizedAccessException)
-			{
-			}
-			catch (System.IO.DirectoryNotFoundException)
-			{
-			}
-			catch (System.InvalidOperationException)
-			{
-			}
-			catch (System.IO.IOException)
-			{
+				Console.WriteLine("Unable to write plugin interop: " + e.ToString());
 			}
 			finally
 			{

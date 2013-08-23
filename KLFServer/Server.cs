@@ -1148,6 +1148,10 @@ namespace KLFServer
 				response_builder.Append(settings.saveScreenshots);
 				response_builder.Append('\n');
 
+				response_builder.Append("Screenshot Backlog: ");
+				response_builder.Append(settings.screenshotBacklog);
+				response_builder.Append('\n');
+
 				//Send response
 				byte[] buffer = System.Text.Encoding.UTF8.GetBytes(response_builder.ToString());
 				response.ContentLength64 = buffer.LongLength;
