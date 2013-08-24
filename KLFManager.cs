@@ -1597,7 +1597,10 @@ namespace KLF
 				StringBuilder sb = new StringBuilder();
 				sb.Append(KLFScreenshotDisplay.screenshot.player);
 				if (KLFScreenshotDisplay.screenshot.description.Length > 0)
+				{
+					sb.Append(" - ");
 					sb.Append(KLFScreenshotDisplay.screenshot.description);
+				}
 				GUILayout.Label(sb.ToString(), screenshotDescriptionStyle);
 
 				GUILayout.EndHorizontal();
